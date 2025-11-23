@@ -128,6 +128,16 @@ const CreateEvent = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+    const eventSchema = z.object({
+  title: z.string().trim().min(3).max(200),
+  description: z.string().trim().max(5000).optional(),
+  location: z.string().trim().min(3).max(500),
+  price: z.string().optional().refine(
+    (val) => !val || (parseFloat(val) >= 0 && parseFloat(val) <= 1000000),
+    'Price must be between ₦0 and ₦1,000,000'
+  )
+});
+
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
