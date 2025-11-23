@@ -875,6 +875,81 @@ export default function Events() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* --- PAYOUT MODAL --- */}
+      <Dialog open={isPayoutModalOpen} onOpenChange={setIsPayoutModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{savedBankDetails ? 'Confirm Payout' : 'Add Bank Details'}</DialogTitle>
+            <DialogDescription>
+              {savedBankDetails ? 'Review your payout destination below.' : 'Where should we send your earnings?'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {savedBankDetails ? (
+            <div className="space-y-4 py-2">
+               <div className="bg-muted/50 p-4 rounded-lg flex items-start gap-3 border border-border">
+                  <Building2 className="w-5 h-5 text-primary mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">{savedBankDetails.bank_name}</p>
+                    <p className="text-xs text-muted-foreground">{savedBankDetails.account_name}</p>
+                    <p className="text-sm font-mono mt-1 tracking-wider">{savedBankDetails.account_number}</p>
+                  </div>
+               </div>
+               
+               <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-md text-xs text-yellow-800 dark:text-yellow-200 flex gap-2">
+                 <Info className="w-4 h-4 shrink-0" />
+                 <span>Payouts are processed daily. You will receive <b>₦{(stats?.walletBalance || 0).toLocaleString()}</b>.</span>
+               </div>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="bank">Bank Name</Label>
+                <Input 
+                  id="bank" 
+                  placeholder="e.g. GTBank, Zenith Bank" 
+                  value={bankForm.bank_name}
+                  onChange={e => setBankForm({...bankForm, bank_name: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="acc_num">Account Number</Label>
+                <Input 
+                  id="acc_num" 
+                  placeholder="0123456789" 
+                  maxLength={10}
+                  value={bankForm.account_number}
+                  onChange={e => setBankForm({...bankForm, account_number: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="acc_name">Account Name</Label>
+                <Input 
+                  id="acc_name" 
+                  placeholder="Name on account" 
+                  value={bankForm.account_name}
+                  onChange={e => setBankForm({...bankForm, account_name: e.target.value})}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {!savedBankDetails ? (
+              <Button onClick={saveBankDetails} className="w-full">Save Bank Details</Button>
+            ) : (
+              <div className="flex gap-2 w-full">
+                <Button variant="outline" className="flex-1" onClick={() => navigate('/settings?tab=bank')}>Change Bank</Button>
+                <Button onClick={processPayout} disabled={isPayoutLoading} className="flex-1 gradient-primary text-white">
+                  {isPayoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm Withdraw'}
+                </Button>
+              </div>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
     </div>
   );
 }
