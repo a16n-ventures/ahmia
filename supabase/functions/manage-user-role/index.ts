@@ -1,4 +1,8 @@
-// supabase/functions/manage-user-role/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+
+serve(async (req) => {
+
 const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader);
 
 // Verify caller is admin
@@ -12,3 +16,5 @@ if (!callerIsAdmin) {
 }
 
 // Only then allow role update using SERVICE_ROLE_KEY
+
+});
