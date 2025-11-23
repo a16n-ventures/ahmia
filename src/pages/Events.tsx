@@ -796,12 +796,18 @@ export default function Events() {
                         <CardContent className="p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="bg-primary/20 p-2 rounded-lg"><Wallet className="w-5 h-5 text-primary" /></div>
+                  <div className="bg-primary/20 p-2 rounded-lg"><Wallet className="w-5 h-5 text-primary" />
+                  </div>
                   <div>
                     <h3 className="font-semibold text-foreground">Earnings Wallet</h3>
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs text-muted-foreground">Available for daily payout</p>
-                      <TooltipProvider><Tooltip><TooltipTrigger><Badge variant="outline" className="text-[9px] h-4 px-1 text-muted-foreground">-2% Fee</Badge></TooltipTrigger><TooltipContent><p>A 2% platform fee is deducted from all ticket sales.</p></TooltipContent></Tooltip></TooltipProvider>
+                      <TooltipProvider><Tooltip>
+                        <TooltipTrigger>
+                        <Badge variant="outline" className="text-[9px] h-4 px-1 text-muted-foreground">-2% Fee</Badge>
+                      </TooltipTrigger><TooltipContent>
+                        <p>A 2% platform fee is deducted from all ticket sales.</p></TooltipContent>
+                      </Tooltip></TooltipProvider>
                     </div>
                   </div>
                 </div>
@@ -832,6 +838,8 @@ export default function Events() {
                 </div>
               )}
             </CardContent>
+        </div>
+      </div>
           </Card>
 
           {/* Growth Insights Card */}
