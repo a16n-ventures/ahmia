@@ -1222,7 +1222,7 @@ export default function Messages() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
               Messages
             </h1>
             <p className="text-muted-foreground text-sm font-medium mt-1 flex items-center gap-1.5">
@@ -1238,6 +1238,18 @@ export default function Messages() {
             <Plus className="h-5 w-5" />
           </Button>
         </div>
+
+        {/* Search */}
+            <div className="relative mt-4">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search conversations..." 
+                className="pl-11 bg-muted/30 border-transparent rounded-2xl h-12 focus:bg-background focus:border-primary/20 transition-all" 
+                value={searchQuery} 
+                onChange={(e) => setSearchQuery(e.target.value)} 
+              />
+            </div>
+          </div>
 
         {/* Tabs */}
         <Tabs 
@@ -1262,18 +1274,6 @@ export default function Messages() {
                 Communities
               </TabsTrigger>
             </TabsList>
-            
-            {/* Search */}
-            <div className="relative mt-4">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search conversations..." 
-                className="pl-11 bg-muted/30 border-transparent rounded-2xl h-12 focus:bg-background focus:border-primary/20 transition-all" 
-                value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
-              />
-            </div>
-          </div>
 
           {/* Direct Messages Tab */}
           <TabsContent value="dm" className="space-y-2 animate-in fade-in-50 mt-0">
