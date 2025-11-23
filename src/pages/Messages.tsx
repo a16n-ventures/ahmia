@@ -1249,7 +1249,6 @@ export default function Messages() {
                 onChange={(e) => setSearchQuery(e.target.value)} 
               />
             </div>
-          </div>
 
         {/* Tabs */}
         <Tabs 
@@ -1274,6 +1273,7 @@ export default function Messages() {
                 Communities
               </TabsTrigger>
             </TabsList>
+          </div>
 
           {/* Direct Messages Tab */}
           <TabsContent value="dm" className="space-y-2 animate-in fade-in-50 mt-0">
