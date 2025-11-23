@@ -32,7 +32,8 @@ import { useNavigate } from "react-router-dom";
 import { format, isPast, isFuture, isToday } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; 
+import { z } from 'zod';
 
 // --- TYPES ---
 type Event = {
@@ -66,13 +67,55 @@ type BankDetails = {
   account_name: string;
 }; 
 
+const bankDetailsSchema = z.object({
+  bank_name: z.string()
+    .trim()
+    .min(3, 'Bank name too short')
+    .max(50, 'Bank name too long')
+    .regex(/^[a-zA-Z\s]+$/, 'Bank name can only contain letters and spaces'),
+  account_number: z.string()
+    .trim()
+    .length(10, 'Nigerian account numbers must be exactly 10 digits')
+    .regex(/^\d{10}$/, 'Account number must contain only digits'),
+  account_name: z.string()
+    .trim()
+    .min(3, 'Account name too short')
+    .max(100, 'Account name too long')
+    .regex(/^[a-zA-Z\s'-]+$/, 'Account name contains invalid characters')
+});
+
+// In saveBankDetails function:
+const saveBankDetails = async () => {
+  try {
+    const validated = bankDetailsSchema.parse(bankForm);
+    
+    const { error } = await supabase
+      .from('user_bank_details')
+      .upsert({
+        user_id: user.id,
+        bank_name: validated.bank_name,
+        account_number: validated.account_number,
+        account_name: validated.account_name
+      });
+      
+    if (error) throw error;
+    toast.success('Bank details saved');
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      toast.error(err.errors[0].message);
+      return;
+    }
+    toast.error('Failed to save bank details');
+  }
+};
+
 // --- COMPONENTS ---
 const EventSkeleton = () => (
   <div className="space-y-3">
     {[1, 2, 3].map(i => (
       <Card key={i} className="border-0 shadow-sm bg-card/50">
         <CardContent className="p-4 flex gap-4">
-          <div className="w-24 h-32 rounded-xl bg-muted animate-pulse" />
+          <div className="w-24 h-32 rounded-l bg-muted animate-pulse" />
           <div className="flex-1 space-y-2">
             <div className="h-5 w-2/3 bg-muted animate-pulse rounded" />
             <div className="h-4 w-1/2 bg-muted/50 animate-pulse rounded" />
@@ -818,7 +861,7 @@ export default function Events() {
                   onClick={() => setIsPayoutModalOpen(true)}
                   disabled={isPayoutLoading || !stats?.walletBalance || stats.walletBalance < 1000}
                   className="gradient-primary text-white shadow-md shrink-0">
-                  {isPayoutLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing</>
+                  {isPayoutLoading ? ( <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing </>
                   ) : (
                     <>
                       Request Payout 
