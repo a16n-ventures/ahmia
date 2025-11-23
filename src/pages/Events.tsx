@@ -858,7 +858,7 @@ export default function Events() {
                 </div>
 
                 <Button onClick={() => setIsPayoutModalOpen(true)} disabled={isPayoutLoading || !stats?.walletBalance || stats.walletBalance < 1000} className="gradient-primary text-white shadow-md shrink-0">
-                  {isPayoutLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing</> : <><ArrowUpRight className="w-4 h-4 ml-1" /> Request Payout</>}
+                  {isPayoutLoading ? ( <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing </> ) : ( <><ArrowUpRight className="w-4 h-4 ml-1" /> Request Payout </> )}
                 </Button>
               </div>
 
