@@ -1218,7 +1218,7 @@ export default function Messages() {
   // --- RENDER: LIST VIEW ---
   return (
     <div className="min-h-screen flex flex-col pb-20 bg-gradient-to-b from-background to-muted/10">
-      <div className="w-full max-w-3xl mx-auto px-4 pt-6">
+      <div className="container-mobile py-4 space-y-6 pb-24">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
