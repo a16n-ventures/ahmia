@@ -1244,7 +1244,7 @@ export default function Messages() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input 
                 placeholder="Search conversations..." 
-                className="pl-11 bg-muted/30 border-transparent rounded-2xl h-12 focus:bg-background focus:border-primary/20 transition-all" 
+                className="pl-11 bg-muted/30 border-transparent rounded-2xl h-8 focus:bg-background focus:border-primary/20 transition-all" 
                 value={searchQuery} 
                 onChange={(e) => setSearchQuery(e.target.value)} 
               />
@@ -1430,7 +1430,7 @@ export default function Messages() {
       {/* New Chat Dialog */}
       <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
         <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
-          <DialogHeader className="items-center">
+          <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-primary" />
               New Message
@@ -1499,7 +1499,7 @@ export default function Messages() {
       {/* Create Community Dialog */}
       <Dialog open={isCreateCommunityOpen} onOpenChange={setIsCreateCommunityOpen}>
         <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader className="items-center">
+          <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="w-5 h-5 text-primary" />
               Create Community
