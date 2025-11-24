@@ -197,23 +197,34 @@ const Profile = () => {
     onError: (error: Error) => toast.error('Failed to update: ' + error.message)
   });
 
+  // ... inside Profile component
+
   const toggleLocationMutation = useMutation({
     mutationFn: async (checked: boolean) => {
       const { error } = await supabase
         .from('user_locations')
         .upsert({ user_id: user!.id, is_sharing_location: checked })
         .select();
+      
       if (error) throw error;
       return checked;
     },
+    // Add this onError handler to see why it's failing
+    onError: (error: any) => {
+      console.error('Location toggle error:', error);
+      toast.error(`Failed to toggle location: ${error.message}`);
+    },
     onSuccess: (checked) => {
       toast.success(checked ? 'Location sharing enabled' : 'Location sharing disabled');
+      // Update the cache immediately so the switch flips visually
       queryClient.setQueryData(['profile', user!.id], (old: any) => ({
         ...old,
         location: { ...old.location, is_sharing_location: checked }
       }));
     }
   });
+
+  // ...
   
   const uploadAvatarMutation = useMutation({
     mutationFn: async (file: File) => {
