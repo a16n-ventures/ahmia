@@ -171,7 +171,7 @@ const { data: myEvents = [], isLoading: loadingMy, error: myEventsError } = useQ
       .from("events")
       .select(`
         *,
-        creator:profiles!creator_id(user_id, display_name, avatar_url)
+        creator:profiles(user_id, display_name, avatar_url)
       `)
       .eq("creator_id", userId)
       .order("start_date", { ascending: true });
