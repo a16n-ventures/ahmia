@@ -163,7 +163,7 @@ export default function Events() {
         .from("events")
         .select(`
           *,
-          creator:profiles(*)
+          creator:profiles!creator_id(*)
         `)
         .eq("creator_id", userId)
         .order("start_date", { ascending: true });
