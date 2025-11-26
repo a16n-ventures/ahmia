@@ -689,10 +689,8 @@ const Profile = () => {
                   <div className="text-xs text-muted-foreground">Visible to friends on map</div>
                 </div>
               </div>
-              <Switch 
-                checked={!!location?.is_sharing_location}
-                onCheckedChange={(c) => toggleLocationMutation.mutate(c)}
-                disabled={toggleLocationMutation.isPending}
+              <Switch checked={!!location?.is_sharing_location}
+  onCheckedChange={handleLocationToggle} disabled={toggleLocationMutation.isPending || isLocating} 
               />
             </div>
 
