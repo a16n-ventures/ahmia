@@ -148,7 +148,6 @@ const Profile = () => {
   const [discoveryRadius, setDiscoveryRadius] = useState([5000]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [sharingLocation, setSharingLocation] = useState(false); 
-  const [isLocating, setIsLocating] = useState(false); 
 
   const { data, isLoading: loading } = useQuery<CombinedProfile, Error>({
     queryKey: ['profile', user?.id],
