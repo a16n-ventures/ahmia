@@ -437,7 +437,7 @@ export default function Events() {
         onClick={() => navigate(`/app/events/${event.id}`)}
       >
         <CardContent className="p-0">
-          <div className="flex h-40">
+          <div className="flex h-46">
             <div className="w-28 bg-gradient-to-br from-purple-600 to-blue-600 relative overflow-hidden">
               {event.image_url ? (
                 <img 
