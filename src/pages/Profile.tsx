@@ -86,8 +86,8 @@ interface CombinedProfile {
 // --- DATA FETCHING ---
 const fetchProfileData = async (userId: string): Promise<CombinedProfile> => {
   const profileQuery = supabase.from('profiles').select('*').eq('user_id', userId).single();
-  const locationQuery = supabase.from('user_locations').select('is_sharing_location').eq('user_id', userId).single();
-
+  const locationQuery = supabase.from('user_locations').select('is_sharing_location').eq('user_id', userId).maybeSingle();
+  
   const friendQuery = supabase
     .from('friendships')
     .select('*', { count: 'exact', head: true })
@@ -198,29 +198,101 @@ const Profile = () => {
     onError: (error: Error) => toast.error('Failed to update: ' + error.message)
   });
 
-const { data: locationData } = await supabase
-        .from('user_locations')
-        .select('is_sharing_location')
-        .eq('user_id', user?.id)
-        .single();
+  // Toggle Location Mutation
+  const toggleLocationMutation = useMutation({
+    mutationFn: async ({ checked, latitude, longitude }: { checked: boolean; latitude?: number; longitude?: number }) => {
+      if (checked) {
+        // ENABLING: Coordinates are mandatory
+        if (latitude === undefined || longitude === undefined) {
+          throw new Error("Location coordinates missing");
+        }
+        
+        // Upsert creates the row if it doesn't exist, or updates it if it does
+        const { error } = await supabase
+          .from('user_locations')
+          .upsert({ 
+            user_id: user!.id, 
+            is_sharing_location: true,
+            latitude: latitude,
+            longitude: longitude,
+            updated_at: new Date().toISOString()
+          })
+          .select();
+        
+        if (error) throw error;
+      } else {
+        // DISABLING: Just update the flag
+        const { error } = await supabase
+          .from('user_locations')
+          .update({ is_sharing_location: false })
+          .eq('user_id', user!.id);
 
-      if (locationData) {
-        setLocationSharing(locationData.is_sharing_location);
+        if (error) throw error;
+      }
+      return checked;
+    },
+    onSuccess: (checked) => {
+      toast.success(checked ? 'Location sharing enabled' : 'Location sharing disabled');
+      setIsLocating(false);
+      
+      // Update the cached data immediately so the switch flips in the UI
+      queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          location: { 
+            ...oldData.location, 
+            is_sharing_location: checked 
+          }
+        };
+      });
+    },
+    onError: (error: any) => {
+      console.error('Location toggle error:', error);
+      toast.error(`Failed to toggle location: ${error.message}`);
+      setIsLocating(false);
+      // If error, re-fetch to ensure UI matches DB state
+      queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
+    }
+  });
+  
+  // --- HANDLER: The Switch Logic ---
+  const handleLocationToggle = (checked: boolean) => {
+    if (checked) {
+      // User is turning it ON -> Need GPS
+      setIsLocating(true);
+
+      if (!navigator.geolocation) {
+        toast.error("Geolocation is not supported by this browser.");
+        setIsLocating(false);
+        return;
       }
 
-  // --- HANDLER ---
-  const handleLocationToggle = async (checked: boolean) => {
-    setLocationSharing(checked);
-    try {
-      await supabase
-        .from('user_locations')
-        .update({ is_sharing_location: checked })
-        .eq('user_id', user?.id);
-      
-      toast.success(checked ? 'Location sharing enabled' : 'Location sharing disabled');
-    } catch (error) {
-      console.error('Location toggle error:', error);
-      toast.error('Failed to update location sharing');
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          // Success: We have coordinates, call the mutation
+          toggleLocationMutation.mutate({
+            checked: true,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          });
+        },
+        (error) => {
+          // Error: GPS failed
+          console.error("GPS Error: ", error);
+          let msg = "Unable to retrieve location.";
+          if (error.code === 1) msg = "Location permission denied. Please allow access in settings.";
+          if (error.code === 2) msg = "Location unavailable. Check your GPS.";
+          if (error.code === 3) msg = "Location request timed out.";
+          
+          toast.error(msg);
+          setIsLocating(false);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    } else {
+      // User is turning it OFF -> No GPS needed
+      toggleLocationMutation.mutate({ checked: false });
     }
   };
   
