@@ -210,10 +210,7 @@ export default function Events() {
       
       const { data: events, error: eventsError } = await supabase
         .from("events")
-        .select(`
-          *,
-          creator:profiles!creator_id(user_id, display_name, avatar_url)
-        `)
+        .select("*")
         .in("id", eventIds)
         .order("start_date", { ascending: true });
       
@@ -242,57 +239,7 @@ export default function Events() {
     staleTime: 30000,
   });
 
-  // 3. Fetch Discover Events
-  const { data: discoverEvents = [], isLoading: loadingDiscover } = useQuery<EventWithStats[]>({
-    queryKey: ["events", "discover", userId, searchQuery],
-    queryFn: async () => {
-      if (!userId) return [];
-      
-      let query = supabase
-        .from("events")
-        .select(`
-          *,
-          creator:profiles!creator_id(user_id, display_name, avatar_url)
-        `)
-        .eq("is_public", true)
-        .neq("creator_id", userId)
-        .gte("start_date", new Date().toISOString())
-        .order("start_date", { ascending: true })
-        .limit(50);
-
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,location.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%`);
-      }
-
-      const { data: events, error } = await query;
-      
-      if (error) throw error;
-      if (!events || events.length === 0) return [];
-
-      const eventIds = events.map(e => e.id);
-      const { data: allAttendees, error: countError } = await supabase
-        .from("event_attendees")
-        .select("event_id")
-        .in("event_id", eventIds)
-        .eq("status", "confirmed");
-
-      if (countError) throw countError;
-
-      const countMap: Record<string, number> = {};
-      allAttendees?.forEach(a => {
-        countMap[a.event_id] = (countMap[a.event_id] || 0) + 1;
-      });
-
-      return events.map(event => ({
-        ...event,
-        attendee_count: countMap[event.id] || 0
-      }));
-    },
-    enabled: !!userId && activeTab === "discover",
-    staleTime: 30000,
-  });
-
-  // 4. Fetch Stats
+  // 3. Fetch Stats
   const { data: stats } = useQuery({
     queryKey: ["events", "stats", userId],
     queryFn: async () => {
@@ -380,7 +327,7 @@ export default function Events() {
     staleTime: 60000,
   }); 
 
-    // 5. Fetch Saved Bank Details
+    // 4. Fetch Saved Bank Details
   const { data: savedBankDetails, refetch: refetchBank } = useQuery({
     queryKey: ["bank-details", userId],
     queryFn: async () => {
@@ -478,7 +425,7 @@ export default function Events() {
     }
   };
 
-  const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending' | 'discover') => {
+  const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
     const status = getEventStatus(event.start_date);
     const eventDate = new Date(event.start_date);
     const isFull = event.max_attendees && event.attendee_count ? event.attendee_count >= event.max_attendees : false;
@@ -489,7 +436,7 @@ export default function Events() {
         className="overflow-hidden hover:shadow-lg transition-all border-border/60 cursor-pointer group"
         onClick={() => navigate(`/events/${event.id}`)}
       >
-        <CardContent className="p-0">
+        <CardContent className="p-auto">
           <div className="flex h-36">
             <div className="w-28 bg-gradient-to-br from-purple-600 to-blue-600 relative overflow-hidden">
               {event.image_url ? (
@@ -668,7 +615,6 @@ export default function Events() {
         <TabsList className="grid w-full grid-cols-4 bg-muted/50 p-1 rounded-xl">
           <TabsTrigger value="my" className="rounded-lg text-xs">Hosted</TabsTrigger>
           <TabsTrigger value="attending" className="rounded-lg text-xs">Attending</TabsTrigger>
-          <TabsTrigger value="discover" className="rounded-lg text-xs">Discover</TabsTrigger>
           <TabsTrigger value="analytics" className="rounded-lg text-xs">Stats</TabsTrigger>
         </TabsList>
 
@@ -708,26 +654,6 @@ export default function Events() {
           ) : (
             <div className="space-y-3">
               {filteredAttendingEvents.map(e => renderEventCard(e, 'attending'))}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="discover" className="space-y-3 mt-6 animate-in fade-in-50">
-          {loadingDiscover ? (
-            <EventSkeleton />
-          ) : discoverEvents.length === 0 ? (
-            <div className="text-center py-12 border-2 border-dashed border-muted rounded-xl bg-muted/5">
-              <Calendar className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-50" />
-              <p className="text-muted-foreground">
-                {searchQuery 
-                  ? "No events match your search. Try different keywords."
-                  : "No upcoming public events found. Check back later!"
-                }
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {discoverEvents.map(e => renderEventCard(e, 'discover'))}
             </div>
           )}
         </TabsContent>
