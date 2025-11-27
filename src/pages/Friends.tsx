@@ -526,18 +526,74 @@ export default function Friends() {
                addressee_id: foundUser.user_id,
                status: 'pending'
              });
+  // Contact Mutations
+  const addContact = useMutation({
+    mutationFn: async () => {
+      if (!userId) throw new Error("Not authenticated");
+      
+      // Allow Name only (for username search) OR Name + Contact Info
+      if (!newContactName.trim()) throw new Error("Name is required");
+
+      const name = newContactName.trim();
+      const email = newContactEmail.trim().toLowerCase();
+      const phoneRaw = newContactPhone.trim();
+      
+      // --- IMPROVED SEARCH LOGIC ---
+      // We build a query to find a matching user by Email OR Phone OR Display Name
+      let query = supabase.from('profiles').select('user_id, display_name, avatar_url, email, phone')
+        .neq('user_id', userId); // Exclude self
+      
+      const conditions: string[] = [];
+      
+      // 1. Check Username/Display Name
+      if (name) conditions.push(`display_name.ilike.${name}`);
+      // 2. Check Email
+      if (email) conditions.push(`email.eq.${email}`);
+      // 3. Check Phone
+      if (phoneRaw) conditions.push(`phone.eq.${phoneRaw}`);
+
+      if (conditions.length > 0) {
+        // Execute the OR query
+        query = query.or(conditions.join(','));
+        const { data: existingUsers, error: searchError } = await query;
+        
+        if (searchError) console.error("Search Error:", searchError);
+
+        if (existingUsers && existingUsers.length > 0) {
+           // We found a matching user!
+           const foundUser = existingUsers[0];
+           
+           // Check existing relationship
+           const { data: relationship } = await supabase
+             .from('friendships')
+             .select('status')
+             .or(`and(requester_id.eq.${userId},addressee_id.eq.${foundUser.user_id}),and(requester_id.eq.${foundUser.user_id},addressee_id.eq.${userId})`)
+             .maybeSingle();
+
+           if (relationship) {
+             if (relationship.status === 'accepted') {
+                return { status: 'already_friends', user: foundUser };
+             } else {
+                return { status: 'pending_exists', user: foundUser };
+             }
+           } else {
+             // --- SEND FRIEND REQUEST ---
+             const { error: reqError } = await supabase.from('friendships').insert({
+               requester_id: userId,
+               addressee_id: foundUser.user_id,
+               status: 'pending' // This ensures it shows up in "Sent Requests"
+             });
              
              if (reqError) throw reqError;
              
-             // Fire and forget notification
-             supabase.from('notifications').insert({
+             // --- SEND NOTIFICATION ---
+             await supabase.from('notifications').insert({
                 user_id: foundUser.user_id,
                 type: 'friend_request',
                 title: 'New Friend Request',
-                content: `You have a new friend request.`,
+                content: `You have a new friend request from ${user?.email || 'a user'}.`,
                 data: { requester_id: userId },
-             }).then(({ error: nErr }) => {
-                 if (nErr) console.warn("Notif error", nErr);
+                is_read: false
              });
 
              return { status: 'request_sent', user: foundUser };
@@ -545,26 +601,25 @@ export default function Friends() {
         }
       }
 
-      // --- FALLBACK: No User Found, Save to Contacts ---
+      // --- FALLBACK: No User Found on App ---
       
-      // Check for duplicate in contacts to prevent clutter
+      // If we didn't find a user, we can ONLY save as contact if we have contact info.
+      // If they only provided a name (hoping for a username match) and it failed, we throw error.
+      if (!email && !phoneRaw) {
+        throw new Error(`User "${name}" not found on the app. Please add email or phone to save as a contact.`);
+      }
+
+      // Check for duplicate in contacts
       if (email) {
         const { data: existingByEmail } = await supabase.from('contacts').select('id, name').eq('user_id', userId).eq('email', email).maybeSingle();
         if (existingByEmail) throw new Error(`Contact with this email already exists: ${existingByEmail.name}`);
-      }
-
-      if (phoneDigits) {
-        // Fetch all contacts with phone numbers to verify duplicates manually since formats differ
-        const { data: existingByPhone } = await supabase.from('contacts').select('id, name, phone').not('phone', 'is', null).eq('user_id', userId);
-        const duplicate = existingByPhone?.find(c => c.phone?.replace(/\D/g, '') === phoneDigits);
-        if (duplicate) throw new Error(`Contact with this phone already exists: ${duplicate.name}`);
       }
 
       const { data, error } = await supabase
         .from('contacts')
         .insert({
           user_id: userId,
-          name: newContactName.trim(),
+          name: name,
           email: email || null,
           phone: phoneRaw || null,
         })
@@ -583,13 +638,20 @@ export default function Friends() {
 
       if (result.status === 'request_sent') {
         toast.success(`User found! Friend request sent to ${result.user.display_name}.`);
-        await Promise.all([refetchOutgoing(), queryClient.invalidateQueries({ queryKey: ['suggestions'] })]);
+        // Refresh outgoing requests tab
+        await Promise.all([
+            refetchOutgoing(), 
+            queryClient.invalidateQueries({ queryKey: ['suggestions'] })
+        ]);
+        // Switch tab to requests so they see it
+        setActiveTab('requests');
+        setRequestView('sent');
       } else if (result.status === 'already_friends') {
         toast.info(`You are already friends with ${result.user.display_name}!`);
-      } else if (result.status === 'pending') {
+      } else if (result.status === 'pending_exists') {
         toast.info(`A request is already pending for ${result.user.display_name}.`);
       } else {
-        toast.success('Saved to contacts. (User not found in app)');
+        toast.success('User not on app. Saved to contacts list.');
         await refetchContacts();
       }
     },
