@@ -1095,7 +1095,7 @@ export default function Messages() {
           className="flex-1 overflow-y-auto bg-gradient-to-b from-muted/5 to-muted/10 p-4 scroll-smooth" 
           ref={scrollRef}
         >
-          <div className="flex flex-col justify-end min-h-full pb-2">
+          <div className="flex flex-col justify-end min-h-[60px] pb-2">
             {messages.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center opacity-60 py-16">
                 <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-4 animate-pulse">
