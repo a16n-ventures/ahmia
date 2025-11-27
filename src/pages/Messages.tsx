@@ -982,7 +982,7 @@ export default function Messages() {
     const canModerate = isComm && (selectedChat.my_role === 'admin' || selectedChat.my_role === 'moderator');
 
     return (
-      <div className="fixed inset-0 z-50 bg-background flex flex-col min-h-60">
+      <div className="fixed inset-0 z-[100] bg-background flex flex-col h-[100dvh]">
         
         {/* Header */}
         <div className="px-4 py-3 border-b flex items-center gap-3 bg-gradient-to-r from-background to-muted/20 backdrop-blur-xl shadow-sm shrink-0 z-10">
@@ -1124,7 +1124,7 @@ export default function Messages() {
         </div>
 
         {/* Input Area */}
-        <div className="p-4 border-t bg-background/95 backdrop-blur-xl shrink-0">
+        <div className="p-4 pb-6 border-t bg-background/95 backdrop-blur-xl shrink-0 z-10">
           {canType ? (
             <div className="flex flex-col gap-3">
               {imagePreview && (
