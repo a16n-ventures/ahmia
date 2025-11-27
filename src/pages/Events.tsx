@@ -68,6 +68,7 @@ type Event = {
 
 type EventWithStats = Event & {
   attendee_count?: number;
+  my_status?: 'confirmed' | 'pending'; // Added status field
 }; 
 
 type BankDetails = {
@@ -197,16 +198,22 @@ export default function Events() {
     queryFn: async () => {
       if (!userId) return [];
       
+      // FIX: Select status so we can map it later, and allow 'pending'
       const { data: attendees, error: attendeesError } = await supabase
         .from("event_attendees")
-        .select("event_id")
+        .select("event_id, status")
         .eq("user_id", userId)
-        .eq("status", "confirmed");
+        .in("status", ["confirmed", "pending"]); // Allow pending events to show
       
       if (attendeesError) throw attendeesError;
       if (!attendees || attendees.length === 0) return [];
       
-      const eventIds = attendees.map((a) => a.event_id);
+      // Map status for each event
+      const statusMap = new Map();
+      const eventIds = attendees.map((a) => {
+        statusMap.set(a.event_id, a.status);
+        return a.event_id;
+      });
       
       const { data: events, error: eventsError } = await supabase
         .from("events")
@@ -217,6 +224,7 @@ export default function Events() {
       if (eventsError) throw eventsError;
       if (!events || events.length === 0) return [];
 
+      // Get counts (global count, usually just confirmed)
       const { data: allAttendees, error: countError } = await supabase
         .from("event_attendees")
         .select("event_id")
@@ -232,7 +240,8 @@ export default function Events() {
 
       return events.map(event => ({
         ...event,
-        attendee_count: countMap[event.id] || 0
+        attendee_count: countMap[event.id] || 0,
+        my_status: statusMap.get(event.id) as 'confirmed' | 'pending'
       }));
     },
     enabled: !!userId,
@@ -429,6 +438,7 @@ export default function Events() {
     const status = getEventStatus(event.start_date);
     const eventDate = new Date(event.start_date);
     const isFull = event.max_attendees && event.attendee_count ? event.attendee_count >= event.max_attendees : false;
+    const isPending = event.my_status === 'pending';
 
     return (
       <Card 
@@ -459,16 +469,18 @@ export default function Events() {
                 </div>
               )}
               
-              <Badge 
-                className="absolute top-2 left-2 text-[10px] px-2 py-0.5"
-                variant={event.event_type === 'virtual' ? 'default' : 'secondary'}
-              >
-                {event.event_type === 'virtual' ? (
-                  <><Video className="w-3 h-3 mr-1" /> Virtual</>
-                ) : (
-                  <><MapPinned className="w-3 h-3 mr-1" /> Physical</>
-                )}
-              </Badge>
+              <div className="absolute top-2 left-2 flex flex-col gap-1">
+                <Badge 
+                  className="text-[10px] px-2 py-0.5"
+                  variant={event.event_type === 'virtual' ? 'default' : 'secondary'}
+                >
+                  {event.event_type === 'virtual' ? (
+                    <><Video className="w-3 h-3 mr-1" /> Virtual</>
+                  ) : (
+                    <><MapPinned className="w-3 h-3 mr-1" /> Physical</>
+                  )}
+                </Badge>
+              </div>
             </div>
 
             <div className="flex-1 p-4 min-w-0 flex flex-col justify-between">
@@ -478,9 +490,16 @@ export default function Events() {
                     <h3 className="font-bold truncate text-base leading-tight mb-1">
                       {event.title}
                     </h3>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      {event.category}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        {event.category}
+                        </Badge>
+                        {isPending && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-yellow-600 border-yellow-200 bg-yellow-50">
+                                Pending Approval
+                            </Badge>
+                        )}
+                    </div>
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     {event.ticket_price > 0 ? (
@@ -546,13 +565,17 @@ export default function Events() {
                 ) : type === 'attending' ? (
                   <Button 
                     size="sm" 
-                    className="h-7 text-xs w-full gradient-primary text-white"
+                    className={`h-7 text-xs w-full ${isPending ? 'bg-yellow-500 hover:bg-yellow-600' : 'gradient-primary'} text-white`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/app/app/events/${event.id}`);
+                      navigate(`/app/events/${event.id}`);
                     }}
                   >
-                    <Ticket className="w-3 h-3 mr-1" /> View Details
+                    {isPending ? (
+                         <><Clock className="w-3 h-3 mr-1" /> Awaiting Approval</>
+                    ) : (
+                         <><Ticket className="w-3 h-3 mr-1" /> View Details</>
+                    )}
                   </Button>
                 ) : (
                   <Button 
