@@ -29,8 +29,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
     updated[index] = { ...updated[index], [field]: value };
     setContacts(updated);
   };
-
-  const handleImport = async () => {
+const handleImport = async () => {
     const validContacts = contacts.filter(c => c.name.trim() !== '' && (c.email || c.phone));
     
     if (validContacts.length === 0) {
@@ -121,11 +120,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
         }
       }));
 
-      let message = `Complete: Saved ${contactsSaved} contacts.`;
-      if (requestsSent > 0) message += ` Sent ${requestsSent} friend requests.`;
-      if (alreadyFriends > 0) message += ` Found ${alreadyFriends} existing friends.`;
-      
-      toast.success(message);
+      toast.success(`Complete: Sent ${requestsSent} friend requests and saved ${contactsSaved} contacts.`);
       onOpenChange(false);
       setContacts([{ name: '', phone: '', email: '' }]); // Reset form
 
@@ -146,7 +141,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
             Import Contacts
           </DialogTitle>
           <DialogDescription>
-            We'll check if your contact(s) are already on the app. If so, we'll connect you automatically. If not, we'll save them to your list.
+            We'll check if your contact(s) are already on the app. If not, we'll save them to your contact list.
           </DialogDescription>
         </DialogHeader>
 
