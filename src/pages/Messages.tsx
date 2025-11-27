@@ -916,7 +916,9 @@ export default function Messages() {
     const canModerate = isComm && (selectedChat.my_role === 'admin' || selectedChat.my_role === 'moderator');
 
     return (
-      <div className="fixed inset-0 z-50 bg-background flex flex-col min-h-60">
+      // FIX 1: Changed z-50 to z-[100] to cover the bottom nav bar
+      // FIX 2: Changed min-h-60 to h-[100dvh] (Dynamic Viewport Height) to respect mobile browser bars
+      <div className="fixed inset-0 z-[100] bg-background flex flex-col h-[100dvh]">
         <div className="px-4 py-3 border-b flex items-center gap-3 bg-gradient-to-r from-background to-muted/20 backdrop-blur-xl shadow-sm shrink-0 z-10">
           <Button variant="ghost" size="icon" className="-ml-2 rounded-full hover:bg-muted" onClick={() => setSelectedChat(null)}>
             <ArrowLeft className="h-5 w-5" />
@@ -1004,7 +1006,8 @@ export default function Messages() {
           </div>
         </div>
 
-        <div className="p-4 border-t bg-background/95 backdrop-blur-xl shrink-0">
+        {/* FIX 3: Added pb-[env(safe-area-inset-bottom)] to respect iPhone home swipe bar */}
+        <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t bg-background/95 backdrop-blur-xl shrink-0">
           {canType ? (
             <div className="flex flex-col gap-3">
               {imagePreview && (
