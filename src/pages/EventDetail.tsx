@@ -27,14 +27,12 @@ import {
   Loader2,
   UserPlus,
   ExternalLink,
-  Clock
+  Clock,
+  Check
 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -94,9 +92,17 @@ const EventDetail = () => {
   const { data: event, isPending: loadingEvent } = useQuery<Event>({
     queryKey: ['event', eventId],
     queryFn: async () => {
+      // FIX 1: Added join query for creator details
       const { data, error } = await supabase
         .from('events')
-        .select('*')
+        .select(`
+          *,
+          creator:profiles!creator_id (
+            user_id,
+            display_name,
+            avatar_url
+          )
+        `)
         .eq('id', eventId)
         .single();
 
@@ -110,14 +116,23 @@ const EventDetail = () => {
   const { data: attendees = [] } = useQuery<Attendee[]>({
     queryKey: ['event-attendees', eventId],
     queryFn: async () => {
+      // FIX 2: Added join query for profile details of attendees
       const { data, error } = await supabase
         .from('event_attendees')
-        .select('*')
+        .select(`
+          status,
+          profiles:user_id (
+            user_id,
+            display_name,
+            avatar_url
+          )
+        `)
         .eq('event_id', eventId)
         .eq('status', 'confirmed');
 
       if (error) throw error;
-      return data.map(a => a.profiles) as Attendee[];
+      // Map the nested profile object to flat Attendee type
+      return data.map((a: any) => a.profiles) as Attendee[];
     },
     enabled: !!eventId,
   });
@@ -410,12 +425,12 @@ const EventDetail = () => {
                 <h1 className="text-2xl font-bold mb-2">{event.title}</h1>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Avatar className="w-6 h-6">
-                    <AvatarImage src={event.creator.avatar_url} />
+                    <AvatarImage src={event.creator?.avatar_url} />
                     <AvatarFallback>
-                      {event.creator.display_name[0]?.toUpperCase()}
+                      {event.creator?.display_name?.[0]?.toUpperCase() || '?'}
                     </AvatarFallback>
                   </Avatar>
-                  <span>Hosted by {event.creator.display_name}</span>
+                  <span>Hosted by {event.creator?.display_name || 'Unknown'}</span>
                 </div>
               </div>
               <Badge variant={event.event_type === 'virtual' ? 'default' : 'secondary'}>
@@ -551,11 +566,11 @@ const EventDetail = () => {
                     <Avatar className="w-10 h-10">
                       <AvatarImage src={attendee.avatar_url} />
                       <AvatarFallback>
-                        {attendee.display_name[0]?.toUpperCase()}
+                        {attendee.display_name?.[0]?.toUpperCase() || 'U'}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
-                      <p className="font-semibold text-sm">{attendee.display_name}</p>
+                      <p className="font-semibold text-sm">{attendee.display_name || 'Unknown User'}</p>
                     </div>
                   </CardContent>
                 </Card>
