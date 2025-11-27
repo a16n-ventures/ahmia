@@ -352,6 +352,7 @@ export default function Friends() {
     mutationFn: async (targetProfile: Profile) => {
       if (!userId) throw new Error("Not authenticated");
 
+      // Robust check for existing relationship in both directions
       const { data: existing } = await supabase
         .from('friendships')
         .select('status')
@@ -375,15 +376,18 @@ export default function Friends() {
 
       if (error) throw error;
 
-      supabase.from('notifications').insert({
-        user_id: targetProfile.user_id,
-        type: 'friend_request',
-        title: 'New Friend Request',
-        content: `You have a new friend request.`,
-        data: { requester_id: userId },
-      }).then(({ error: notifError }) => {
-        if (notifError) console.error("Notification failed:", notifError);
-      });
+      // Safe notification dispatch
+      try {
+        await supabase.from('notifications').insert({
+          user_id: targetProfile.user_id,
+          type: 'friend_request',
+          title: 'New Friend Request',
+          content: `You have a new friend request.`,
+          data: { requester_id: userId },
+        });
+      } catch (e) {
+        console.warn("Failed to send notification:", e);
+      }
       
       return data;
     },
@@ -467,29 +471,42 @@ export default function Friends() {
       }
 
       const email = newContactEmail.trim().toLowerCase();
+      // Remove everything except digits for cleaner matching
+      const phoneDigits = newContactPhone.trim().replace(/\D/g, ''); 
       const phoneRaw = newContactPhone.trim();
-      const phoneDigits = phoneRaw.replace(/\D/g, ''); 
 
       // --- IMPROVED LOGIC: Check Platform Users First ---
       console.log("Searching for user with:", { email, phoneDigits });
 
+      // Search query - checks email or phone
       let query = supabase.from('profiles').select('user_id, display_name, avatar_url, email, phone');
       
       const conditions = [];
       if (email) conditions.push(`email.eq.${email}`);
-      if (phoneDigits.length > 6) {
+      if (phoneDigits.length >= 10) {
+        // Try precise match if we have enough digits. 
+        // Note: Ideally the DB should store normalized phones (e.g. E.164), 
+        // but here we match what's likely stored.
         conditions.push(`phone.eq.${phoneRaw}`); 
+        // If your DB uses normalized formats like +234..., add that condition too:
+        // conditions.push(`phone.eq.+${phoneDigits}`);
+      } else if (phoneRaw) {
+         conditions.push(`phone.eq.${phoneRaw}`);
       }
 
       if (conditions.length > 0) {
         query = query.or(conditions.join(','));
         const { data: existingUsers, error: searchError } = await query;
         
-        if (searchError) console.error("Search Error:", searchError);
+        if (searchError) {
+          console.error("Search Error:", searchError);
+          // Don't throw here, continue to save contact if search fails (e.g. RLS issues)
+        }
 
         if (existingUsers && existingUsers.length > 0) {
            const foundUser = existingUsers[0];
            
+           // Check if we already have a relationship (in EITHER direction)
            const { data: relationship } = await supabase
              .from('friendships')
              .select('status')
@@ -503,6 +520,7 @@ export default function Friends() {
                 return { status: 'pending', user: foundUser };
              }
            } else {
+             // Send Friend Request automatically
              const { error: reqError } = await supabase.from('friendships').insert({
                requester_id: userId,
                addressee_id: foundUser.user_id,
@@ -511,12 +529,15 @@ export default function Friends() {
              
              if (reqError) throw reqError;
              
+             // Fire and forget notification
              supabase.from('notifications').insert({
                 user_id: foundUser.user_id,
                 type: 'friend_request',
                 title: 'New Friend Request',
                 content: `You have a new friend request.`,
                 data: { requester_id: userId },
+             }).then(({ error: nErr }) => {
+                 if (nErr) console.warn("Notif error", nErr);
              });
 
              return { status: 'request_sent', user: foundUser };
@@ -525,12 +546,15 @@ export default function Friends() {
       }
 
       // --- FALLBACK: No User Found, Save to Contacts ---
+      
+      // Check for duplicate in contacts to prevent clutter
       if (email) {
         const { data: existingByEmail } = await supabase.from('contacts').select('id, name').eq('user_id', userId).eq('email', email).maybeSingle();
         if (existingByEmail) throw new Error(`Contact with this email already exists: ${existingByEmail.name}`);
       }
 
       if (phoneDigits) {
+        // Fetch all contacts with phone numbers to verify duplicates manually since formats differ
         const { data: existingByPhone } = await supabase.from('contacts').select('id, name, phone').not('phone', 'is', null).eq('user_id', userId);
         const duplicate = existingByPhone?.find(c => c.phone?.replace(/\D/g, '') === phoneDigits);
         if (duplicate) throw new Error(`Contact with this phone already exists: ${duplicate.name}`);
@@ -610,7 +634,7 @@ export default function Friends() {
       const message = `Hey ${contact.name.split(' ')[0]}, join me on ${appName}! Download here: ${inviteLink}`;
       
       if (contact.phone) {
-        const cleanPhone = contact.phone.replace(/[\s\-\(\)]/g, '');
+        const cleanPhone = contact.phone.replace(/\D/g, ''); // Ensure only digits
         const ua = navigator.userAgent.toLowerCase();
         const isiOS = /iphone|ipad|ipod/.test(ua);
         const separator = isiOS ? '&' : '?';
