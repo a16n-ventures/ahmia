@@ -48,21 +48,30 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
       await Promise.all(validContacts.map(async (contact) => {
         // 1. Search for existing user in profiles
         let query = supabase
-          .from('profiles')
-          .select('id, user_id, display_name')
+          .from('public_profiles')
+          .select('id, user_id, display_name, email, phone')
           .neq('user_id', user?.id); // Don't find yourself
 
         // Construct OR query for email OR phone
         const conditions = [];
         if (contact.email) conditions.push(`email.eq.${contact.email.trim()}`);
-        if (contact.phone) conditions.push(`phone.eq.${contact.phone.replace(/[\s\-\(\)]/g, '')}`);
+        if (contact.phone) {
+             const phoneRaw = contact.phone.trim();
+             // Try strict match if DB is clean
+             conditions.push(`phone.eq.${phoneRaw}`);
+        }
         
         // Apply the OR filter if we have conditions
+        let existingUser = null;
         if (conditions.length > 0) {
           query = query.or(conditions.join(','));
+          const { data, error } = await query.maybeSingle();
+          if (!error && data) {
+              existingUser = data;
+          } else if (error) {
+              console.log("Import Search Error (likely RLS):", error);
+          }
         }
-
-        const { data: existingUser } = await query.maybeSingle();
 
         if (existingUser) {
           // --- SCENARIO A: MATCH FOUND -> Check Friendship status first ---
@@ -76,7 +85,6 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
 
           if (existingFriendship) {
             alreadyFriends++;
-            // Don't do anything if already friends or pending
           } else {
              // Send Friend Request
             const { error: reqError } = await supabase
