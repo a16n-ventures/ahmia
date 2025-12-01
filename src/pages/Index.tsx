@@ -14,10 +14,6 @@ import { useAuth } from '@/contexts/AuthContext';
 const Index = () => {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const currentYear = new Date().getFullYear();
-
   // 1. Get 'isLoading' and 'user' (or session) correctly
   // Ensure your useAuth hook actually returns isLoading!
   const { user, isLoading } = useAuth(); 
