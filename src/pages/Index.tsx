@@ -17,40 +17,21 @@ const Index = () => {
   
   const { user, isLoading } = useAuth(); 
   const navigate = useNavigate();
-  const currentYear = new Date().getFullYear();
+  const currentYear = new Date().getFullYear(); 
 
-  useEffect(() => {
+    useEffect(() => {
     // 1. Wait for Auth to finish loading
     if (isLoading) return;
 
-    // 2. If user is NOT logged in, do nothing (stay on landing page)
-    if (!user) return;
-
-    // 3. IDENTIFY LOCATION
-    const hostname = window.location.hostname;
-    const isSubdomain = hostname === 'try.usecorridor.xyz';
-
-    // 4. EXECUTE REDIRECT
-    if (isSubdomain) {
-      // 🚨 CRITICAL: We must leave the subdomain entirely!
-      // We cannot use navigate() here because /app doesn't exist on this subdomain.
-      // Use the FULL URL of your main site.
-      window.location.href = 'https://try.usecorridor.xyz/lynq-africa';
-    } else {
-      // If we are on localhost or the main domain, standard navigation works.
+    // 2. If user IS logged in, send them to the app
+    if (user) {
       navigate("/app", { replace: true });
     }
-  }, [user, isLoading, navigate]);
 
-  // --- PREVENT FLICKER ---
-  // While loading or redirecting, show a spinner
-  if (isLoading || user) {
-     return (
-       <div className="min-h-screen flex items-center justify-center bg-background">
-         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-       </div>
-     );
-  }
+    // 3. If user is NOT logged in, do nothing. 
+    // They will stay on this page (Index.tsx) which renders the Landing Page.
+  }, [user, isLoading, navigate]);
+  
   // --- FIX END ---
 
   const handleAuth = (mode: 'login' | 'signup') => {
