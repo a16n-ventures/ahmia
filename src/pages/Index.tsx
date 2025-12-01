@@ -18,29 +18,31 @@ const Index = () => {
   const navigate = useNavigate();
   const currentYear = new Date().getFullYear();
 
+  // 1. Get 'isLoading' and 'user' (or session) correctly
+  // Ensure your useAuth hook actually returns isLoading!
+  const { user, isLoading } = useAuth(); 
+  const navigate = useNavigate();
+  const currentYear = new Date().getFullYear();
+
   useEffect(() => {
-    // 1. Only redirect if we are NOT on the subdomain
-    // (This prevents the 'try' page from breaking)
+    // 2. Check the subdomain
     const isSubdomain = window.location.hostname === 'try.usecorridor.xyz';
     
-    if (!isLoading && session && !isSubdomain) {
-      navigate("/app");
+    // 3. Only redirect if:
+    //    - We are done loading auth state
+    //    - The user IS logged in
+    //    - We are NOT on the 'try' subdomain
+    if (!isLoading && user && !isSubdomain) {
+      navigate("/app", { replace: true });
     }
-  }, [session, isLoading, navigate]);
+  }, [user, isLoading, navigate]);
 
-    // 2. Show nothing (or a spinner) while checking authentication
-  if (isLoading) return null; 
-
-  // 3. If logged in (and not loading), return null to prevent flicker 
-  // while the navigate() above takes effect.
+  // 4. Prevent Flicker:
+  // If we are loading, OR if we are about to redirect, show nothing.
   const isSubdomain = window.location.hostname === 'try.usecorridor.xyz';
-  if (session && !isSubdomain) return null;
   
-  useEffect(() => {
-    if (user) {
-      navigate('/app', { replace: true });
-    }
-  }, [user, navigate]);
+  if (isLoading) return null; // Show white screen (or spinner) while checking
+  if (user && !isSubdomain) return null; // Show white screen while redirecting
 
   const handleAuth = (mode: 'login' | 'signup') => {
     setAuthMode(mode);
