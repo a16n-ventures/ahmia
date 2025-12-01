@@ -20,16 +20,19 @@ const Index = () => {
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
-    // Check if we are on the specific subdomain
+    // 1. Check if we are on the specific subdomain
     const isSubdomain = window.location.hostname === 'try.usecorridor.xyz';
     
-    // Redirect Logic:
-    // Only redirect if:
-    // 1. Auth is finished loading (!isLoading)
-    // 2. User exists
-    // 3. We are NOT on the 'try' subdomain
-    if (!isLoading && user && !isSubdomain) {
-      navigate("/app", { replace: true });
+    // 2. Wait for auth to load
+    if (!isLoading && user) {
+      if (isSubdomain) {
+        // CASE A: User is on Subdomain -> Send them to the MAIN domain app
+        // This is a "Hard Redirect" that leaves the subdomain
+        window.location.href = 'https://usecorridor.xyz/app';
+      } else {
+        // CASE B: User is on Main Domain (or localhost) -> Normal internal navigation
+        navigate("/app", { replace: true });
+      }
     }
   }, [user, isLoading, navigate]);
 
