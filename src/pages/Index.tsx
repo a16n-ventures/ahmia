@@ -19,10 +19,28 @@ const Index = () => {
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
+    // 1. Only redirect if we are NOT on the subdomain
+    // (This prevents the 'try' page from breaking)
+    const isSubdomain = window.location.hostname === 'try.usecorridor.xyz';
+    
+    if (!isLoading && session && !isSubdomain) {
+      navigate("/app");
+    }
+  }, [session, isLoading, navigate]);
+
+    // 2. Show nothing (or a spinner) while checking authentication
+  if (isLoading) return null; 
+
+  // 3. If logged in (and not loading), return null to prevent flicker 
+  // while the navigate() above takes effect.
+  const isSubdomain = window.location.hostname === 'try.usecorridor.xyz';
+  if (session && !isSubdomain) return null;
+  
+  {/* useEffect(() => {
     if (user) {
       navigate('/app', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate]); */}
 
   const handleAuth = (mode: 'login' | 'signup') => {
     setAuthMode(mode);
