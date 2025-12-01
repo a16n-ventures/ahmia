@@ -148,10 +148,10 @@ const Index = () => {
               
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start pt-2">
                 {/* Android Button */}
-                <Button className="h-14 px-6 rounded-xl bg-black text-white hover:bg-gray-800 transition-all flex items-center gap-3 shadow-lg">
+                <Button variant="outline" disabled className="h-14 px-6 rounded-xl bg-black text-white hover:bg-gray-800 transition-all flex items-center gap-3 cursor-not-allowed shadow-lg">
                    <Play className="w-6 h-6 fill-current" />
                    <div className="text-left">
-                     <div className="text-[10px] uppercase font-medium opacity-80">Get it on</div>
+                     <div className="text-[10px] uppercase font-medium opacity-80">Coming Soon to</div>
                      <div className="text-base font-bold leading-none">Google Play</div>
                    </div>
                 </Button>
