@@ -2,7 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+// Added 'Navigate' to the imports for the redirection logic
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
@@ -22,7 +23,7 @@ import Notifications from "./pages/Notifications";
 import MainLayout from "./components/layout/MainLayout";
 import NotFound from "./pages/NotFound";
 
-// Admin Components (These were missing)
+// Admin Components
 import AdminLayout from "./components/layout/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminSettings from "./pages/admin/AdminSettings";
@@ -33,65 +34,87 @@ import AdminWallet from "./pages/admin/AdminWallet";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            {/* Public Route */}
-            <Route path="/" element={<Index />} />
+const App = () => {
+  // 1. Check if we are on the 'try' subdomain
+  const hostname = window.location.hostname;
+  const isTrySubdomain = hostname === "try.usecorridor.xyz";
 
-            {/* Admin Routes */}
-            <Route path="/admin" element={<AdminLayout />}>
-              <Route index element={<AdminDashboard />} />
-              <Route path="settings" element={<AdminSettings />} />
-              <Route path="users" element={<AdminUsers />} />
-              <Route path="moderation" element={<AdminModeration />} /> 
-              <Route path="events" element={<AdminEvents />} />
-              <Route path="revenue" element={<AdminWallet />} />
-            </Route>
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          
+          <BrowserRouter>
+            {/* 2. Conditional Routing based on Subdomain */}
+            {isTrySubdomain ? (
+              <Routes>
+                {/* CASE A: User visits root 'try.usecorridor.xyz' -> Redirect to '/lynq-africa' */}
+                <Route path="/" element={<Navigate to="/lynq-africa" replace />} />
+                
+                {/* CASE B: User is at '/lynq-africa' -> Show the Index (Landing) page */}
+                <Route path="/lynq-africa" element={<Index />} />
+                
+                {/* CASE C: Catch-all (e.g. 404s on subdomain) -> Redirect back to '/lynq-africa' */}
+                <Route path="*" element={<Navigate to="/lynq-africa" replace />} />
+              </Routes>
+            ) : (
+              /* 3. STANDARD ROUTING (Main Domain) */
+              <Routes>
+                {/* Public Route */}
+                <Route path="/" element={<Index />} />
 
-            {/* User App Routes (With Bottom Navigation) */}
-            <Route path="/app" element={
-              <ProtectedRoute>
-                <MainLayout />
-              </ProtectedRoute>
-            }>
-              <Route index element={<Discover />} />
-              <Route path="discover" element={<Discover />} />
-              <Route path="friends" element={<Friends />} />
-              <Route path="map" element={<Map />} />
-              <Route path="messages" element={<Messages />} />
-              <Route path="events" element={<Events />} />
-              <Route path="events/:eventId" element={<EventDetail />} />
-              <Route path="events/:eventId/invite" element={<EventInvite />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="notifications" element={<Notifications />} />
-            </Route>
+                {/* Admin Routes */}
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<AdminDashboard />} />
+                  <Route path="settings" element={<AdminSettings />} />
+                  <Route path="users" element={<AdminUsers />} />
+                  <Route path="moderation" element={<AdminModeration />} /> 
+                  <Route path="events" element={<AdminEvents />} />
+                  <Route path="revenue" element={<AdminWallet />} />
+                </Route>
 
-            {/* Standalone Protected Routes (No Bottom Nav) */}
-            <Route path="/create-event" element={
-              <ProtectedRoute>
-                <CreateEvent />
-              </ProtectedRoute>
-            } />
-            <Route path="/premium" element={
-              <ProtectedRoute>
-                <Premium />
-              </ProtectedRoute>
-            } />
+                {/* User App Routes */}
+                <Route path="/app" element={
+                  <ProtectedRoute>
+                    <MainLayout />
+                  </ProtectedRoute>
+                }>
+                  <Route index element={<Discover />} />
+                  <Route path="discover" element={<Discover />} />
+                  <Route path="friends" element={<Friends />} />
+                  <Route path="map" element={<Map />} />
+                  <Route path="messages" element={<Messages />} />
+                  <Route path="events" element={<Events />} />
+                  <Route path="events/:eventId" element={<EventDetail />} />
+                  <Route path="events/:eventId/invite" element={<EventInvite />} />
+                  <Route path="profile" element={<Profile />} />
+                  <Route path="notifications" element={<Notifications />} />
+                </Route>
 
-            {/* Catch-all */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
-  </QueryClientProvider>
-);
+                {/* Standalone Protected Routes */}
+                <Route path="/create-event" element={
+                  <ProtectedRoute>
+                    <CreateEvent />
+                  </ProtectedRoute>
+                } />
+                <Route path="/premium" element={
+                  <ProtectedRoute>
+                    <Premium />
+                  </ProtectedRoute>
+                } />
+
+                {/* Catch-all */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            )}
+          </BrowserRouter>
+
+        </TooltipProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;
-                
