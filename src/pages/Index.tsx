@@ -35,7 +35,7 @@ const Index = () => {
       // 🚨 CRITICAL: We must leave the subdomain entirely!
       // We cannot use navigate() here because /app doesn't exist on this subdomain.
       // Use the FULL URL of your main site.
-      window.location.href = 'https://try.usecorridor.xyz/app';
+      window.location.href = 'https://try.usecorridor.xyz/lynq-africa';
     } else {
       // If we are on localhost or the main domain, standard navigation works.
       navigate("/app", { replace: true });
