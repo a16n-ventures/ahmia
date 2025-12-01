@@ -2,8 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-// Added 'Navigate' to the imports for the redirection logic
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+// 1. ADD 'Navigate' HERE
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
@@ -43,17 +43,17 @@ const App = () => {
           <Sonner />
           
           <BrowserRouter>
+              {/* 2. ONLY ONE <Routes> BLOCK */}
               <Routes>
-                {/* Public Route */}
+                
+                {/* --- Public Routes --- */}
+                {/* The Landing Page */}
                 <Route path="/lynq-africa" element={<Index />} />
-                <Routes>
-  {/* The Landing Page */}
-  <Route path="/lynq-africa" element={<Index />} />
-  
-  {/* Optional: Redirect root to landing */}
-  <Route path="/" element={<Navigate to="/lynq-africa" replace />} />
+                
+                {/* Redirect root (/) to landing page */}
+                <Route path="/" element={<Navigate to="/lynq-africa" replace />} />
 
-                {/* Admin Routes */}
+                {/* --- Admin Routes --- */}
                 <Route path="/admin" element={<AdminLayout />}>
                   <Route index element={<AdminDashboard />} />
                   <Route path="settings" element={<AdminSettings />} />
@@ -63,7 +63,7 @@ const App = () => {
                   <Route path="revenue" element={<AdminWallet />} />
                 </Route>
 
-                {/* User App Routes */}
+                {/* --- User App Routes (Protected) --- */}
                 <Route path="/app" element={
                   <ProtectedRoute>
                     <MainLayout />
@@ -81,7 +81,7 @@ const App = () => {
                   <Route path="notifications" element={<Notifications />} />
                 </Route>
 
-                {/* Standalone Protected Routes */}
+                {/* --- Standalone Protected Routes --- */}
                 <Route path="/create-event" element={
                   <ProtectedRoute>
                     <CreateEvent />
@@ -93,10 +93,9 @@ const App = () => {
                   </ProtectedRoute>
                 } />
 
-                {/* Catch-all */}
+                {/* --- Catch-all (404) --- */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
-            )}
           </BrowserRouter>
 
         </TooltipProvider>
