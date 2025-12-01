@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { 
-  MapPin, Users, MessageCircle, Shield, Sparkles, ArrowRight, 
-  Globe, Smartphone, Download, Play, Apple, Twitter, Instagram, Linkedin,
+  MapPin, Users, MessageCircle, Sparkles, Globe, 
+  Smartphone, Play, Apple, Twitter, Instagram, Linkedin,
   Copyright
 } from 'lucide-react';
-import heroImage from '@/assets/hero-image.jpg';
+// import heroImage from '@/assets/hero-image.jpg'; // Keep this commented if unused
 import AuthModal from '@/components/auth/AuthModal';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,31 +14,35 @@ import { useAuth } from '@/contexts/AuthContext';
 const Index = () => {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
-  // 1. Get 'isLoading' and 'user' (or session) correctly
-  // Ensure your useAuth hook actually returns isLoading!
+  
   const { user, isLoading } = useAuth(); 
   const navigate = useNavigate();
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
-    // 2. Check the subdomain
+    // Check if we are on the specific subdomain
     const isSubdomain = window.location.hostname === 'try.usecorridor.xyz';
     
-    // 3. Only redirect if:
-    //    - We are done loading auth state
-    //    - The user IS logged in
-    //    - We are NOT on the 'try' subdomain
+    // Redirect Logic:
+    // Only redirect if:
+    // 1. Auth is finished loading (!isLoading)
+    // 2. User exists
+    // 3. We are NOT on the 'try' subdomain
     if (!isLoading && user && !isSubdomain) {
       navigate("/app", { replace: true });
     }
   }, [user, isLoading, navigate]);
 
-  // 4. Prevent Flicker:
-  // If we are loading, OR if we are about to redirect, show nothing.
-  const isSubdomain = window.location.hostname === 'try.usecorridor.xyz';
-  
-  if (isLoading) return null; // Show white screen (or spinner) while checking
-  if (user && !isSubdomain) return null; // Show white screen while redirecting
+  // --- FIX START ---
+  // If we are still checking authentication, show a Loading Spinner instead of a blank screen
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+  // --- FIX END ---
 
   const handleAuth = (mode: 'login' | 'signup') => {
     setAuthMode(mode);
@@ -80,12 +84,6 @@ const Index = () => {
         {/* Background Image with Gradient Overlay */}
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-background z-10" />
-          { /* <img 
-            src={heroImage} 
-            onError={(e) => e.currentTarget.src = 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?q=80&w=2070&auto=format&fit=crop'}
-            alt="Background" 
-            className="w-full h-full object-cover scale-105 animate-slow-zoom"
-          /> */ }
         </div>
 
         {/* Content */}
@@ -163,7 +161,6 @@ const Index = () => {
               </p>
               
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start pt-2">
-                {/* Android Button */}
                 <Button variant="outline" disabled className="h-14 px-6 rounded-xl bg-black text-white hover:bg-gray-800 transition-all flex items-center gap-3 cursor-not-allowed shadow-lg">
                    <Play className="w-6 h-6 fill-current" />
                    <div className="text-left">
@@ -172,7 +169,6 @@ const Index = () => {
                    </div>
                 </Button>
 
-                {/* iOS Button (Disabled/Coming Soon) */}
                 <Button variant="outline" disabled className="h-14 px-6 rounded-xl border-2 border-dashed border-muted-foreground/30 bg-transparent text-muted-foreground flex items-center gap-3 cursor-not-allowed opacity-70">
                    <Apple className="w-6 h-6 pb-1" />
                    <div className="text-left">
@@ -183,29 +179,23 @@ const Index = () => {
               </div>
             </div>
 
-            {/* App Preview Graphic (Placeholder Style) */}
             <div className="flex-1 relative w-full max-w-sm lg:max-w-md mx-auto">
                <div className="relative aspect-[9/18] rounded-[2.5rem] border-8 border-gray-900 bg-gray-800 shadow-2xl overflow-hidden">
-                  {/* Screen Content */}
                   <div className="absolute inset-0 bg-background flex flex-col">
-                    {/* Fake Map UI */}
                     <div className="flex-1 bg-muted/20 relative p-4">
                        <div className="absolute top-1/4 left-1/4 w-8 h-8 bg-blue-500 rounded-full border-4 border-white shadow-lg animate-bounce" />
                        <div className="absolute top-1/2 right-1/3 w-8 h-8 bg-purple-500 rounded-full border-4 border-white shadow-lg" />
                        <div className="absolute bottom-1/3 left-1/2 w-8 h-8 bg-green-500 rounded-full border-4 border-white shadow-lg" />
                     </div>
-                    {/* Fake Bottom Nav */}
                     <div className="h-16 bg-white border-t flex justify-around items-center px-4">
                       <div className="w-8 h-8 rounded-full bg-gray-100" />
                       <div className="w-8 h-8 rounded-full bg-blue-100" />
                       <div className="w-8 h-8 rounded-full bg-gray-100" />
                     </div>
                   </div>
-                  {/* Notch */}
                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-6 bg-gray-900 rounded-b-2xl" />
                </div>
                
-               {/* Decorative blobs */}
                <div className="absolute -z-10 top-10 -right-10 w-64 h-64 bg-blue-500/20 rounded-full blur-3xl" />
                <div className="absolute -z-10 bottom-10 -left-10 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl" />
             </div>
@@ -282,4 +272,3 @@ const Index = () => {
 };
 
 export default Index;
-      
