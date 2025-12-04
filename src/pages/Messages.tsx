@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { 
   Search, Send, ArrowLeft, Plus, Settings, Users, 
   MessageSquare, X, Loader2, 
-  MoreVertical, Phone, Video, Info, UserPlus,
+  MoreVertical, Info, UserPlus,
   Shield, Trash2, Ban, Crown, Image as ImageIcon,
   Check, AlertCircle
 } from 'lucide-react';
