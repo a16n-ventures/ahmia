@@ -38,6 +38,30 @@ export type Database = {
         }
         Relationships: []
       }
+      blocked_users: {
+        Row: {
+          blocked_id: string
+          blocker_id: string
+          created_at: string
+          id: string
+          reason: string | null
+        }
+        Insert: {
+          blocked_id: string
+          blocker_id: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+        }
+        Update: {
+          blocked_id?: string
+          blocker_id?: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+        }
+        Relationships: []
+      }
       checkins: {
         Row: {
           created_at: string | null
@@ -1211,6 +1235,7 @@ export type Database = {
           created_at: string
           id: string
           is_sharing_location: boolean | null
+          last_seen: string | null
           latitude: number
           longitude: number
           updated_at: string
@@ -1221,6 +1246,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_sharing_location?: boolean | null
+          last_seen?: string | null
           latitude: number
           longitude: number
           updated_at?: string
@@ -1231,6 +1257,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_sharing_location?: boolean | null
+          last_seen?: string | null
           latitude?: number
           longitude?: number
           updated_at?: string
