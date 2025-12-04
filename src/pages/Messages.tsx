@@ -710,7 +710,7 @@ export default function Messages() {
       
       return { previousMessages };
     },
-    onError: (err, newTodo, context) => {
+    onError: (err, newTodo, context: any) => {
       if (context?.previousMessages) {
         queryClient.setQueryData(['messages', selectedChat?.type, selectedChat?.id], context.previousMessages);
       }
@@ -1295,7 +1295,8 @@ const CommunityInfoDialog = ({
       await supabase
         .from('community_members')
         .update({ role: newRole })
-        .match({ community_id: community.id, user_id: userId });
+        .eq('community_id', community.id)
+        .eq('user_id', userId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comm_members'] });
@@ -1309,7 +1310,8 @@ const CommunityInfoDialog = ({
       await supabase
         .from('community_members')
         .update({ is_banned: true })
-        .match({ community_id: community.id, user_id: userId });
+        .eq('community_id', community.id)
+        .eq('user_id', userId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comm_members'] });
@@ -1326,7 +1328,8 @@ const CommunityInfoDialog = ({
       await supabase
         .from('community_members')
         .delete()
-        .match({ community_id: community.id, user_id: userId });
+        .eq('community_id', community.id)
+        .eq('user_id', userId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comm_members'] });
@@ -1343,7 +1346,8 @@ const CommunityInfoDialog = ({
       await supabase
         .from('community_members')
         .update({ is_banned: false })
-        .match({ community_id: community.id, user_id: userId });
+        .eq('community_id', community.id)
+        .eq('user_id', userId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comm_members'] });
@@ -1574,3 +1578,4 @@ const CommunityInfoDialog = ({
       </Dialog>
     </>
   );
+}
