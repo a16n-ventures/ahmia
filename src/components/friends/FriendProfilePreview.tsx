@@ -67,12 +67,12 @@ export function FriendProfilePreview({
   };
 
   const handleMessage = () => {
-    navigate(`/messages?userId=${profile?.user_id}`);
+    navigate(`/app/messages?userId=${profile?.user_id}`);
     onClose();
   };
 
   const handleViewOnMap = () => {
-    navigate(`/map?focus=${profile?.user_id}`);
+    navigate(`/app/map?focus=${profile?.user_id}`);
     onClose();
   };
 
