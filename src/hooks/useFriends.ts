@@ -33,12 +33,31 @@ export type BlockedUser = {
 
 const STALE_TIME = 30000;
 
-const mapFriendshipData = (item: any): Friendship => ({
-  ...item,
-  status: item.status as 'pending' | 'accepted' | 'declined',
-  requester: item.requester || { user_id: item.requester_id, display_name: null, avatar_url: null },
-  addressee: item.addressee || { user_id: item.addressee_id, display_name: null, avatar_url: null }
-});
+// Helper to fetch profiles for friendships
+async function enrichFriendshipsWithProfiles(friendships: any[]): Promise<Friendship[]> {
+  if (!friendships.length) return [];
+  
+  const userIds = new Set<string>();
+  friendships.forEach(f => {
+    userIds.add(f.requester_id);
+    userIds.add(f.addressee_id);
+  });
+  
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('user_id, display_name, avatar_url')
+    .in('user_id', Array.from(userIds));
+  
+  const profileMap = new Map<string, Profile>();
+  (profiles || []).forEach(p => profileMap.set(p.user_id, p));
+  
+  return friendships.map(f => ({
+    ...f,
+    status: f.status as 'pending' | 'accepted' | 'declined',
+    requester: profileMap.get(f.requester_id) || { user_id: f.requester_id, display_name: null, avatar_url: null },
+    addressee: profileMap.get(f.addressee_id) || { user_id: f.addressee_id, display_name: null, avatar_url: null }
+  }));
+}
 
 export function useFriends(userId: string | undefined) {
   const queryClient = useQueryClient();
@@ -50,16 +69,12 @@ export function useFriends(userId: string | undefined) {
       if (!userId) return [];
       const { data, error } = await supabase
         .from('friendships')
-        .select(`
-          id, requester_id, addressee_id, status, created_at, 
-          requester:profiles!friendships_requester_id_fkey(user_id, display_name, avatar_url), 
-          addressee:profiles!friendships_addressee_id_fkey(user_id, display_name, avatar_url)
-        `)
+        .select('id, requester_id, addressee_id, status, created_at')
         .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
         .eq('status', 'accepted')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map(mapFriendshipData);
+      return enrichFriendshipsWithProfiles(data || []);
     },
     enabled: !!userId,
     staleTime: STALE_TIME,
@@ -72,16 +87,12 @@ export function useFriends(userId: string | undefined) {
       if (!userId) return [];
       const { data, error } = await supabase
         .from('friendships')
-        .select(`
-          id, requester_id, addressee_id, status, created_at, 
-          requester:profiles!friendships_requester_id_fkey(user_id, display_name, avatar_url), 
-          addressee:profiles!friendships_addressee_id_fkey(user_id, display_name, avatar_url)
-        `)
+        .select('id, requester_id, addressee_id, status, created_at')
         .eq('addressee_id', userId)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map(mapFriendshipData);
+      return enrichFriendshipsWithProfiles(data || []);
     },
     enabled: !!userId,
     staleTime: STALE_TIME,
@@ -94,16 +105,12 @@ export function useFriends(userId: string | undefined) {
       if (!userId) return [];
       const { data, error } = await supabase
         .from('friendships')
-        .select(`
-          id, requester_id, addressee_id, status, created_at, 
-          requester:profiles!friendships_requester_id_fkey(user_id, display_name, avatar_url), 
-          addressee:profiles!friendships_addressee_id_fkey(user_id, display_name, avatar_url)
-        `)
+        .select('id, requester_id, addressee_id, status, created_at')
         .eq('requester_id', userId)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map(mapFriendshipData);
+      return enrichFriendshipsWithProfiles(data || []);
     },
     enabled: !!userId,
     staleTime: STALE_TIME,

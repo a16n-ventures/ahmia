@@ -273,25 +273,27 @@ export default function Discover() {
       const { data: storyData } = await supabase.from('profiles').select('id, display_name, avatar_url, stories:stories!author_id(id, created_at)').filter('stories.created_at', 'gte', yesterday).returns<ProfileWithStoryInner[]>();
       if (storyData) setStoryUsers(Array.from(new Map(storyData.map(i => [i.id, { id: i.id, display_name: i.display_name, avatar_url: i.avatar_url }])).values()));
 
-      // 2. Communities with membership status
-      const { data: comms } = await supabase.from('communities').select(`
-        *,
-        community_members!inner(user_id, role)
-      `).limit(20);
+      // 2. Communities with membership status (use left join instead of inner)
+      const { data: comms } = await supabase.from('communities').select('*').limit(20);
       
       if (comms) {
-        const enrichedComms: Community[] = comms.map((c: any) => {
-          const myMembership = c.community_members?.find((m: any) => m.user_id === user.id);
-          return {
-            id: c.id,
-            name: c.name,
-            member_count: c.member_count,
-            description: c.description,
-            avatar_url: c.avatar_url,
-            is_member: !!myMembership,
-            my_role: myMembership?.role || null
-          };
-        });
+        // Fetch memberships separately to avoid inner join filtering
+        const { data: memberships } = await supabase
+          .from('community_members')
+          .select('community_id, role')
+          .eq('user_id', user.id);
+        
+        const membershipMap = new Map(memberships?.map(m => [m.community_id, m.role]) || []);
+        
+        const enrichedComms: Community[] = comms.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          member_count: c.member_count,
+          description: c.description,
+          avatar_url: c.avatar_url,
+          is_member: membershipMap.has(c.id),
+          my_role: (membershipMap.get(c.id) as 'admin' | 'member') || null
+        }));
         setCommunities(enrichedComms);
       }
       

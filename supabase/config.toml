@@ -1,5 +1,16 @@
 project_id = "xinpddlavyqkgwnkncst"
 
-# supabase/config.toml
 [functions.verify-payment]
-verify_jwt = true  # Require authentication
+verify_jwt = true
+
+[functions.match-contacts]
+verify_jwt = true
+
+[functions.flutterwave-webhook]
+verify_jwt = false
+
+[functions.manage-user-role]
+verify_jwt = true
+
+[functions.request-payout]
+verify_jwt = true
