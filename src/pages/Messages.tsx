@@ -492,27 +492,35 @@ export default function Messages() {
         .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
         .order('created_at', { ascending: false });
 
-      if (error || !data) return [];
+      if (error || !data) {
+        console.error("Error fetching DMs:", error);
+        return [];
+      }
 
       const map = new Map();
       data.forEach((msg: any) => {
-        const rawPartner = msg.sender_id === user.id ? msg.receiver : msg.sender;
-        const partner = Array.isArray(rawPartner) ? rawPartner[0] : rawPartner;
-        const partnerId = partner?.user_id || partner?.id;
+        // 1. Get the partner ID directly from the message table (guaranteed to exist)
+        const isMeSender = msg.sender_id === user.id;
+        const partnerId = isMeSender ? msg.receiver_id : msg.sender_id;
 
-        if (partner && partnerId && !map.has(partnerId)) {
-          map.set(partnerId, {
-            type: 'dm',
-            id: partnerId,
-            partner_id: partnerId,
-            name: partner.display_name || 'Unknown User',
-            avatar: partner.avatar_url,
-            last_msg: msg.content || (msg.image_url ? '📷 Photo' : ''),
-            time: msg.created_at,
-            is_online: false,
-            unread_count: 0
-          });
-        }
+        // 2. Skip if we already processed this partner
+        if (map.has(partnerId)) return;
+
+        // 3. Try to get profile details, fallback to safe defaults if missing
+        const rawProfile = isMeSender ? msg.receiver : msg.sender;
+        const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
+
+        map.set(partnerId, {
+          type: 'dm',
+          id: partnerId,
+          partner_id: partnerId,
+          name: profile?.display_name || 'Unknown User',
+          avatar: profile?.avatar_url,
+          last_msg: msg.content || (msg.image_url ? '📷 Photo' : 'Message'),
+          time: msg.created_at,
+          is_online: false,
+          unread_count: 0
+        });
       });
       return Array.from(map.values());
     },
