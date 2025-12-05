@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatDistanceToNow } from "date-fns";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { useFriends } from "@/hooks/useFriends";
 
 // --- TYPES ---
 type ChatMode = 'dm' | 'community';
@@ -542,31 +543,23 @@ export default function Messages() {
     enabled: !!user?.id,
   });
 
-  const { data: friends = [] } = useQuery({
-    queryKey: ['my_friends', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return [];
-      const { data } = await supabase
-        .from('friendships')
-        .select('requester_id, addressee_id, requester:profiles!requester_id(*), addressee:profiles!addressee_id(*)')
-        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-        .eq('status', 'accepted');
-        
-      return data?.map((f: any) => {
-        const rawProfile = f.requester_id === user.id ? f.addressee : f.requester;
-        const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
-        if (!profile) return null;
-        return { 
-          id: profile.user_id, 
-          name: profile.display_name, 
-          avatar: profile.avatar_url,
-          is_online: false,
-          last_seen: null
-        };
-      }).filter(Boolean) || [];
-    },
-    enabled: !!user?.id,
-  });
+  const { friends: rawFriends = [] } = useFriends(user?.id);
+
+  const friends = useMemo(() => {
+    if (!rawFriends || !user?.id) return [];
+    return rawFriends.map((f: any) => {
+      const rawProfile = f.requester_id === user.id ? f.addressee : f.requester;
+      const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
+      if (!profile) return null;
+      return { 
+        id: profile.user_id || profile.id, // Fallback to id if user_id is missing
+        name: profile.display_name, 
+        avatar: profile.avatar_url,
+        is_online: false,
+        last_seen: null
+      };
+    }).filter(Boolean);
+  }, [rawFriends, user?.id]);
 
   const { data: messages = [] } = useQuery({
     queryKey: ['messages', selectedChat?.type, selectedChat?.id, user?.id],
