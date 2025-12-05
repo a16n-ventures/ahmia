@@ -55,7 +55,7 @@ export function FriendCard({
         <Button 
           variant="ghost" 
           size="icon"
-          onClick={() => navigate(`/messages?userId=${friend.user_id}`)}
+          onClick={() => navigate(`/app/messages?userId=${friend.user_id}`)}
         >
           <MessageSquare className="w-5 h-5 text-primary" />
         </Button>
@@ -67,7 +67,7 @@ export function FriendCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => navigate(`/map?focus=${friend.user_id}`)}>
+            <DropdownMenuItem onClick={() => navigate(`/app/map?focus=${friend.user_id}`)}>
               <MapPin className="w-4 h-4 mr-2" />
               View on Map
             </DropdownMenuItem>
