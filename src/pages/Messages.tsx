@@ -498,12 +498,13 @@ export default function Messages() {
       data.forEach((msg: any) => {
         const rawPartner = msg.sender_id === user.id ? msg.receiver : msg.sender;
         const partner = Array.isArray(rawPartner) ? rawPartner[0] : rawPartner;
+        const partnerId = partner?.user_id || partner?.id;
 
-        if (partner && partner.user_id && !map.has(partner.user_id)) {
-          map.set(partner.user_id, {
+        if (partner && partnerId && !map.has(partnerId)) {
+          map.set(partnerId, {
             type: 'dm',
-            id: partner.user_id,
-            partner_id: partner.user_id,
+            id: partnerId,
+            partner_id: partnerId,
             name: partner.display_name || 'Unknown User',
             avatar: partner.avatar_url,
             last_msg: msg.content || (msg.image_url ? '📷 Photo' : ''),
@@ -513,8 +514,8 @@ export default function Messages() {
           });
         }
       });
-      return Array.from(map.values());
-    },
+      return Array.from(map.values()
+    );
     enabled: !!user?.id,
   });
 
