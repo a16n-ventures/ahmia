@@ -1091,114 +1091,32 @@ export default function Messages() {
         <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col p-0">
           <DialogHeader className="px-6 pt-6 pb-4">
             <DialogTitle className="text-xl">New Message</DialogTitle>
-            <DialogDescription>Start a conversation with your friends</DialogDescription>
+            <DialogDescription>
+              {friends.length > 0 
+                ? `Start a conversation with ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
+                : "Start a conversation with your friends"
+              }
+            </DialogDescription>
           </DialogHeader>
           
-          <div className="px-6 pb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search friends..." 
-                className="pl-10 bg-muted/50 rounded-xl border-muted-foreground/20 focus:border-primary" 
-                value={friendSearch} 
-                onChange={(e) => setFriendSearch(e.target.value)} 
-              />
+          {friends.length > 0 && (
+            <div className="px-6 pb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Search friends..." 
+                  className="pl-10 bg-muted/50 rounded-xl border-muted-foreground/20 focus:border-primary" 
+                  value={friendSearch} 
+                  onChange={(e) => setFriendSearch(e.target.value)} 
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <ScrollArea className="flex-1 px-6">
             <div className="space-y-6 pb-6">
-              {/* Online Friends */}
-              {onlineFriends.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3 px-1">
-                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Online • {onlineFriends.length}
-                    </h3>
-                  </div>
-                  <div className="space-y-1">
-                    {onlineFriends.map((f: any) => (
-                      <div 
-                        key={f.id} 
-                        onClick={() => { 
-                          setSelectedChat({ 
-                            type: 'dm', 
-                            id: f.id, 
-                            partner_id: f.id, 
-                            name: f.name, 
-                            avatar: f.avatar,
-                            is_online: f.is_online 
-                          }); 
-                          setIsNewChatOpen(false); 
-                        }} 
-                        className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
-                      >
-                        <div className="relative">
-                          <Avatar className="h-12 w-12 ring-2 ring-background">
-                            <AvatarImage src={f.avatar} />
-                            <AvatarFallback>{f.name?.[0] || '?'}</AvatarFallback>
-                          </Avatar>
-                          <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 bg-green-500 rounded-full border-2 border-background" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-[15px] truncate">{f.name}</p>
-                          <p className="text-xs text-green-600 font-medium">Active now</p>
-                        </div>
-                        <MessageSquare className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Offline Friends */}
-              {offlineFriends.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3 px-1">
-                    <Users className="w-3.5 h-3.5 text-muted-foreground" />
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      All Friends • {offlineFriends.length}
-                    </h3>
-                  </div>
-                  <div className="space-y-1">
-                    {offlineFriends.map((f: any) => (
-                      <div 
-                        key={f.id} 
-                        onClick={() => { 
-                          setSelectedChat({ 
-                            type: 'dm', 
-                            id: f.id, 
-                            partner_id: f.id, 
-                            name: f.name, 
-                            avatar: f.avatar,
-                            is_online: f.is_online 
-                          }); 
-                          setIsNewChatOpen(false); 
-                        }} 
-                        className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
-                      >
-                        <Avatar className="h-12 w-12 ring-2 ring-background opacity-90 group-hover:opacity-100 transition-opacity">
-                          <AvatarImage src={f.avatar} />
-                          <AvatarFallback>{f.name?.[0] || '?'}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-[15px] truncate">{f.name}</p>
-                          {f.last_seen && (
-                            <p className="text-xs text-muted-foreground">
-                              Active {formatDistanceToNow(new Date(f.last_seen), { addSuffix: true })}
-                            </p>
-                          )}
-                        </div>
-                        <MessageSquare className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* No Friends State */}
-              {friends.length === 0 && (
+              {friends.length === 0 ? (
+                /* No Friends State */
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
                     <Users className="w-8 h-8 text-muted-foreground" />
@@ -1208,10 +1126,8 @@ export default function Messages() {
                     Add friends to start messaging them directly
                   </p>
                 </div>
-              )}
-
-              {/* No Search Results */}
-              {friends.length > 0 && filteredFriends.length === 0 && (
+              ) : filteredFriends.length === 0 ? (
+                /* No Search Results */
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Search className="w-12 h-12 text-muted-foreground mb-4" />
                   <h3 className="font-semibold text-lg mb-2">No results found</h3>
@@ -1219,6 +1135,97 @@ export default function Messages() {
                     Try searching with a different name
                   </p>
                 </div>
+              ) : (
+                <>
+                  {/* Online Friends */}
+                  {onlineFriends.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3 px-1">
+                        <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Online • {onlineFriends.length}
+                        </h3>
+                      </div>
+                      <div className="space-y-1">
+                        {onlineFriends.map((f: any) => (
+                          <div 
+                            key={f.id} 
+                            onClick={() => { 
+                              setSelectedChat({ 
+                                type: 'dm', 
+                                id: f.id, 
+                                partner_id: f.id, 
+                                name: f.name, 
+                                avatar: f.avatar,
+                                is_online: f.is_online 
+                              }); 
+                              setIsNewChatOpen(false); 
+                            }} 
+                            className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
+                          >
+                            <div className="relative">
+                              <Avatar className="h-12 w-12 ring-2 ring-background">
+                                <AvatarImage src={f.avatar} />
+                                <AvatarFallback>{f.name?.[0] || '?'}</AvatarFallback>
+                              </Avatar>
+                              <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 bg-green-500 rounded-full border-2 border-background" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-[15px] truncate">{f.name}</p>
+                              <p className="text-xs text-green-600 font-medium">Active now</p>
+                            </div>
+                            <MessageSquare className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Offline Friends */}
+                  {offlineFriends.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3 px-1">
+                        <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          All Friends • {offlineFriends.length}
+                        </h3>
+                      </div>
+                      <div className="space-y-1">
+                        {offlineFriends.map((f: any) => (
+                          <div 
+                            key={f.id} 
+                            onClick={() => { 
+                              setSelectedChat({ 
+                                type: 'dm', 
+                                id: f.id, 
+                                partner_id: f.id, 
+                                name: f.name, 
+                                avatar: f.avatar,
+                                is_online: f.is_online 
+                              }); 
+                              setIsNewChatOpen(false); 
+                            }} 
+                            className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
+                          >
+                            <Avatar className="h-12 w-12 ring-2 ring-background opacity-90 group-hover:opacity-100 transition-opacity">
+                              <AvatarImage src={f.avatar} />
+                              <AvatarFallback>{f.name?.[0] || '?'}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-[15px] truncate">{f.name}</p>
+                              {f.last_seen && (
+                                <p className="text-xs text-muted-foreground">
+                                  Active {formatDistanceToNow(new Date(f.last_seen), { addSuffix: true })}
+                                </p>
+                              )}
+                            </div>
+                            <MessageSquare className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </ScrollArea>
