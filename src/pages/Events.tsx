@@ -442,7 +442,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
       <Card 
         key={event.id} 
         className={`overflow-hidden hover:shadow-lg transition-all border-border/60 cursor-pointer group ${isPending ? 'border-yellow-200 bg-yellow-50/10' : ''}`}
-        onClick={() => navigate(`/app/events/${event.id}`)}
+        onClick={() => navigate(`/events/${event.id}`)}
       >
         <CardContent className="p-0">
           <div className="flex h-46">
@@ -538,7 +538,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                   <>
                     <Button 
                       size="sm" variant="outline" className="h-7 text-xs flex-1"
-                      onClick={(e) => { e.stopPropagation(); navigate(`/app/events/${event.id}`); }}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/events/${event.id}`); }}
                     >
                       <Edit className="w-3 h-3 mr-1" /> Manage
                     </Button>
@@ -559,7 +559,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                     }`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/app/events/${event.id}`);
+                      navigate(`/events/${event.id}`);
                     }}
                   >
                     {isPending ? (
@@ -574,7 +574,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                     className="h-7 text-xs w-full"
                     variant={isFull ? "outline" : "default"}
                     disabled={isFull}
-                    onClick={(e) => { e.stopPropagation(); navigate(`/app/events/${event.id}`); }}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/events/${event.id}`); }}
                   >
                     {isFull ? 'Event Full' : 'View Details'}
                   </Button>
@@ -766,7 +766,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                 <div className="mt-4 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/30 rounded-lg">
                   <p className="text-xs text-green-700 dark:text-green-300 flex items-center gap-1.5">
                     <Check className="w-3.5 h-3.5" />
-                    Payout will be processed shortly into your registered bank account
+                    Payout will be sent to your bank account shortly.
                   </p>
                 </div>
               )}
