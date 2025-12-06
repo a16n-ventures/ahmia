@@ -153,17 +153,9 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
           popupAnchor: [1, -34],
         });
 
-        const friendIcon = L.icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-        });
-
         const allPoints: [number, number][] = [];
 
-        // Add user marker
+        // Add user marker (You)
         if (userLocation) {
           const userMarker = L.marker(
             [userLocation.latitude, userLocation.longitude],
@@ -174,7 +166,7 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
           allPoints.push([userLocation.latitude, userLocation.longitude]);
         }
 
-        // Add friend markers
+        // Add friend markers (Custom Profile Pictures)
         const validFriends = friendsLocations
           .map((f) => {
             const lat = toNumber(f.latitude);
@@ -182,6 +174,7 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
             return {
               id: f.user_id,
               name: f.profiles?.display_name || 'Friend',
+              avatar: f.profiles?.avatar_url,
               latitude: lat,
               longitude: lng,
             };
@@ -189,11 +182,36 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
           .filter((f) => f.latitude !== null && f.longitude !== null);
 
         validFriends.forEach((friend) => {
+          // Fallback avatar if none provided
+          const avatarUrl = friend.avatar || "https://github.com/shadcn.png";
+          
+          // Create a custom circular HTML marker
+          const customIcon = L.divIcon({
+            className: 'custom-avatar-marker', // Use this class if you want global CSS, or rely on inline styles below
+            html: `
+              <div style="
+                width: 44px; 
+                height: 44px; 
+                border-radius: 50%; 
+                border: 3px solid white; 
+                background-image: url('${avatarUrl}');
+                background-size: cover;
+                background-position: center;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                background-color: #e2e8f0;
+              "></div>
+            `,
+            iconSize: [44, 44],
+            iconAnchor: [22, 22], // Center the circle on the coordinates
+            popupAnchor: [0, -22]
+          });
+
           const marker = L.marker(
             [friend.latitude!, friend.longitude!],
-            { icon: friendIcon }
+            { icon: customIcon }
           ).addTo(map);
-          marker.bindPopup(friend.name);
+          
+          marker.bindPopup(`<div style="font-weight: bold; text-align: center;">${friend.name}</div>`);
           markersRef.current.push(marker);
           allPoints.push([friend.latitude!, friend.longitude!]);
         });
@@ -210,7 +228,6 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
           }
           hasInitializedCenter.current = true;
         }
-        // If user has interacted, just update markers without changing view
 
         // Final resize
         setTimeout(() => map.invalidateSize(), 200);
