@@ -183,7 +183,7 @@ export default function AdminEvents() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => window.open(`/events/${event.id}`, '_blank')}>
+                        <DropdownMenuItem onClick={() => window.open(`/app/events/${event.id}`, '_blank')}>
                           <ExternalLink className="mr-2 h-4 w-4" /> View Event
                         </DropdownMenuItem>
                         <DropdownMenuItem 
