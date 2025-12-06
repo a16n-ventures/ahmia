@@ -7,18 +7,64 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Loader2, Save, AlertCircle } from "lucide-react";
+import { 
+  Loader2, Save, AlertCircle, DollarSign, Sparkles, 
+  Settings2, Shield, Bell, Zap, Brain, Users
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
-type PriceSettings = { monthly: number; yearly: number };
-type FlagSettings = { maintenance_mode: boolean; allow_signups: boolean; enable_referrals: boolean };
+type PriceSettings = { 
+  monthly: number; 
+  yearly: number; 
+  event_boost: number;
+  profile_boost: number;
+};
+
+type FlagSettings = { 
+  maintenance_mode: boolean; 
+  allow_signups: boolean; 
+  enable_referrals: boolean;
+  enable_ai_recommendations: boolean;
+  enable_push_notifications: boolean;
+};
+
+type AISettings = {
+  model: string;
+  max_recommendations: number;
+  recommendation_refresh_hours: number;
+  premium_boost_multiplier: number;
+  enable_personalization: boolean;
+  system_prompt: string;
+};
 
 export default function AdminSettings() {
   const queryClient = useQueryClient();
   
   // Local state for form handling
-  const [prices, setPrices] = useState<PriceSettings>({ monthly: 0, yearly: 0 });
-  const [flags, setFlags] = useState<FlagSettings>({ maintenance_mode: false, allow_signups: true, enable_referrals: true });
+  const [prices, setPrices] = useState<PriceSettings>({ 
+    monthly: 0, 
+    yearly: 0,
+    event_boost: 0,
+    profile_boost: 0
+  });
+  const [flags, setFlags] = useState<FlagSettings>({ 
+    maintenance_mode: false, 
+    allow_signups: true, 
+    enable_referrals: true,
+    enable_ai_recommendations: true,
+    enable_push_notifications: true
+  });
+  const [aiSettings, setAISettings] = useState<AISettings>({
+    model: 'google/gemini-2.5-flash',
+    max_recommendations: 20,
+    recommendation_refresh_hours: 6,
+    premium_boost_multiplier: 50,
+    enable_personalization: true,
+    system_prompt: 'You are an AI assistant helping users discover events and connect with friends.'
+  });
 
   // 1. Fetch Settings
   const { data: settings, isLoading } = useQuery({
@@ -35,12 +81,15 @@ export default function AdminSettings() {
     if (settings) {
       const priceData = settings.find(s => s.key === 'premium_prices')?.value;
       const flagData = settings.find(s => s.key === 'system_flags')?.value;
+      const aiData = settings.find(s => s.key === 'ai_settings')?.value;
       
       if (priceData && typeof priceData === 'object' && !Array.isArray(priceData)) {
         const p = priceData as Record<string, unknown>;
         setPrices({
           monthly: typeof p.monthly === 'number' ? p.monthly : 0,
-          yearly: typeof p.yearly === 'number' ? p.yearly : 0
+          yearly: typeof p.yearly === 'number' ? p.yearly : 0,
+          event_boost: typeof p.event_boost === 'number' ? p.event_boost : 0,
+          profile_boost: typeof p.profile_boost === 'number' ? p.profile_boost : 0
         });
       }
       if (flagData && typeof flagData === 'object' && !Array.isArray(flagData)) {
@@ -48,7 +97,20 @@ export default function AdminSettings() {
         setFlags({
           maintenance_mode: typeof f.maintenance_mode === 'boolean' ? f.maintenance_mode : false,
           allow_signups: typeof f.allow_signups === 'boolean' ? f.allow_signups : true,
-          enable_referrals: typeof f.enable_referrals === 'boolean' ? f.enable_referrals : true
+          enable_referrals: typeof f.enable_referrals === 'boolean' ? f.enable_referrals : true,
+          enable_ai_recommendations: typeof f.enable_ai_recommendations === 'boolean' ? f.enable_ai_recommendations : true,
+          enable_push_notifications: typeof f.enable_push_notifications === 'boolean' ? f.enable_push_notifications : true
+        });
+      }
+      if (aiData && typeof aiData === 'object' && !Array.isArray(aiData)) {
+        const a = aiData as Record<string, unknown>;
+        setAISettings({
+          model: typeof a.model === 'string' ? a.model : 'google/gemini-2.5-flash',
+          max_recommendations: typeof a.max_recommendations === 'number' ? a.max_recommendations : 20,
+          recommendation_refresh_hours: typeof a.recommendation_refresh_hours === 'number' ? a.recommendation_refresh_hours : 6,
+          premium_boost_multiplier: typeof a.premium_boost_multiplier === 'number' ? a.premium_boost_multiplier : 50,
+          enable_personalization: typeof a.enable_personalization === 'boolean' ? a.enable_personalization : true,
+          system_prompt: typeof a.system_prompt === 'string' ? a.system_prompt : aiSettings.system_prompt
         });
       }
     }
@@ -59,139 +121,357 @@ export default function AdminSettings() {
     mutationFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Update Prices
-      const { error: err1 } = await supabase
+      // Upsert Prices
+      await supabase
         .from('app_settings')
-        .update({ value: prices as any, updated_by: user?.id, updated_at: new Date().toISOString() })
-        .eq('key', 'premium_prices');
+        .upsert({ 
+          key: 'premium_prices',
+          value: prices as any, 
+          updated_by: user?.id, 
+          updated_at: new Date().toISOString(),
+          description: 'Premium pricing configuration'
+        });
 
-      // Update Flags
-      const { error: err2 } = await supabase
+      // Upsert Flags
+      await supabase
         .from('app_settings')
-        .update({ value: flags as any, updated_by: user?.id, updated_at: new Date().toISOString() })
-        .eq('key', 'system_flags');
+        .upsert({ 
+          key: 'system_flags',
+          value: flags as any, 
+          updated_by: user?.id, 
+          updated_at: new Date().toISOString(),
+          description: 'System feature flags'
+        });
 
-      if (err1 || err2) throw new Error("Failed to save settings");
+      // Upsert AI Settings
+      await supabase
+        .from('app_settings')
+        .upsert({ 
+          key: 'ai_settings',
+          value: aiSettings as any, 
+          updated_by: user?.id, 
+          updated_at: new Date().toISOString(),
+          description: 'AI recommendation engine settings'
+        });
     },
     onSuccess: () => {
-      toast.success("System settings updated successfully");
+      toast.success("All settings saved successfully");
       queryClient.invalidateQueries({ queryKey: ['app_settings'] });
     },
     onError: () => toast.error("Failed to save changes")
   });
 
-  if (isLoading) return <div className="p-8"><Loader2 className="animate-spin" /></div>;
+  if (isLoading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin w-8 h-8" /></div>;
 
   return (
     <div className="space-y-6 pb-20">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">System Configuration</h2>
-        <p className="text-muted-foreground">Manage pricing, feature flags, and global settings.</p>
-      </div>
-
-      {/* 1. Billing & Products */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Premium Pricing (NGN)</CardTitle>
-          <CardDescription>Adjusting these values updates the paywall immediately for all users.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Monthly Subscription</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₦</span>
-                <Input 
-                  type="number" 
-                  className="pl-8"
-                  value={prices.monthly}
-                  onChange={(e) => setPrices({...prices, monthly: parseInt(e.target.value) || 0})}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Yearly Subscription</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₦</span>
-                <Input 
-                  type="number" 
-                  className="pl-8"
-                  value={prices.yearly}
-                  onChange={(e) => setPrices({...prices, yearly: parseInt(e.target.value) || 0})}
-                />
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 2. System Controls */}
-      <Card className="border-red-100">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-orange-500" />
-            Danger Zone & Feature Flags
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-base">New User Registrations</Label>
-              <p className="text-sm text-muted-foreground">
-                Turn this off to pause new signups (e.g. during heavy server load).
-              </p>
-            </div>
-            <Switch 
-              checked={flags.allow_signups}
-              onCheckedChange={(c) => setFlags({...flags, allow_signups: c})}
-            />
-          </div>
-          <Separator />
-          
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-base">Referral System</Label>
-              <p className="text-sm text-muted-foreground">
-                Enable or disable the invite rewards program.
-              </p>
-            </div>
-            <Switch 
-              checked={flags.enable_referrals}
-              onCheckedChange={(c) => setFlags({...flags, enable_referrals: c})}
-            />
-          </div>
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-base text-red-600">Maintenance Mode</Label>
-              <p className="text-sm text-muted-foreground">
-                If enabled, the app will show a "Under Maintenance" screen to all non-admin users.
-              </p>
-            </div>
-            <Switch 
-              checked={flags.maintenance_mode}
-              onCheckedChange={(c) => setFlags({...flags, maintenance_mode: c})}
-              className="data-[state=checked]:bg-red-600"
-            />
-          </div>
-
-        </CardContent>
-      </Card>
-
-      {/* Save Bar */}
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">System Configuration</h2>
+          <p className="text-muted-foreground">Manage pricing, features, AI, and global settings.</p>
+        </div>
         <Button 
           size="lg" 
           onClick={() => saveMutation.mutate()} 
           disabled={saveMutation.isPending}
           className="gap-2"
         >
-          {saveMutation.isPending ? <Loader2 className="animate-spin" /> : <Save className="w-4 h-4" />}
-          Save Changes
+          {saveMutation.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />}
+          Save All Changes
         </Button>
       </div>
+
+      <Tabs defaultValue="pricing" className="w-full">
+        <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsTrigger value="pricing" className="gap-2">
+            <DollarSign className="w-4 h-4" /> Pricing
+          </TabsTrigger>
+          <TabsTrigger value="features" className="gap-2">
+            <Zap className="w-4 h-4" /> Features
+          </TabsTrigger>
+          <TabsTrigger value="ai" className="gap-2">
+            <Brain className="w-4 h-4" /> AI Engine
+          </TabsTrigger>
+          <TabsTrigger value="system" className="gap-2">
+            <Shield className="w-4 h-4" /> System
+          </TabsTrigger>
+        </TabsList>
+
+        {/* PRICING TAB */}
+        <TabsContent value="pricing" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-yellow-500" />
+                Premium Subscriptions (NGN)
+              </CardTitle>
+              <CardDescription>Adjusting these values updates the paywall immediately for all users.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label>Monthly Subscription</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₦</span>
+                    <Input 
+                      type="number" 
+                      className="pl-8"
+                      value={prices.monthly}
+                      onChange={(e) => setPrices({...prices, monthly: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Yearly Subscription</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₦</span>
+                    <Input 
+                      type="number" 
+                      className="pl-8"
+                      value={prices.yearly}
+                      onChange={(e) => setPrices({...prices, yearly: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                  {prices.yearly > 0 && prices.monthly > 0 && (
+                    <p className="text-xs text-green-600">
+                      Save {Math.round((1 - prices.yearly / (prices.monthly * 12)) * 100)}% vs monthly
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div>
+                <h4 className="font-medium mb-4">Boost Products</h4>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label>Event Boost (per event)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₦</span>
+                      <Input 
+                        type="number" 
+                        className="pl-8"
+                        value={prices.event_boost}
+                        onChange={(e) => setPrices({...prices, event_boost: parseInt(e.target.value) || 0})}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">Increases event visibility in feed</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Profile Boost (7 days)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₦</span>
+                      <Input 
+                        type="number" 
+                        className="pl-8"
+                        value={prices.profile_boost}
+                        onChange={(e) => setPrices({...prices, profile_boost: parseInt(e.target.value) || 0})}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">Increases profile visibility in discover</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* FEATURES TAB */}
+        <TabsContent value="features" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Feature Flags</CardTitle>
+              <CardDescription>Toggle features on or off across the platform.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base flex items-center gap-2">
+                    <Users className="w-4 h-4" /> New User Registrations
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Turn this off to pause new signups (e.g. during heavy server load).
+                  </p>
+                </div>
+                <Switch 
+                  checked={flags.allow_signups}
+                  onCheckedChange={(c) => setFlags({...flags, allow_signups: c})}
+                />
+              </div>
+              <Separator />
+              
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" /> Referral System
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Enable or disable the invite rewards program.
+                  </p>
+                </div>
+                <Switch 
+                  checked={flags.enable_referrals}
+                  onCheckedChange={(c) => setFlags({...flags, enable_referrals: c})}
+                />
+              </div>
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base flex items-center gap-2">
+                    <Brain className="w-4 h-4" /> AI Recommendations
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Enable personalized event & friend recommendations.
+                  </p>
+                </div>
+                <Switch 
+                  checked={flags.enable_ai_recommendations}
+                  onCheckedChange={(c) => setFlags({...flags, enable_ai_recommendations: c})}
+                />
+              </div>
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base flex items-center gap-2">
+                    <Bell className="w-4 h-4" /> Push Notifications
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Enable push notifications for mobile users.
+                  </p>
+                </div>
+                <Switch 
+                  checked={flags.enable_push_notifications}
+                  onCheckedChange={(c) => setFlags({...flags, enable_push_notifications: c})}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* AI ENGINE TAB */}
+        <TabsContent value="ai" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="w-5 h-5 text-purple-500" />
+                AI Recommendation Engine
+                <Badge variant="secondary" className="ml-2">TikTok-Style Algorithm</Badge>
+              </CardTitle>
+              <CardDescription>
+                Configure the AI-powered recommendation system for premium users.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label>AI Model</Label>
+                  <select 
+                    className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                    value={aiSettings.model}
+                    onChange={(e) => setAISettings({...aiSettings, model: e.target.value})}
+                  >
+                    <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Fast)</option>
+                    <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Quality)</option>
+                    <option value="openai/gpt-5-mini">GPT-5 Mini (Balanced)</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">Model used for recommendations</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Max Recommendations</Label>
+                  <Input 
+                    type="number" 
+                    value={aiSettings.max_recommendations}
+                    onChange={(e) => setAISettings({...aiSettings, max_recommendations: parseInt(e.target.value) || 20})}
+                  />
+                  <p className="text-xs text-muted-foreground">Per user per refresh cycle</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label>Refresh Interval (hours)</Label>
+                  <Input 
+                    type="number" 
+                    value={aiSettings.recommendation_refresh_hours}
+                    onChange={(e) => setAISettings({...aiSettings, recommendation_refresh_hours: parseInt(e.target.value) || 6})}
+                  />
+                  <p className="text-xs text-muted-foreground">How often to refresh recommendations</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Premium Boost Multiplier</Label>
+                  <Input 
+                    type="number" 
+                    value={aiSettings.premium_boost_multiplier}
+                    onChange={(e) => setAISettings({...aiSettings, premium_boost_multiplier: parseInt(e.target.value) || 50})}
+                  />
+                  <p className="text-xs text-muted-foreground">Score multiplier for premium content (1-100x)</p>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Enable Personalization</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Use user interests, location, and behavior to personalize feed.
+                  </p>
+                </div>
+                <Switch 
+                  checked={aiSettings.enable_personalization}
+                  onCheckedChange={(c) => setAISettings({...aiSettings, enable_personalization: c})}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <Label>AI System Prompt</Label>
+                <Textarea 
+                  value={aiSettings.system_prompt}
+                  onChange={(e) => setAISettings({...aiSettings, system_prompt: e.target.value})}
+                  rows={4}
+                  placeholder="Instructions for the AI model..."
+                />
+                <p className="text-xs text-muted-foreground">
+                  Custom instructions for how the AI should behave when generating recommendations.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* SYSTEM TAB */}
+        <TabsContent value="system" className="space-y-4">
+          <Card className="border-red-100">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-orange-500" />
+                Danger Zone
+              </CardTitle>
+              <CardDescription>Critical system controls. Use with caution.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-900">
+                <div className="space-y-0.5">
+                  <Label className="text-base text-red-600 dark:text-red-400">Maintenance Mode</Label>
+                  <p className="text-sm text-muted-foreground">
+                    If enabled, the app will show a "Under Maintenance" screen to all non-admin users.
+                  </p>
+                </div>
+                <Switch 
+                  checked={flags.maintenance_mode}
+                  onCheckedChange={(c) => setFlags({...flags, maintenance_mode: c})}
+                  className="data-[state=checked]:bg-red-600"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

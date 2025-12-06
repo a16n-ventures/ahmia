@@ -31,6 +31,7 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminModeration from "./pages/admin/AdminModeration";
 import AdminEvents from "./pages/admin/AdminEvents";
 import AdminWallet from "./pages/admin/AdminWallet";
+import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
 
 const queryClient = new QueryClient();
 
@@ -60,6 +61,7 @@ const App = () => {
                   <Route path="users" element={<AdminUsers />} />
                   <Route path="moderation" element={<AdminModeration />} /> 
                   <Route path="events" element={<AdminEvents />} />
+                  <Route path="subscriptions" element={<AdminSubscriptions />} />
                   <Route path="revenue" element={<AdminWallet />} />
                 </Route>
 
