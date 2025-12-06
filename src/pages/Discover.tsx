@@ -331,29 +331,45 @@ export default function Discover() {
         setEvents(mappedEvents);
       }
 
-      // 4. Premium & AI
+      // 4. Premium & AI (Enhanced)
       const { data: sub } = await supabase.from('subscriptions').select('status').eq('user_id', user.id).single();
       const prem = sub?.status === 'active';
       setIsPremium(prem);
 
       if (prem) {
-        const { data: ai } = await supabase.rpc('get_smart_feed', { 
-          viewer_id: user.id, 
-          user_lat: 6.5, 
-          user_long: 3.3, 
-          user_interests: ['tech'] 
+        // Get real location for AI context
+        navigator.geolocation.getCurrentPosition(async (position) => {
+          const { latitude, longitude } = position.coords;
+          
+          try {
+            // Call the AI Edge Function
+            const { data: ai, error } = await supabase.functions.invoke('generate-smart-feed', { 
+              body: { 
+                user_id: user.id, 
+                user_lat: latitude, 
+                user_long: longitude 
+              } 
+            });
+
+            if (error) throw error;
+
+            if (ai) {
+              const formatted: Event[] = ai.map((item: any) => ({
+                id: item.id,
+                title: item.title,
+                start_date: item.start_date || new Date().toISOString(),
+                location: item.location || 'Online',
+                image_url: item.image_url, // Now includes visual data
+                match_score: (item.final_score || item.similarity || 0) * 100 // Convert 0.95 -> 95%
+              }));
+              setSmartFeed(formatted);
+            }
+          } catch (err) {
+            console.error("AI Feed Error:", err);
+          }
+        }, (err) => {
+          console.warn("Location denied, falling back to basic AI", err);
         });
-        if (ai) {
-          const formatted: Event[] = ai.map((item: any) => ({
-            id: item.id,
-            title: item.title,
-            start_date: item.start_date,
-            location: item.location,
-            image_url: item.image_url,
-            match_score: item.match_score
-          }));
-          setSmartFeed(formatted);
-        }
       }
 
       setLoading(false);
