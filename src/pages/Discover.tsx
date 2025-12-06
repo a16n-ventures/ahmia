@@ -420,10 +420,11 @@ export default function Discover() {
         });
         toast.success("RSVP cancelled");
       } else {
-        // Create RSVP
+        // Create RSVP - FIXED: Added status='confirmed'
         await supabase.from('event_attendees').insert({
           event_id: eventId,
-          user_id: user.id
+          user_id: user.id,
+          status: 'confirmed'
         });
         toast.success("You're going! 🎉");
       }
