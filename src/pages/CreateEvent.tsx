@@ -279,7 +279,7 @@ const CreateEvent = () => {
 
   const handleDone = () => {
     setShowShareDialog(false);
-    navigate('/events');
+    navigate('/app/events');
   };
 
   return (
@@ -292,7 +292,7 @@ const CreateEvent = () => {
               variant="ghost" 
               size="sm" 
               className="text-white hover:bg-white/20 p-2"
-              onClick={() => navigate('/events')}
+              onClick={() => navigate('/app/events')}
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
@@ -734,7 +734,7 @@ const CreateEvent = () => {
               <Button
                 type="button"
                 onClick={() => {
-                  navigate(`/events/${createdEventId}/invite`);
+                  navigate(`/app/events/${createdEventId}/invite`);
                 }}
                 className="w-full"
               >
