@@ -447,7 +447,7 @@ const EventDetail = () => {
           variant="ghost"
           size="sm"
           className="absolute top-4 left-4 text-white hover:bg-white/20"
-          onClick={() => navigate('/events')}
+          onClick={() => navigate('/app/events')}
         >
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -472,7 +472,7 @@ const EventDetail = () => {
         </Button>
       </div>
 
-      <div className="container-mobile -mt-8 space-y-4">
+      <div className="container-mobile -mt-8 mb-4 space-y-4">
         {/* Main Info Card */}
         <Card className="gradient-card shadow-card border-0">
           <CardContent className="p-6 space-y-4">
@@ -602,7 +602,7 @@ const EventDetail = () => {
                     variant="outline"
                     className="w-full"
                     // FIXED: Removed '/app' prefix for Invite link
-                    onClick={() => navigate(`/events/${eventId}/invite`)}
+                    onClick={() => navigate(`/app/events/${eventId}/invite`)}
                   >
                     <UserPlus className="w-4 h-4 mr-2" />
                     Invite Friends
