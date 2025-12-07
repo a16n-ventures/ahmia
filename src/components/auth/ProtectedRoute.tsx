@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Outlet, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext'; 
+import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
 
 export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -10,23 +11,25 @@ export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
 
   useEffect(() => { 
+    // 1. Wait for Auth Context to initialize
     if (authLoading) return;
-    if (!loading && !user) {
-      navigate('/', { replace: true });
-    }
-  }, [user, loading, navigate]);
 
+    // 2. If not logged in, redirect to home/login
+    if (!user) {
+      navigate('/', { replace: true });
+      return;
+    }
+
+    // 3. If logged in, check Onboarding Status
     const checkOnboardingStatus = async () => {
       try {
-        // Check if user has completed interest selection
         const { data: profile } = await supabase
           .from('profiles')
           .select('interests')
           .eq('id', user.id)
           .single();
 
-        // If no interests found (or empty array), force onboarding
-        // But allow access to the onboarding page itself to prevent loops
+        // If no interests found, force onboarding
         if ((!profile?.interests || profile.interests.length === 0) && location.pathname !== '/onboarding') {
           navigate("/onboarding");
         }
@@ -40,17 +43,19 @@ export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     checkOnboardingStatus();
   }, [user, authLoading, navigate, location.pathname]);
 
-  if (loading) {
+  // Show loader while checking auth OR checking onboarding status
+  if (authLoading || isChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
           <p className="mt-4 text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
   }
 
+  // If user is not authenticated (and effect hasn't redirected yet), don't render children
   if (!user) {
     return null;
   }
