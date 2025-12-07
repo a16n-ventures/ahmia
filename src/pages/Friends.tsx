@@ -87,11 +87,11 @@ export default function Friends() {
   const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
   const [loadingNearby, setLoadingNearby] = useState(false); 
 
-  const requestLocation = () => {
-    if ('geolocation' in navigator) {
-      setLoadingNearby(true); // Show loading state while getting position 
+  setLoadingNearby(true); // Show loading state while getting position 
 
-      const { location: userLocation, requestLocation, isLoading: loadingNearby } = useGeolocation();
+  const { location: userLocation, requestLocation, isLoading: loadingNearby } = useGeolocation();
+
+  setLoadingNearby(false);
 
   // Smart Friend Fetcher Effect
   useEffect(() => {
