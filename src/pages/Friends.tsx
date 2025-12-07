@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 // Hooks
 import { useFriends, type Profile } from "@/hooks/useFriends";
 import { useContacts } from "@/hooks/useContacts";
+import { useGeolocation } from "@/hooks/useGeolocation";
 
 // Components
 import { FriendSkeleton } from "@/components/friends/FriendSkeleton";
@@ -22,7 +23,7 @@ import { NearbyUserCard } from "@/components/friends/NearbyUserCard";
 import { ContactCard } from "@/components/friends/ContactCard";
 import { FriendProfilePreview } from "@/components/friends/FriendProfilePreview";
 import { BlockReportDialog } from "@/components/friends/BlockReportDialog";
-import { AddContactForm } from "@/components/friends/AddContactForm";
+import { AddContactForm } from "@/components/friends/AddContactForm"; 
 
 // Utilities
 const DEBOUNCE_DELAY = 500;
