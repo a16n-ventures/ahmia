@@ -27,7 +27,7 @@ export default function Onboarding() {
           <InterestSelector 
             onComplete={() => {
               // Redirect to the Discover page with the 'foryou' tab active
-              navigate('/discover?tab=foryou');
+              navigate('/app/discover?tab=foryou');
             }} 
           />
         </CardContent>
