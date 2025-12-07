@@ -82,46 +82,55 @@ export default function Friends() {
     inviteContact,
   } = useContacts(userId);
 
-  // --- SMART FRIEND FINDER LOGIC (Replaces useNearbyUsers) ---
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  // --- SMART FRIEND FINDER LOGIC ---
+  // Use the centralized location context
+  const { location: userLocation, requestLocation, isLoading: isLocationLoading } = useGeolocation();
   const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
-  const [loadingNearby, setLoadingNearby] = useState(false); 
+  const [isFetchingFriends, setIsFetchingFriends] = useState(false);
 
-  setLoadingNearby(true); // Show loading state while getting position 
-
-  const { location: userLocation, requestLocation, isLoading: loadingNearby } = useGeolocation();
-
-  setLoadingNearby(false);
+  // Combine loading states (GPS loading OR Database loading)
+  const loadingNearby = isLocationLoading || isFetchingFriends;
 
   // Smart Friend Fetcher Effect
   useEffect(() => {
+    // Only fetch if we are on the right tab
     if (activeTab === 'discover' && discoverView === 'nearby' && userLocation && userId) {
-      const fetchSmartFriends = async () => {
-        setLoadingNearby(true);
-        const { data, error } = await supabase.rpc('suggest_nearby_friends', {
-          requesting_user_id: userId,
-          user_lat: userLocation.latitude,
-          user_long: userLocation.longitude,
-          limit_count: 20
-        });
+      
+      // If we don't have location yet, ask for it
+      if (!userLocation) {
+        requestLocation(); 
+        return; 
+      }
 
-        if (!error && data) {
-          // Map RPC result to Profile interface
-          const formatted = data.map((u: any) => ({
-            user_id: u.friend_id,
-            display_name: u.display_name,
-            avatar_url: u.avatar_url,
-            distance_km: u.distance_km, // Now available from AI
-            match_score: u.score // Usage: You can display this as a "% Match" badge
-          }));
-          setNearbyUsers(formatted);
-        }
-        setLoadingNearby(false);
-      };
+      // If we have location and user ID, fetch from AI
+      if (userId) {
+        const fetchSmartFriends = async () => {
+          setIsFetchingFriends(true);
+          const { data, error } = await supabase.rpc('suggest_nearby_friends', {
+            requesting_user_id: userId,
+            user_lat: userLocation.latitude,
+            user_long: userLocation.longitude,
+            limit_count: 20
+          });
 
-      fetchSmartFriends();
+          if (!error && data) {
+            const formatted = data.map((u: any) => ({
+              user_id: u.friend_id,
+              display_name: u.display_name,
+              avatar_url: u.avatar_url,
+              distance_km: u.distance_km,
+              match_score: u.score
+            }));
+            setNearbyUsers(formatted);
+          }
+          setIsFetchingFriends(false);
+        };
+
+        fetchSmartFriends();
+      }
     }
-  }, [activeTab, discoverView, userLocation, userId]);
+  }, [activeTab, discoverView, userLocation, userId, requestLocation]);
+
   // -----------------------------------------------------------
 
   // Filtered data
