@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
-// We keep this import, but the CDN link in index.html acts as a backup
-import 'leaflet/dist/leaflet.css'; 
+import 'leaflet/dist/leaflet.css';
 
 export interface LeafletMapHandle {
   recenter: () => void;
@@ -26,12 +25,6 @@ interface LeafletMapProps {
   mapStyle?: 'standard' | 'satellite';
 }
 
-const toNumber = (val: string | number | null | undefined): number | null => {
-  if (val === null || val === undefined) return null;
-  const num = typeof val === 'number' ? val : parseFloat(String(val));
-  return Number.isFinite(num) ? num : null;
-};
-
 const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
   userLocation,
   friendsLocations,
@@ -40,219 +33,193 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
   mapStyle = 'standard'
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
+  const mapInstanceRef = useRef<any>(null);
   const tileLayerRef = useRef<any>(null);
-  
-  const [isClient, setIsClient] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
-  const hasInitializedCenter = useRef(false);
-  const userHasInteracted = useRef(false);
+  const markersRef = useRef<any[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
 
-  const recenterMap = () => {
-    if (!mapRef.current || !userLocation) return;
-    userHasInteracted.current = false;
-    mapRef.current.setView([userLocation.latitude, userLocation.longitude], 15, { animate: true });
-  };
+  // Expose recenter method
+  useImperativeHandle(ref, () => ({
+    recenter: () => {
+      if (mapInstanceRef.current && userLocation) {
+        mapInstanceRef.current.setView(
+          [userLocation.latitude, userLocation.longitude], 
+          15, 
+          { animate: true }
+        );
+      }
+    }
+  }));
 
-  useImperativeHandle(ref, () => ({ recenter: recenterMap }));
-
-  useEffect(() => { setIsClient(true); }, []);
-
-  // 1. Initialize Map
+  // 1. Mount Check
   useEffect(() => {
-    if (!isClient || !mapContainerRef.current || mapRef.current) return;
+    setIsMounted(true);
+  }, []);
 
-    const initMap = async () => {
+  // 2. Initialize Map
+  useEffect(() => {
+    if (!isMounted || !mapContainerRef.current || mapInstanceRef.current) return;
+
+    const initialize = async () => {
       try {
         const L = (await import('leaflet')).default;
 
-        const fallback: [number, number] = [6.5244, 3.3792]; // Lagos
-        const center: [number, number] = userLocation
-          ? [userLocation.latitude, userLocation.longitude]
-          : fallback;
+        // Default to Lagos if no location
+        const startCoords: [number, number] = userLocation 
+          ? [userLocation.latitude, userLocation.longitude] 
+          : [6.5244, 3.3792];
 
         const map = L.map(mapContainerRef.current, {
-          center: center,
-          zoom: 13,
-          zoomControl: false,
+          center: startCoords,
+          zoom: 14,
+          zoomControl: false, // We use custom buttons
           attributionControl: false
         });
 
+        // Add attribution manually to look cleaner
         L.control.attribution({ prefix: false }).addTo(map);
 
-        const handleInteraction = () => { userHasInteracted.current = true; };
-        map.on('movestart', handleInteraction);
-        map.on('zoomstart', handleInteraction);
-        map.on('dragstart', handleInteraction);
+        mapInstanceRef.current = map;
 
-        mapRef.current = map;
-        setMapReady(true);
-
-        // Force a resize calculation after mount to prevent grey tiles
+        // Force a resize calculation to prevent grey tiles
         setTimeout(() => {
           map.invalidateSize();
         }, 100);
 
       } catch (err) {
-        console.error('Failed to initialize map:', err);
+        console.error("Map initialization failed:", err);
       }
     };
 
-    initMap();
+    initialize();
 
+    // Cleanup
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        setMapReady(false);
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
       }
     };
-  }, [isClient]);
+  }, [isMounted]);
 
-  // 2. Handle Map Style
+  // 3. Handle Tile Layer (Style)
   useEffect(() => {
-    if (!mapReady || !mapRef.current) return;
+    if (!mapInstanceRef.current) return;
 
-    const updateTileLayer = async () => {
+    const updateLayer = async () => {
       const L = (await import('leaflet')).default;
-      const map = mapRef.current;
-
-      if (tileLayerRef.current) map.removeLayer(tileLayerRef.current);
+      
+      if (tileLayerRef.current) {
+        mapInstanceRef.current.removeLayer(tileLayerRef.current);
+      }
 
       const standardUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
       const satelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-
-      const url = mapStyle === 'satellite' ? satelliteUrl : standardUrl;
       
-      tileLayerRef.current = L.tileLayer(url, { maxZoom: 19 }).addTo(map);
+      const url = mapStyle === 'satellite' ? satelliteUrl : standardUrl;
+
+      tileLayerRef.current = L.tileLayer(url, {
+        maxZoom: 19,
+        detectRetina: true
+      }).addTo(mapInstanceRef.current);
     };
 
-    updateTileLayer();
-  }, [mapReady, mapStyle]);
+    updateLayer();
+  }, [isMounted, mapStyle, mapInstanceRef.current]);
 
-  // 3. Update Markers
+  // 4. Handle Markers
   useEffect(() => {
-    if (!mapReady || !mapRef.current) return;
+    if (!mapInstanceRef.current) return;
 
     const updateMarkers = async () => {
-      try {
-        const L = (await import('leaflet')).default;
-        const map = mapRef.current;
+      const L = (await import('leaflet')).default;
+      const map = mapInstanceRef.current;
 
-        markersRef.current.forEach(marker => marker.remove());
-        markersRef.current = [];
+      // Clear old markers
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
 
-        const allPoints: [number, number][] = [];
-
-        // Add User
-        if (userLocation) {
-          const userIcon = L.divIcon({
-            className: 'user-location-marker',
-            html: `<div style="position: relative; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px;">
-                    <span style="position: absolute; width: 100%; height: 100%; background-color: #3b82f6; border-radius: 9999px; opacity: 0.75; animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>
-                    <span style="position: relative; width: 16px; height: 16px; background-color: #2563eb; border: 2px solid white; border-radius: 9999px;"></span>
-                   </div>`,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-          });
-
-          const userMarker = L.marker([userLocation.latitude, userLocation.longitude], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
-          markersRef.current.push(userMarker);
-          allPoints.push([userLocation.latitude, userLocation.longitude]);
-        }
-
-        // Add Friends
-        const validFriends = friendsLocations
-          .map(f => ({
-            id: f.user_id,
-            name: f.profiles?.display_name || 'Friend',
-            avatar: f.profiles?.avatar_url,
-            latitude: toNumber(f.latitude),
-            longitude: toNumber(f.longitude),
-          }))
-          .filter(f => f.latitude !== null && f.longitude !== null);
-
-        validFriends.forEach(friend => {
-          const avatarUrl = friend.avatar || "https://github.com/shadcn.png";
-          const customIcon = L.divIcon({
-            className: '',
-            html: `<div style="width: 40px; height: 40px; border-radius: 50%; border: 2px solid white; background-image: url('${avatarUrl}'); background-size: cover; background-position: center; box-shadow: 0 4px 10px rgba(0,0,0,0.4); background-color: #e2e8f0; position: relative;"></div>`,
-            iconSize: [40, 40],
-            iconAnchor: [20, 20],
-            popupAnchor: [0, -20]
-          });
-
-          const marker = L.marker([friend.latitude!, friend.longitude!], { icon: customIcon }).addTo(map);
-          marker.bindPopup(`<div style="font-weight:bold;text-align:center;">${friend.name}</div>`);
-          markersRef.current.push(marker);
-          allPoints.push([friend.latitude!, friend.longitude!]);
+      // --- USER MARKER ---
+      if (userLocation) {
+        const userIcon = L.divIcon({
+          className: 'bg-transparent border-0',
+          html: `
+            <div class="relative flex items-center justify-center w-6 h-6">
+              <span class="absolute w-full h-full bg-blue-500 rounded-full opacity-75 animate-ping"></span>
+              <span class="relative w-4 h-4 bg-blue-600 border-2 border-white rounded-full shadow-md"></span>
+            </div>
+          `,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
         });
 
-        // Auto Fit
-        if (!hasInitializedCenter.current && !userHasInteracted.current) {
-          if (allPoints.length > 1) {
-            const bounds = L.latLngBounds(allPoints);
-            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
-          } else if (allPoints.length === 1) {
-            map.setView(allPoints[0], 14);
-          } else if (userLocation) {
-            map.setView([userLocation.latitude, userLocation.longitude], 14);
-          }
-          hasInitializedCenter.current = true;
-        }
-      } catch (err) {
-        console.error('Failed to update markers:', err);
+        const m = L.marker([userLocation.latitude, userLocation.longitude], { 
+          icon: userIcon, 
+          zIndexOffset: 1000 
+        }).addTo(map);
+        markersRef.current.push(m);
       }
+
+      // --- FRIEND MARKERS ---
+      friendsLocations.forEach(friend => {
+        const lat = typeof friend.latitude === 'string' ? parseFloat(friend.latitude) : friend.latitude;
+        const lng = typeof friend.longitude === 'string' ? parseFloat(friend.longitude) : friend.longitude;
+
+        if (lat && lng) {
+          const avatar = friend.profiles?.avatar_url || "https://github.com/shadcn.png";
+          
+          const icon = L.divIcon({
+            className: 'bg-transparent border-0',
+            html: `
+              <div style="
+                width: 40px; height: 40px; 
+                border-radius: 50%; 
+                border: 2px solid white; 
+                background-image: url('${avatar}'); 
+                background-size: cover; 
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+              "></div>
+            `,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+          });
+
+          const m = L.marker([lat, lng], { icon }).addTo(map);
+          if (friend.profiles?.display_name) {
+            m.bindPopup(friend.profiles.display_name);
+          }
+          markersRef.current.push(m);
+        }
+      });
     };
 
     updateMarkers();
-  }, [mapReady, userLocation, friendsLocations]);
+  }, [userLocation, friendsLocations]);
 
-  // Handle Resize
-  useEffect(() => {
-    if (!mapRef.current) return;
-    const handleResize = () => { mapRef.current.invalidateSize(); };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [mapReady]);
-
-  if (!isClient) return <div className="h-full w-full bg-muted flex items-center justify-center">Loading Map...</div>;
+  if (!isMounted) return <div className="w-full h-full bg-muted flex items-center justify-center">Loading Map...</div>;
 
   return (
-    <div style={{ position: 'relative', height: '100%', width: '100%', isolation: 'isolate' }}>
-      {/* CRITICAL FIX: 
-         We inject styles directly here to override Tailwind's img { max-width: 100% } rule 
-         which breaks Leaflet tiles.
-      */}
-      <style>{`
-        .leaflet-tile { max-width: none !important; }
-        .leaflet-pane { z-index: 1 !important; }
-        .leaflet-top, .leaflet-bottom { z-index: 1000 !important; }
-      `}</style>
-      
-      <div
-        ref={mapContainerRef}
-        style={{ height: '100%', width: '100%', background: '#e5e7eb', zIndex: 0 }}
+    <div className="w-full h-full relative isolate">
+      {/* Main Map Container */}
+      <div 
+        ref={mapContainerRef} 
+        className="w-full h-full z-0 bg-muted"
+        id="map-container"
       />
 
-      {(!mapReady || loading) && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 50, display: 'flex', 
-          alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(4px)'
-        }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '14px', fontWeight: 500 }}>Locating...</span>
+      {/* Loading Overlay */}
+      {(!mapInstanceRef.current || loading) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+          <div className="bg-background px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium">Locating...</span>
           </div>
         </div>
       )}
 
+      {/* Error Overlay */}
       {error && !loading && (
-        <div style={{
-          position: 'absolute', top: '80px', left: '16px', right: '16px', zIndex: 50,
-          padding: '12px', borderRadius: '8px', backgroundColor: '#ef4444', color: 'white',
-          textAlign: 'center', fontSize: '14px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-        }}>
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50 bg-destructive text-destructive-foreground px-4 py-2 rounded-lg shadow-lg text-sm">
           {error}
         </div>
       )}
