@@ -24,7 +24,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useGeolocation } from '@/hooks/useGeolocation'; // FIXED: Use Context
+import { useGeolocation } from '@/contexts/LocationContext'; // FIXED: Use Context
 import { useFriends } from '@/hooks/useFriends'; // FIXED: Use Hook
 import { ContactImportModal } from '@/components/map/ContactImportModal';
 import { toast } from 'sonner';
