@@ -36,15 +36,17 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
   const mapInstanceRef = useRef<any>(null);
   const tileLayerRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
-  
-  // Force mount check
   const [isMounted, setIsMounted] = useState(false);
 
-  // Expose recenter
+  // Expose recenter method to parent
   useImperativeHandle(ref, () => ({
     recenter: () => {
       if (mapInstanceRef.current && userLocation) {
-        mapInstanceRef.current.setView([userLocation.latitude, userLocation.longitude], 15, { animate: true });
+        mapInstanceRef.current.setView(
+          [userLocation.latitude, userLocation.longitude], 
+          15, 
+          { animate: true }
+        );
       }
     }
   }));
@@ -53,7 +55,7 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
     setIsMounted(true);
   }, []);
 
-  // Initialize Map
+  // 1. Initialize Map
   useEffect(() => {
     if (!isMounted || !mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -61,34 +63,32 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
       try {
         const L = (await import('leaflet')).default;
 
-        // Default to Lagos
-        const fallback: [number, number] = [6.5244, 3.3792];
-        const center = userLocation 
-          ? [userLocation.latitude, userLocation.longitude] as [number, number] 
-          : fallback;
-
-        console.log("Initializing map at:", center); // DEBUG LOG
+        // Default: Lagos (Fallback if no location)
+        const startCoords: [number, number] = userLocation 
+          ? [userLocation.latitude, userLocation.longitude] 
+          : [6.5244, 3.3792];
 
         const map = L.map(mapContainerRef.current, {
-          center: center,
-          zoom: 13,
-          zoomControl: false,
-          attributionControl: false
+          center: startCoords,
+          zoom: 14,
+          zoomControl: false, // We use custom UI buttons
+          attributionControl: false,
+          fadeAnimation: true,
+          zoomAnimation: true
         });
 
-        // Add attribution
+        // Add cleaner attribution
         L.control.attribution({ prefix: false }).addTo(map);
 
         mapInstanceRef.current = map;
 
-        // FORCE RESIZE after a delay to ensure tiles load
+        // CRITICAL FIX: Force map resize calculation after mount
         setTimeout(() => {
           map.invalidateSize();
-          console.log("Map resized");
-        }, 500);
+        }, 100);
 
       } catch (err) {
-        console.error("Map initialization error:", err);
+        console.error("Map initialization failed:", err);
       }
     };
 
@@ -100,28 +100,34 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
         mapInstanceRef.current = null;
       }
     };
-  }, [isMounted]); // Only run once on mount
+  }, [isMounted]);
 
-  // Handle Tile Layer
+  // 2. Handle Map Style (Standard vs Satellite)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
     const updateLayer = async () => {
       const L = (await import('leaflet')).default;
       
-      if (tileLayerRef.current) mapInstanceRef.current.removeLayer(tileLayerRef.current);
+      if (tileLayerRef.current) {
+        mapInstanceRef.current.removeLayer(tileLayerRef.current);
+      }
 
       const standardUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
       const satelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      
       const url = mapStyle === 'satellite' ? satelliteUrl : standardUrl;
 
-      tileLayerRef.current = L.tileLayer(url, { maxZoom: 19 }).addTo(mapInstanceRef.current);
+      tileLayerRef.current = L.tileLayer(url, {
+        maxZoom: 19,
+        detectRetina: true
+      }).addTo(mapInstanceRef.current);
     };
 
     updateLayer();
   }, [isMounted, mapStyle, mapInstanceRef.current]);
 
-  // Update Markers
+  // 3. Update Markers (User + Friends)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
@@ -129,75 +135,100 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
       const L = (await import('leaflet')).default;
       const map = mapInstanceRef.current;
 
+      // Clear old markers
       markersRef.current.forEach(m => m.remove());
       markersRef.current = [];
 
-      // User Marker
+      // --- USER MARKER ---
       if (userLocation) {
         const userIcon = L.divIcon({
-          className: 'bg-transparent',
-          html: `<div style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;">
-                  <div style="position:absolute;width:100%;height:100%;background:#3b82f6;border-radius:50%;opacity:0.7;animation:ping 1s infinite;"></div>
-                  <div style="position:relative;width:16px;height:16px;background:#2563eb;border:2px solid white;border-radius:50%;"></div>
-                 </div>`,
+          className: 'bg-transparent border-0',
+          html: `
+            <div class="relative flex items-center justify-center w-6 h-6">
+              <span class="absolute w-full h-full bg-blue-500 rounded-full opacity-75 animate-ping"></span>
+              <span class="relative w-4 h-4 bg-blue-600 border-2 border-white rounded-full shadow-md"></span>
+            </div>
+          `,
           iconSize: [24, 24],
-          iconAnchor: [12, 12]
+          iconAnchor: [12, 12],
         });
-        const m = L.marker([userLocation.latitude, userLocation.longitude], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+
+        const m = L.marker([userLocation.latitude, userLocation.longitude], { 
+          icon: userIcon, 
+          zIndexOffset: 1000 
+        }).addTo(map);
         markersRef.current.push(m);
       }
 
-      // Friend Markers
+      // --- FRIEND MARKERS ---
       friendsLocations.forEach(friend => {
         const lat = typeof friend.latitude === 'string' ? parseFloat(friend.latitude) : friend.latitude;
         const lng = typeof friend.longitude === 'string' ? parseFloat(friend.longitude) : friend.longitude;
 
         if (lat && lng) {
           const avatar = friend.profiles?.avatar_url || "https://github.com/shadcn.png";
+          
           const icon = L.divIcon({
-            className: 'bg-transparent',
-            html: `<div style="width:40px;height:40px;border-radius:50%;border:2px solid white;background-image:url('${avatar}');background-size:cover;box-shadow:0 4px 6px rgba(0,0,0,0.3);"></div>`,
+            className: 'bg-transparent border-0',
+            html: `
+              <div style="
+                width: 40px; height: 40px; 
+                border-radius: 50%; 
+                border: 2px solid white; 
+                background-image: url('${avatar}'); 
+                background-size: cover; 
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                background-color: #e2e8f0;
+              "></div>
+            `,
             iconSize: [40, 40],
-            iconAnchor: [20, 20]
+            iconAnchor: [20, 20],
+            popupAnchor: [0, -20]
           });
+
           const m = L.marker([lat, lng], { icon }).addTo(map);
+          if (friend.profiles?.display_name) {
+            m.bindPopup(`<div style="font-weight:600; text-align:center">${friend.profiles.display_name}</div>`);
+          }
           markersRef.current.push(m);
         }
       });
     };
 
     updateMarkers();
-  }, [userLocation, friendsLocations, mapInstanceRef.current]);
+  }, [userLocation, friendsLocations]);
 
-  if (!isMounted) return <div className="h-screen w-screen bg-gray-100 flex items-center justify-center">Loading Map...</div>;
+  if (!isMounted) return <div className="h-full w-full bg-muted flex items-center justify-center">Loading Map...</div>;
 
   return (
-    // FIX: Use fixed position to force full screen and z-index 0 to stay behind UI
+    // FIX: Using fixed positioning ensures the map fills the viewport regardless of parent constraints
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }}>
-      {/* CSS Injection to override Tailwind */}
+      
+      {/* CRITICAL: Inject CSS to override Tailwind's img reset that breaks Leaflet tiles */}
       <style>{`
         .leaflet-tile { max-width: none !important; max-height: none !important; }
         .leaflet-pane { z-index: 1 !important; }
         .leaflet-top, .leaflet-bottom { z-index: 1000 !important; }
       `}</style>
 
-      {/* Map Container */}
       <div 
         ref={mapContainerRef} 
-        style={{ width: '100%', height: '100%', background: '#e5e7eb' }}
+        style={{ width: '100%', height: '100%', background: '#e5e7eb' }} 
       />
 
-      {/* Loading State - Top Right to avoid blocking view if stuck */}
-      {loading && (
-        <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 9999, background: 'white', padding: '8px 12px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <span style={{ fontSize: '12px', fontWeight: 600 }}>Locating...</span>
+      {/* Loading Overlay */}
+      {(!mapInstanceRef.current || loading) && (
+        <div className="absolute inset-0 z-[1001] flex items-center justify-center bg-background/50 backdrop-blur-sm pointer-events-none">
+          <div className="bg-background px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium">Locating...</span>
+          </div>
         </div>
       )}
 
-      {/* Error State */}
+      {/* Error Overlay */}
       {error && !loading && (
-        <div style={{ position: 'absolute', top: 80, left: 20, right: 20, zIndex: 9999, background: '#ef4444', color: 'white', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[1001] bg-destructive text-destructive-foreground px-4 py-2 rounded-lg shadow-lg text-sm">
           {error}
         </div>
       )}
