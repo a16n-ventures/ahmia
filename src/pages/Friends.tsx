@@ -13,7 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 // Hooks
 import { useFriends, type Profile } from "@/hooks/useFriends";
 import { useContacts } from "@/hooks/useContacts";
-import { useGeolocation } from "@/hooks/useGeolocation";
+import { useGeolocation } from '@/contexts/LocationContext';
 
 // Components
 import { FriendSkeleton } from "@/components/friends/FriendSkeleton";
