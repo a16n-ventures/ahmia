@@ -22,6 +22,7 @@ interface LeafletMapProps {
   friendsLocations: FriendLocation[];
   loading?: boolean;
   error?: string | null;
+  mapStyle?: 'standard' | 'satellite'; // Added prop
 }
 
 // Helper to safely convert to number
@@ -36,22 +37,26 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
   friendsLocations,
   loading,
   error,
+  mapStyle = 'standard'
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const tileLayerRef = useRef<any>(null); // Track tile layer to switch styles
+  
   const [isClient, setIsClient] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const hasInitializedCenter = useRef(false);
   const userHasInteracted = useRef(false);
 
+  // Recenter function exposed to parent
   const recenterMap = () => {
     if (!mapRef.current || !userLocation) return;
     
     userHasInteracted.current = false;
     mapRef.current.setView(
       [userLocation.latitude, userLocation.longitude],
-      13,
+      15, // Zoom closer on recenter
       { animate: true }
     );
   };
@@ -65,53 +70,36 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
     setIsClient(true);
   }, []);
 
-  // Initialize map
+  // 1. Initialize Map
   useEffect(() => {
     if (!isClient || !mapContainerRef.current || mapRef.current) return;
 
     const initMap = async () => {
       try {
-        // Dynamic import of Leaflet
         const L = (await import('leaflet')).default;
 
-        // Fix default marker icons
-        delete (L.Icon.Default.prototype as any)._getIconUrl;
-        L.Icon.Default.mergeOptions({
-          iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-          iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-        });
-
+        // Default center (Lagos) if user location not yet found
         const fallback: [number, number] = [6.5244, 3.3792];
         const center: [number, number] = userLocation
           ? [userLocation.latitude, userLocation.longitude]
           : fallback;
 
-        // Create map
+        // Create map instance
         const map = L.map(mapContainerRef.current, {
           center: center,
           zoom: 13,
-          zoomControl: true,
+          zoomControl: false, // Hide default zoom buttons (we have custom UI)
+          attributionControl: false
         });
+
+        // Add attribution (bottom right)
+        L.control.attribution({ prefix: false }).addTo(map);
 
         // Track user interactions
-        map.on('movestart', () => {
-          userHasInteracted.current = true;
-        });
-
-        map.on('zoomstart', () => {
-          userHasInteracted.current = true;
-        });
-
-        map.on('dragstart', () => {
-          userHasInteracted.current = true;
-        });
-
-        // Add tile layer
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-          maxZoom: 19,
-        }).addTo(map);
+        const handleInteraction = () => { userHasInteracted.current = true; };
+        map.on('movestart', handleInteraction);
+        map.on('zoomstart', handleInteraction);
+        map.on('dragstart', handleInteraction);
 
         mapRef.current = map;
         setMapReady(true);
@@ -132,7 +120,38 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
     };
   }, [isClient]);
 
-  // Update markers when data changes
+  // 2. Handle Map Style Changes (Satellite vs Standard)
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+
+    const updateTileLayer = async () => {
+      const L = (await import('leaflet')).default;
+      const map = mapRef.current;
+
+      // Remove existing layer
+      if (tileLayerRef.current) {
+        map.removeLayer(tileLayerRef.current);
+      }
+
+      const standardUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      // Esri Satellite is a free, high-quality satellite option
+      const satelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+      const url = mapStyle === 'satellite' ? satelliteUrl : standardUrl;
+      const attribution = mapStyle === 'satellite' 
+        ? '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        : '&copy; OpenStreetMap contributors';
+
+      tileLayerRef.current = L.tileLayer(url, {
+        maxZoom: 19,
+        attribution: attribution
+      }).addTo(map);
+    };
+
+    updateTileLayer();
+  }, [mapReady, mapStyle]);
+
+  // 3. Update Markers (User + Friends)
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
 
@@ -145,28 +164,33 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
         markersRef.current.forEach(marker => marker.remove());
         markersRef.current = [];
 
-        const userIcon = L.icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-        });
-
         const allPoints: [number, number][] = [];
 
-        // Add user marker (You)
+        // --- A. Add User Marker (Pulse Effect) ---
         if (userLocation) {
+          // Custom HTML for a pulsing blue dot
+          const userIcon = L.divIcon({
+            className: 'user-location-marker',
+            html: `
+              <div class="relative flex items-center justify-center w-6 h-6">
+                <span class="absolute w-full h-full bg-blue-500 rounded-full opacity-75 animate-ping"></span>
+                <span class="relative w-4 h-4 bg-blue-600 border-2 border-white rounded-full shadow-md"></span>
+              </div>
+            `,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+          });
+
           const userMarker = L.marker(
             [userLocation.latitude, userLocation.longitude],
-            { icon: userIcon }
+            { icon: userIcon, zIndexOffset: 1000 } // Keep user on top
           ).addTo(map);
-          userMarker.bindPopup('You are here');
+          
           markersRef.current.push(userMarker);
           allPoints.push([userLocation.latitude, userLocation.longitude]);
         }
 
-        // Add friend markers (Custom Profile Pictures)
+        // --- B. Add Friend Markers (Profile Pictures) ---
         const validFriends = friendsLocations
           .map((f) => {
             const lat = toNumber(f.latitude);
@@ -182,28 +206,39 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
           .filter((f) => f.latitude !== null && f.longitude !== null);
 
         validFriends.forEach((friend) => {
-          // Fallback avatar if none provided
           const avatarUrl = friend.avatar || "https://github.com/shadcn.png";
           
-          // Create a custom circular HTML marker
+          // Create custom circular avatar marker
           const customIcon = L.divIcon({
-            className: 'custom-avatar-marker', // Use this class if you want global CSS, or rely on inline styles below
+            className: '', // Empty class to remove default Leaflet square styles
             html: `
               <div style="
-                width: 44px; 
-                height: 44px; 
+                width: 40px; 
+                height: 40px; 
                 border-radius: 50%; 
-                border: 3px solid white; 
+                border: 2px solid white; 
                 background-image: url('${avatarUrl}');
                 background-size: cover;
                 background-position: center;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                box-shadow: 0 4px 10px rgba(0,0,0,0.4);
                 background-color: #e2e8f0;
-              "></div>
+                position: relative;
+              ">
+                <div style="
+                  position: absolute;
+                  bottom: 0;
+                  right: 0;
+                  width: 10px;
+                  height: 10px;
+                  background-color: #22c55e;
+                  border: 2px solid white;
+                  border-radius: 50%;
+                "></div>
+              </div>
             `,
-            iconSize: [44, 44],
-            iconAnchor: [22, 22], // Center the circle on the coordinates
-            popupAnchor: [0, -22]
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
+            popupAnchor: [0, -20]
           });
 
           const marker = L.marker(
@@ -211,26 +246,23 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
             { icon: customIcon }
           ).addTo(map);
           
-          marker.bindPopup(`<div style="font-weight: bold; text-align: center;">${friend.name}</div>`);
+          marker.bindPopup(`<div class="font-bold text-center text-sm">${friend.name}</div>`);
           markersRef.current.push(marker);
           allPoints.push([friend.latitude!, friend.longitude!]);
         });
 
-        // Only auto-fit bounds on initial load or if user hasn't interacted
+        // --- C. Auto-Fit Bounds (Only initially) ---
         if (!hasInitializedCenter.current && !userHasInteracted.current) {
           if (allPoints.length > 1) {
             const bounds = L.latLngBounds(allPoints);
             map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
           } else if (allPoints.length === 1) {
-            map.setView(allPoints[0], 13);
+            map.setView(allPoints[0], 14);
           } else if (userLocation) {
-            map.setView([userLocation.latitude, userLocation.longitude], 13);
+            map.setView([userLocation.latitude, userLocation.longitude], 14);
           }
           hasInitializedCenter.current = true;
         }
-
-        // Final resize
-        setTimeout(() => map.invalidateSize(), 200);
 
       } catch (err) {
         console.error('Failed to update markers:', err);
@@ -243,76 +275,45 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>(({
   // Handle window resize
   useEffect(() => {
     if (!mapRef.current) return;
-
-    const handleResize = () => {
-      if (mapRef.current) {
-        mapRef.current.invalidateSize();
-      }
-    };
-
+    const handleResize = () => { mapRef.current.invalidateSize(); };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [mapReady]);
 
   if (!isClient) {
     return (
-      <div style={{ height: '60vh', minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6' }}>
-        <p>Loading map...</p>
+      <div className="h-full w-full flex items-center justify-center bg-muted">
+        <p className="text-muted-foreground animate-pulse">Loading map...</p>
       </div>
     );
   }
 
   return (
-    <div style={{ position: 'relative', height: '100%', width: '100%' }}>
+    <div className="relative h-full w-full">
       <div
         ref={mapContainerRef}
-        style={{
-          height: '100%',
-          width: '100%',
-          overflow: 'hidden',
-          background: '#f3f4f6',
-        }}
+        className="h-full w-full bg-muted"
+        style={{ minHeight: '100vh', zIndex: 0 }} 
       />
 
-      {/* Status overlay */}
-      {(loading || error) && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            background: 'rgba(0,0,0,0.7)',
-            color: '#fff',
-            padding: '12px 16px',
-            fontSize: '14px',
-            textAlign: 'center',
-            zIndex: 1000,
-            borderTopLeftRadius: '12px',
-            borderTopRightRadius: '12px',
-          }}
-        >
-          {loading && 'Fetching your location...'}
-          {error && !loading && error}
+      {/* Loading Overlay */}
+      {(!mapReady || loading) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent" />
+            <span className="text-sm font-medium text-foreground">Locating you...</span>
+          </div>
         </div>
       )}
 
-      {!mapReady && !loading && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            fontSize: '14px',
-            color: '#666',
-          }}
-        >
-          Initializing map...
+      {/* Error Overlay */}
+      {error && !loading && (
+        <div className="absolute top-20 left-4 right-4 z-50 rounded-lg bg-destructive/90 p-3 text-center text-sm text-white shadow-lg backdrop-blur-md">
+          {error}
         </div>
       )}
     </div>
   );
 });
-                                                                 
+
 export default LeafletMap;
