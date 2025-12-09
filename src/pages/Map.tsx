@@ -20,7 +20,7 @@ import LeafletMap from '@/components/map/LeafletMap';
 import type { LeafletMapHandle } from '@/components/map/LeafletMap';
 import { useQuery } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { format, differenceInHours } from 'date-fns'; // Added differenceInHours
+import { format, differenceInHours } from 'date-fns';
 
 // --- Types ---
 type FriendOnMap = {
@@ -67,7 +67,12 @@ const MapPage = () => {
 
   // --- 1. Fetch Friend Locations (Optimized) ---
   const friendIds = useMemo(() => {
-    return friends.map(f => f.requester_id === user?.id ? f.addressee.user_id : f.requester.user_id);
+    // FIX: Reverted to .id because useFriends profiles usually use 'id' as PK, not 'user_id'
+    // We check for both just in case, but prioritize .id
+    return friends.map(f => {
+      const p = f.requester_id === user?.id ? f.addressee : f.requester;
+      return (p as any).user_id || p.id;
+    }).filter(Boolean);
   }, [friends, user?.id]);
 
   const { data: friendLocations = [] } = useQuery({
@@ -75,8 +80,6 @@ const MapPage = () => {
     queryFn: async () => {
       if (friendIds.length === 0) return [];
       
-      // FIX: Removed strict .eq('is_sharing_location', true) to allow client-side filtering
-      // This ensures we get data even if it's slightly stale, then we filter below.
       const { data } = await supabase
         .from('user_locations')
         .select('user_id, latitude, longitude, is_sharing_location, updated_at')
@@ -96,20 +99,20 @@ const MapPage = () => {
 
     friends.forEach(friendship => {
       const profile = friendship.requester_id === user?.id ? friendship.addressee : friendship.requester;
-      const loc = friendLocations.find(l => l.user_id === profile.user_id);
+      const profileId = (profile as any).user_id || profile.id; // Safe check for ID
+      
+      // Match location by user_id (FK in locations table)
+      const loc = friendLocations.find(l => l.user_id === profileId);
 
       if (loc && loc.latitude && loc.longitude) {
-        // PRODUCTION LOGIC:
-        // 1. Must be actively sharing location (Ghost Mode Check)
-        // 2. Data must be fresh (within 24 hours)
-        const isSharing = loc.is_sharing_location;
-        const isFresh = differenceInHours(new Date(), new Date(loc.updated_at)) < 24;
-
-        if (isSharing && isFresh) {
-          uniqueFriendsMap.set(profile.user_id, {
-            user_id: profile.user_id,
+        // FIX: Relaxed logic. We show them if they are sharing, regardless of how old the data is.
+        // We handle the "stale" visual in the UI mapping step instead.
+        if (loc.is_sharing_location) {
+          uniqueFriendsMap.set(profileId, {
+            user_id: profileId,
             latitude: loc.latitude,
             longitude: loc.longitude,
+            updated_at: loc.updated_at,
             profiles: {
               display_name: profile.display_name,
               avatar_url: profile.avatar_url
@@ -131,6 +134,15 @@ const MapPage = () => {
         if (dist > 50) return null; // 50km Limit
 
         const online = friendsPresence[loc.user_id] === 'online';
+        
+        // Calculate freshness for status label
+        const hoursSinceUpdate = differenceInHours(new Date(), new Date(loc.updated_at));
+        let statusText = 'Offline';
+        if (online) statusText = 'Active now';
+        else if (hoursSinceUpdate < 2) statusText = 'Active recently';
+        else if (hoursSinceUpdate < 24) statusText = `Active ${hoursSinceUpdate}h ago`;
+        else statusText = 'Location stale';
+
         return {
           id: loc.user_id,
           name: loc.profiles?.display_name || 'Friend',
@@ -138,7 +150,7 @@ const MapPage = () => {
           locationLabel: 'On the map',
           coordinates: { lat: loc.latitude, lng: loc.longitude },
           status: online ? 'online' : 'offline',
-          lastSeen: online ? 'Active now' : 'Offline',
+          lastSeen: statusText,
           distanceKm: Number(dist.toFixed(1)),
           latitude: loc.latitude,
           longitude: loc.longitude,
@@ -347,6 +359,7 @@ const MapPage = () => {
                             {selectedFriend.locationLabel}
                             {selectedFriend.distanceKm && ` • ${selectedFriend.distanceKm}km away`}
                           </p>
+                          <p className="text-xs text-muted-foreground">{selectedFriend.lastSeen}</p>
                         </div>
                       </div>
                       <Button variant="ghost" size="icon" onClick={() => setSelectedFriend(null)}>
