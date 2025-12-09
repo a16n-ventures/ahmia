@@ -113,9 +113,9 @@ const MapPage = () => {
 
       if (loc && loc.latitude && loc.longitude) {
         // Logic: Show them if they have coordinates.
-      if (!loc.is_sharing_location) {
-    return; // Skip to next iteration
-       }
+    //  if (!loc.is_sharing_location) {
+ //   return; // Skip to next iteration
+     //  }
         uniqueFriendsMap.set(friendId, {
           user_id: friendId,
           latitude: loc.latitude,
