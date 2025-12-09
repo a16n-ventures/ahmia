@@ -131,30 +131,36 @@ export default function Friends() {
             });
 
             // 2. Fetch locations of ALL users who are sharing location
-            // (We fetch a batch, then filter by distance in JS)
-          const { data: allLocations, error: locError } = await supabase
+            const { data: allLocations, error: locError } = await supabase
               .from('user_locations')
               .select('user_id, latitude, longitude')
-              .eq('is_sharing_location', true || false)
-              .limit(100); // Limit to 100 closest candidates for performance
+              .eq('is_sharing_location', true)
+              .limit(100); 
 
-            if (locError) throw locError; 
+            if (locError) throw locError;
 
-            // 3. Client-Side Filtering: Distance & Exclusions
-            const validCandidates = (allLocations || [])
-              .filter(loc => !excludedIds.has(loc.user_id)) // Remove existing friends
-              .map(loc => {
-                const dist = calculateDistance(
-                  userLocation.latitude, 
-                  userLocation.longitude, 
-                  loc.latitude, 
-                  loc.longitude
-                );
-                return { ...loc, distance: dist };
-              })
-              .filter(loc => loc.distance <= 100) // 100km Limit
-              .sort((a, b) => a.distance - b.distance) // Sort closest first
-              .slice(0, 20); // Take top 20
+            // 3. Client-Side Filtering & Deduplication
+            const uniqueCandidatesMap = new Map();
+            
+            (allLocations || []).forEach(loc => {
+                // Logic: Only add if not excluded AND not already in our map (Deduplication)
+                if (!excludedIds.has(loc.user_id) && !uniqueCandidatesMap.has(loc.user_id)) {
+                    const dist = calculateDistance(
+                      userLocation.latitude, 
+                      userLocation.longitude, 
+                      loc.latitude, 
+                      loc.longitude
+                    );
+                    
+                    if (dist <= 100) { // 100km Limit
+                        uniqueCandidatesMap.set(loc.user_id, { ...loc, distance: dist });
+                    }
+                }
+            });
+
+            const validCandidates = Array.from(uniqueCandidatesMap.values())
+                .sort((a: any, b: any) => a.distance - b.distance)
+                .slice(0, 20);
 
             if (validCandidates.length === 0) {
               setNearbyUsers([]);
@@ -163,7 +169,7 @@ export default function Friends() {
             }
 
             // 4. Fetch Profiles for the valid candidates
-            const candidateIds = validCandidates.map(c => c.user_id);
+            const candidateIds = validCandidates.map((c: any) => c.user_id);
             const { data: profiles, error: profError } = await supabase
               .from('profiles')
               .select('user_id, display_name, avatar_url')
@@ -171,17 +177,21 @@ export default function Friends() {
 
             if (profError) throw profError;
 
-            // 5. Merge Data
-            const formatted = validCandidates.map(candidate => {
+            // 5. Merge Data (Strict Matching)
+            const formatted = validCandidates.map((candidate: any) => {
               const profile = profiles?.find(p => p.user_id === candidate.user_id);
+              
+              // FIX: If profile is missing, SKIP this user. Don't show "Unknown".
+              if (!profile) return null;
+
               return {
                 user_id: candidate.user_id,
-                display_name: profile?.display_name || 'Unknown',
-                avatar_url: profile?.avatar_url,
+                display_name: profile.display_name || 'Unknown',
+                avatar_url: profile.avatar_url,
                 distance_km: candidate.distance,
-                match_score: Math.max(0, 100 - candidate.distance) // Simple score
+                match_score: Math.max(0, 100 - candidate.distance)
               };
-            });
+            }).filter(Boolean); // Removes the nulls (hidden unknowns)
 
             setNearbyUsers(formatted);
 
