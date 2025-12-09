@@ -141,7 +141,7 @@ const MapPage = () => {
         const dist = distanceKm(location.latitude, location.longitude, loc.latitude, loc.longitude);
         
         // Optional: You can comment this out if you want to see friends worldwide
-        if (dist > 60) return null; // Increased range to ensure close friends show up
+        if (dist > 100) return null; // Increased range to ensure close friends show up
 
         const online = friendsPresence[loc.user_id] === 'online';
         
@@ -232,7 +232,7 @@ const MapPage = () => {
         updated_at: new Date().toISOString()
       } as any);
       setIsGhostMode(newValue);
-      toast.success(newValue ? "You are invisible" : "You are visible");
+      toast.success(newValue ? "You are now invisible" : "You are visible");
     } catch {
       toast.error("Failed to update status");
     }
