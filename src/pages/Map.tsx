@@ -67,7 +67,8 @@ const MapPage = () => {
 
   // --- 1. Fetch Friend Locations (Optimized) ---
   const friendIds = useMemo(() => {
-    // FIX: Changed .user_id back to .id (matches Profile interface)
+    // FIX: Changed .user_id back to .id
+    // This was the bug. The profile object has .id, not .user_id
     return friends.map(f => {
       const p = f.requester_id === user?.id ? f.addressee : f.requester;
       return p.id; 
@@ -98,15 +99,15 @@ const MapPage = () => {
 
     friends.forEach(friendship => {
       const profile = friendship.requester_id === user?.id ? friendship.addressee : friendship.requester;
-      // FIX: Use .id here as well
+      // FIX: Use .id here as well to match the friendIds logic
       const profileId = profile.id; 
       
       const loc = friendLocations.find(l => l.user_id === profileId);
 
       if (loc && loc.latitude && loc.longitude) {
         // VISIBILITY LOGIC:
-        // 1. Friend MUST be sharing location (is_sharing_location = true)
-        // 2. We do NOT filter by time anymore (just show "Stale" label if old)
+        // 1. Friend MUST be sharing location
+        // 2. We show them even if data is old (stale), just with a different label
         if (loc.is_sharing_location) {
           uniqueFriendsMap.set(profileId, {
             user_id: profileId,
