@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,7 @@ import LeafletMap from '@/components/map/LeafletMap';
 import type { LeafletMapHandle } from '@/components/map/LeafletMap';
 import { useQuery } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { format } from 'date-fns';
+import { format, differenceInHours } from 'date-fns'; // Added differenceInHours
 
 // --- Types ---
 type FriendOnMap = {
@@ -46,7 +46,6 @@ const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-// RENAMED Component to 'MapPage' to avoid conflict with JS 'Map' constructor
 const MapPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -68,7 +67,6 @@ const MapPage = () => {
 
   // --- 1. Fetch Friend Locations (Optimized) ---
   const friendIds = useMemo(() => {
-    // Returns array of IDs
     return friends.map(f => f.requester_id === user?.id ? f.addressee.user_id : f.requester.user_id);
   }, [friends, user?.id]);
 
@@ -76,11 +74,14 @@ const MapPage = () => {
     queryKey: ['friend-locations', friendIds],
     queryFn: async () => {
       if (friendIds.length === 0) return [];
+      
+      // FIX: Removed strict .eq('is_sharing_location', true) to allow client-side filtering
+      // This ensures we get data even if it's slightly stale, then we filter below.
       const { data } = await supabase
         .from('user_locations')
         .select('user_id, latitude, longitude, is_sharing_location, updated_at')
-        .in('user_id', friendIds)
-        .eq('is_sharing_location', true); 
+        .in('user_id', friendIds);
+        
       return data || [];
     },
     enabled: friendIds.length > 0 && activeView === 'friends',
@@ -91,7 +92,6 @@ const MapPage = () => {
   const nearbyFriendsRaw = useMemo(() => {
     if (!location) return [];
 
-    // FIXED: Now 'Map' refers to the JS Constructor, not the component
     const uniqueFriendsMap = new Map();
 
     friends.forEach(friendship => {
@@ -99,15 +99,23 @@ const MapPage = () => {
       const loc = friendLocations.find(l => l.user_id === profile.user_id);
 
       if (loc && loc.latitude && loc.longitude) {
-        uniqueFriendsMap.set(profile.user_id, {
-          user_id: profile.user_id,
-          latitude: loc.latitude,
-          longitude: loc.longitude,
-          profiles: {
-            display_name: profile.display_name,
-            avatar_url: profile.avatar_url
-          }
-        });
+        // PRODUCTION LOGIC:
+        // 1. Must be actively sharing location (Ghost Mode Check)
+        // 2. Data must be fresh (within 24 hours)
+        const isSharing = loc.is_sharing_location;
+        const isFresh = differenceInHours(new Date(), new Date(loc.updated_at)) < 24;
+
+        if (isSharing && isFresh) {
+          uniqueFriendsMap.set(profile.user_id, {
+            user_id: profile.user_id,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            profiles: {
+              display_name: profile.display_name,
+              avatar_url: profile.avatar_url
+            }
+          });
+        }
       }
     });
 
@@ -196,7 +204,6 @@ const MapPage = () => {
     if (!user) return;
     const newValue = !isGhostMode;
     try {
-      // FIXED: Added 'as any' to bypass strict type check on update payload
       await supabase.from('user_locations').upsert({ 
         user_id: user.id, 
         is_sharing_location: !newValue,
