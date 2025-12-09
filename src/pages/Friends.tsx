@@ -132,15 +132,13 @@ export default function Friends() {
 
             // 2. Fetch locations of ALL users who are sharing location
             // (We fetch a batch, then filter by distance in JS)
-          {/* 
           const { data: allLocations, error: locError } = await supabase
               .from('user_locations')
               .select('user_id, latitude, longitude')
-              .eq('is_sharing_location', true)
+              .eq('is_sharing_location', false)
               .limit(100); // Limit to 100 closest candidates for performance
 
             if (locError) throw locError; 
-            */}
 
             // 3. Client-Side Filtering: Distance & Exclusions
             const validCandidates = (allLocations || [])
