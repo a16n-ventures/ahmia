@@ -469,7 +469,7 @@ const EventDetail = () => {
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header with Image */}
-      <div className="relative h-64 bg-gradient-to-br from-purple-600 to-blue-600 mb-6">
+      <div className="relative h-64 bg-gradient-to-br from-purple-600 to-blue-600 mb-8">
         {event.image_url ? (
           <img
             src={event.image_url}
