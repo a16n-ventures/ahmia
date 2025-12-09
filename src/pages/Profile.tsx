@@ -33,7 +33,7 @@ import {
   Star,
   Zap,
   AlertCircle,
-  RefreshCw // Added for analytics refresh
+  RefreshCw // Added for manual refresh
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
