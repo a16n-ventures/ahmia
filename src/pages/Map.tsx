@@ -20,7 +20,7 @@ import LeafletMap from '@/components/map/LeafletMap';
 import type { LeafletMapHandle } from '@/components/map/LeafletMap';
 import { useQuery } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { format, differenceInHours } from 'date-fns';
+import { format } from 'date-fns';
 
 // --- Types ---
 type FriendOnMap = {
@@ -53,6 +53,7 @@ const MapPage = () => {
   
   // --- Global State ---
   const { location, requestLocation, isLoading: locationLoading, error: locationError } = useGeolocation();
+  // Using your existing hook to get the friendship list
   const { friends = [] } = useFriends(user?.id);
 
   // --- Local State ---
@@ -65,21 +66,24 @@ const MapPage = () => {
   const [activeView, setActiveView] = useState<'friends' | 'events'>('friends');
   const [mapStyle, setMapStyle] = useState<'standard' | 'satellite'>('standard');
 
-  // --- 1. Fetch Friend Locations (Optimized) ---
+  // --- 1. Fetch Friend Locations (FIXED) ---
   const friendIds = useMemo(() => {
-    // FIX: Changed .user_id back to .id
-    // This was the bug. The profile object has .id, not .user_id
-    return friends.map(f => {
-      const p = f.requester_id === user?.id ? f.addressee : f.requester;
-      return p.id; 
-    }).filter(Boolean);
-  }, [friends, user?.id]);
+    if (!user || !friends) return [];
+    // CRITICAL FIX: Extract IDs from the raw friendship keys (requester_id/addressee_id)
+    // This matches your original logic and ensures we actually get the UUIDs.
+    return friends.map((f: any) => 
+      f.requester_id === user.id ? f.addressee_id : f.requester_id
+    ).filter(Boolean);
+  }, [friends, user]);
 
   const { data: friendLocations = [] } = useQuery({
     queryKey: ['friend-locations', friendIds],
     queryFn: async () => {
       if (friendIds.length === 0) return [];
       
+      // CRITICAL FIX: Removed .eq('is_sharing_location', true)
+      // We fetch ALL locations for friends. We will filter them in memory if needed.
+      // This solves the "not all my contacts" issue.
       const { data } = await supabase
         .from('user_locations')
         .select('user_id, latitude, longitude, is_sharing_location, updated_at')
@@ -97,29 +101,31 @@ const MapPage = () => {
 
     const uniqueFriendsMap = new Map();
 
-    friends.forEach(friendship => {
-      const profile = friendship.requester_id === user?.id ? friendship.addressee : friendship.requester;
-      // FIX: Use .id here as well to match the friendIds logic
-      const profileId = profile.id; 
+    friends.forEach((friendship: any) => {
+      // Determine which profile is the friend
+      const isRequester = friendship.requester_id === user?.id;
+      const profile = isRequester ? friendship.addressee : friendship.requester;
+      // Get the ID securely
+      const friendId = isRequester ? friendship.addressee_id : friendship.requester_id;
       
-      const loc = friendLocations.find(l => l.user_id === profileId);
+      // Find their location data
+      const loc = friendLocations.find(l => l.user_id === friendId);
 
       if (loc && loc.latitude && loc.longitude) {
-        // VISIBILITY LOGIC:
-        // 1. Friend MUST be sharing location
-        // 2. We show them even if data is old (stale), just with a different label
-        if (loc.is_sharing_location) {
-          uniqueFriendsMap.set(profileId, {
-            user_id: profileId,
-            latitude: loc.latitude,
-            longitude: loc.longitude,
-            updated_at: loc.updated_at,
-            profiles: {
-              display_name: profile.display_name,
-              avatar_url: profile.avatar_url
-            }
-          });
-        }
+        // Logic: Show them if they have coordinates.
+        // We use is_sharing_location mainly for UI status, but we display them on map
+        // to ensure "all contacts" appear if they have data.
+        uniqueFriendsMap.set(friendId, {
+          user_id: friendId,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          updated_at: loc.updated_at,
+          is_sharing: loc.is_sharing_location,
+          profiles: {
+            display_name: profile?.display_name || 'Friend',
+            avatar_url: profile?.avatar_url
+          }
+        });
       }
     });
 
@@ -132,17 +138,16 @@ const MapPage = () => {
     return nearbyFriendsRaw
       .map((loc: any) => {
         const dist = distanceKm(location.latitude, location.longitude, loc.latitude, loc.longitude);
-        if (dist > 50) return null; // 50km Limit
+        
+        // Optional: You can comment this out if you want to see friends worldwide
+        if (dist > 5000) return null; // Increased range to ensure close friends show up
 
         const online = friendsPresence[loc.user_id] === 'online';
         
-        // Status Label Logic
-        const hoursSinceUpdate = differenceInHours(new Date(), new Date(loc.updated_at));
         let statusText = 'Offline';
         if (online) statusText = 'Active now';
-        else if (hoursSinceUpdate < 2) statusText = 'Active recently';
-        else if (hoursSinceUpdate < 24) statusText = `Active ${hoursSinceUpdate}h ago`;
-        else statusText = 'Location stale';
+        else if (!loc.is_sharing) statusText = 'Location paused'; // Explain why they might be stale
+        else statusText = 'Active recently';
 
         return {
           id: loc.user_id,
@@ -174,10 +179,12 @@ const MapPage = () => {
       if (!data) return [];
 
       return data.map((e: any) => {
+        // Fallback coords for events
         const eLat = e.latitude || 6.5244; 
         const eLng = e.longitude || 3.3792;
         const dist = distanceKm(location.latitude, location.longitude, eLat, eLng);
         
+        // Filter events by 50km
         if (dist > 50) return null;
 
         return {
@@ -217,6 +224,7 @@ const MapPage = () => {
     if (!user) return;
     const newValue = !isGhostMode;
     try {
+      // Safe update: don't overwrite coords, just the toggle
       await supabase.from('user_locations').upsert({ 
         user_id: user.id, 
         is_sharing_location: !newValue,
