@@ -69,7 +69,7 @@ const Index = () => {
     support: [
       { label: "Help Center", href: "#" },
       { label: "Safety Center", href: "#" },
-      { label: "Contact Us", href: "#" },
+      { label: "Contact Us", href: "https://chat.whatsapp.com/Fe2gkrxSOtZHuwMQXJltKR?mode=wwt" },
     ]
   };
 
@@ -153,7 +153,7 @@ const Index = () => {
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold uppercase tracking-wider">
                 <Smartphone className="w-3 h-3" /> Mobile App
               </div>
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Take Lynq with you everywhere.</h2>
+              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Take Ahmia with you everywhere.</h2>
               <p className="text-lg text-muted-foreground max-w-md mx-auto lg:mx-0">
                 Get the full experience on your phone. Real-time location sharing, instant notifications, and smoother chatting.
               </p>
@@ -208,7 +208,7 @@ const Index = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
             
             <div className="col-span-2 md:col-span-1">
-              <h3 className="font-bold text-xl mb-4 tracking-tight gradient-primary bg-clip-text text-transparent inline-block">Lynq</h3>
+              <h3 className="font-bold text-xl mb-4 tracking-tight gradient-primary bg-clip-text text-transparent inline-block">Ahmia</h3>
               <p className="text-sm text-muted-foreground leading-relaxed mb-6">
                 Connecting friends, communities, and events in the real world.
               </p>
@@ -250,7 +250,7 @@ const Index = () => {
           <div className="border-t border-border pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-muted-foreground">
             <div className="flex items-center gap-1">
               <Copyright className="w-3 h-3" /> 
-              <span>{currentYear} Lynq. All rights reserved.</span>
+              <span>{currentYear} Ahmia. All rights reserved.</span>
             </div>
             <div className="flex items-center gap-6">
                <span>Made with ❤️ for connection</span>
