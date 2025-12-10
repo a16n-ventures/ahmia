@@ -11,7 +11,7 @@ import {
   MessageSquare, X, Loader2, 
   MoreVertical, Info, UserPlus,
   Shield, Trash2, Ban, Crown, Image as ImageIcon,
-  Check, AlertCircle, Camera, UploadCloud
+  Check, AlertCircle, Camera, UploadCloud, LogOut, UserX
 } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -72,8 +72,8 @@ type SelectedChat =
       type: 'community'; 
       id: string; 
       name: string; 
-      avatar?: string;
-      cover_url?: string; // Added cover_url
+      avatar?: string; 
+      cover_url?: string; // Added for production feature
       description?: string; 
       my_role: 'admin' | 'moderator' | 'member' | 'none'; 
       member_count: number;
@@ -350,7 +350,7 @@ const MessageBubble = React.memo(({
   );
 });
 
-// Community Settings Dialog
+// Enhanced Community Settings Dialog
 const CommunitySettingsDialog = ({ 
   isOpen, 
   onClose, 
@@ -410,15 +410,14 @@ const CommunitySettingsDialog = ({
       await supabase
         .from('communities')
         .update({ 
-          name: name.trim(), 
-          description: desc.trim(),
-          cover_url: newCoverUrl 
+            name: name.trim(), 
+            description: desc.trim(),
+            cover_url: newCoverUrl 
         })
         .eq('id', communityId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comm_list'] });
-      // Also invalidate the specific community info if needed
       toast.success("Community updated");
       onClose();
     },
@@ -517,6 +516,8 @@ export default function Messages() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Community Creation Refs
   const coverInputRef = useRef<HTMLInputElement>(null);
   
   const [activeTab, setActiveTab] = useState<ChatMode>('dm');
@@ -532,8 +533,8 @@ export default function Messages() {
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [isTyping, setIsTyping] = useState(false);
-  
-  // Community Creation State
+
+  // Create Community State
   const [newCommName, setNewCommName] = useState('');
   const [newCommDesc, setNewCommDesc] = useState('');
   const [newCommCover, setNewCommCover] = useState<File | null>(null);
@@ -549,6 +550,7 @@ export default function Messages() {
     queryFn: async () => {
       if (!user?.id) return [];
       
+      // 1. Fetch messages first (no Joins) to avoid Foreign Key errors
       const { data: rawMessages, error } = await supabase
         .from('messages')
         .select('*')
@@ -560,6 +562,7 @@ export default function Messages() {
         return [];
       }
 
+      // 2. Identify unique partners and their latest message
       const partnerMap = new Map();
       const partnerIds = new Set<string>();
 
@@ -580,16 +583,19 @@ export default function Messages() {
 
       const idsList = Array.from(partnerIds);
 
+      // 3. Batch fetch profile details using user_id (the correct field)
       const { data: profiles } = await supabase
         .from('profiles')
         .select('user_id, display_name, avatar_url')
         .in('user_id', idsList);
 
+      // 4. Create a lookup map by user_id
       const profileLookup = new Map();
       profiles?.forEach((p: any) => {
         if (p.user_id) profileLookup.set(p.user_id, p);
       });
 
+      // 5. Combine data with profiles
       return idsList.map(partnerId => {
         const details = partnerMap.get(partnerId);
         const profile = profileLookup.get(partnerId);
@@ -616,7 +622,7 @@ export default function Messages() {
       if (!user?.id) return [];
       const { data } = await supabase
         .from('communities')
-        .select(`*, members:community_members(user_id, role)`);
+        .select(`*, members:community_members(user_id, role, is_banned)`);
 
       return data?.map((c: any) => {
         const myMembership = c.members?.find((m: any) => m.user_id === user?.id);
@@ -629,7 +635,8 @@ export default function Messages() {
           cover_url: c.cover_url,
           member_count: c.member_count || 0,
           my_role: myMembership ? myMembership.role : 'none',
-          is_joined: !!myMembership
+          is_joined: !!myMembership,
+          is_banned: myMembership?.is_banned
         };
       }) || [];
     },
@@ -645,7 +652,7 @@ export default function Messages() {
       const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
       if (!profile) return null;
       return { 
-        id: profile.user_id || profile.id,
+        id: profile.user_id || profile.id, // Fallback to id if user_id is missing
         name: profile.display_name, 
         avatar: profile.avatar_url,
         is_online: false,
@@ -747,13 +754,12 @@ export default function Messages() {
         if (!uploadError) {
           const { data: { publicUrl } } = supabase.storage.from('community-covers').getPublicUrl(filePath);
           coverUrl = publicUrl;
-          
           // Update the community record with the cover URL
           await supabase.from('communities').update({ cover_url: coverUrl }).eq('id', comm.id);
         }
       }
-      
-            // 3. Add Creator as Admin
+
+      // 3. Add Creator as Admin
       await supabase.from('community_members').insert({ community_id: comm.id, user_id: user.id, role: 'admin' });
       return comm;
     },
@@ -981,7 +987,7 @@ export default function Messages() {
                 onClose={() => setIsSettingsOpen(false)} 
                 communityId={selectedChat.id} 
                 currentName={selectedChat.name} 
-                currentDesc={selectedChat.description || ''}
+                currentDesc={selectedChat.description || ''} 
                 currentCover={selectedChat.cover_url}
               />
             )}
@@ -1013,6 +1019,7 @@ export default function Messages() {
                     onReply={(msg) => setReplyingTo(msg)}
                   />
                 ))}
+                {false && <TypingIndicator name={selectedChat.name} avatar={selectedChat.avatar} />}
               </>
             )}
           </div>
@@ -1098,8 +1105,8 @@ export default function Messages() {
       </div>
     );
   }
-  
-  // List View
+
+// List View
   return (
     <div className="min-h-screen flex flex-col pb-20 bg-gradient-to-b from-background to-muted/10">
       <div className="container-mobile py-4 space-y-6 pb-24">
@@ -1237,7 +1244,6 @@ export default function Messages() {
           )}
 
           <ScrollArea className="flex-1 px-6 h-[400px]"> 
-          {/* Added h-[400px] to enforce scrollability in dialog */}
             <div className="space-y-6 pb-6 pt-2">
               {friends.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -1351,8 +1357,8 @@ export default function Messages() {
           </ScrollArea>
         </DialogContent>
       </Dialog>
-      
-       {/* Create Community Dialog */}
+
+      {/* Create Community Dialog */}
       <Dialog open={isCreateCommunityOpen} onOpenChange={setIsCreateCommunityOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -1404,7 +1410,7 @@ export default function Messages() {
 }
 MessageBubble.displayName = 'MessageBubble';
 
-// Community Info Dialog with Full Moderation
+// Community Info & Moderation Dialog with Tabs
 const CommunityInfoDialog = ({ 
   isOpen, 
   onClose, 
@@ -1416,10 +1422,14 @@ const CommunityInfoDialog = ({
 }) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [showModeration, setShowModeration] = useState(false);
+  const [activeTab, setActiveTab] = useState('info');
+  const [memberSearch, setMemberSearch] = useState('');
+  
+  // Moderation States
+  const [showModAction, setShowModAction] = useState(false);
   const [selectedMember, setSelectedMember] = useState<CommunityMember | null>(null);
-  const [moderationReason, setModerationReason] = useState('');
-  const [moderationAction, setModerationAction] = useState<'kick' | 'ban'>('kick');
+  const [modReason, setModReason] = useState('');
+  const [modAction, setModAction] = useState<'kick' | 'ban'>('kick');
 
   const { data: members = [] } = useQuery({
     queryKey: ['comm_members', community?.id],
@@ -1429,72 +1439,54 @@ const CommunityInfoDialog = ({
         .from('community_members')
         .select('user_id, role, joined_at, is_banned, profile:profiles(display_name, avatar_url)')
         .eq('community_id', community.id)
-        .order('role', { ascending: true });
+        .order('role', { ascending: true }); // Admins first
       if (error) throw error;
       return data as unknown as CommunityMember[];
     },
     enabled: isOpen && !!community
   });
 
-  const promoteMutation = useMutation({
-    mutationFn: async ({ userId, newRole }: { userId: string; newRole: 'moderator' | 'member' }) => {
-      if (!community || community.type !== 'community') return;
-      await supabase
-        .from('community_members')
-        .update({ role: newRole })
-        .eq('community_id', community.id)
-        .eq('user_id', userId);
+  const canModerate = community?.type === 'community' && (community.my_role === 'admin' || community.my_role === 'moderator');
+  const isAdmin = community?.type === 'community' && community.my_role === 'admin';
+
+  // Filters
+  const activeMembers = members.filter(m => !m.is_banned && m.profile?.display_name.toLowerCase().includes(memberSearch.toLowerCase()));
+  const bannedMembers = members.filter(m => m.is_banned && m.profile?.display_name.toLowerCase().includes(memberSearch.toLowerCase()));
+
+  // Mutations
+  const executeModAction = useMutation({
+    mutationFn: async () => {
+      if (!community || !selectedMember) return;
+      if (modAction === 'kick') {
+        await supabase.from('community_members').delete().eq('community_id', community.id).eq('user_id', selectedMember.user_id);
+      } else {
+        await supabase.from('community_members').update({ is_banned: true, role: 'member' } as any).eq('community_id', community.id).eq('user_id', selectedMember.user_id);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comm_members'] });
-      toast.success("Role updated successfully");
-    }
+      toast.success(modAction === 'kick' ? "Member kicked" : "Member banned");
+      setShowModAction(false);
+      setModReason('');
+    },
+    onError: (e) => toast.error(e.message)
   });
 
-  const banMutation = useMutation({
-    mutationFn: async ({ userId, reason }: { userId: string; reason: string }) => {
-      if (!community || community.type !== 'community') return;
-      await supabase
-        .from('community_members')
-        .update({ role: 'member', is_banned: true } as any) // Updated to set is_banned flag
-        .eq('community_id', community.id)
-        .eq('user_id', userId);
+  const updateRole = useMutation({
+    mutationFn: async ({ uid, role }: { uid: string, role: string }) => {
+      if (!community) return;
+      await supabase.from('community_members').update({ role }).eq('community_id', community.id).eq('user_id', uid);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comm_members'] });
-      setShowModeration(false);
-      setSelectedMember(null);
-      setModerationReason('');
-      toast.success("Member banned successfully");
+      toast.success("Role updated");
     }
   });
 
-  const kickMutation = useMutation({
-    mutationFn: async ({ userId, reason }: { userId: string; reason: string }) => {
-      if (!community || community.type !== 'community') return;
-      await supabase
-        .from('community_members')
-        .delete()
-        .eq('community_id', community.id)
-        .eq('user_id', userId);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['comm_members'] });
-      setShowModeration(false);
-      setSelectedMember(null);
-      setModerationReason('');
-      toast.success("Member removed from community");
-    }
-  });
-
-  const unbanMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      if (!community || community.type !== 'community') return;
-      await supabase
-        .from('community_members')
-        .update({ is_banned: false } as any)
-        .eq('community_id', community.id)
-        .eq('user_id', userId);
+  const unbanMember = useMutation({
+    mutationFn: async (uid: string) => {
+      if (!community) return;
+      await supabase.from('community_members').update({ is_banned: false }).eq('community_id', community.id).eq('user_id', uid);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comm_members'] });
@@ -1502,237 +1494,192 @@ const CommunityInfoDialog = ({
     }
   });
 
-  const handleModerationSubmit = () => {
-    if (!selectedMember || !moderationReason.trim()) {
-      toast.error("Please provide a reason");
-      return;
+  const leaveCommunity = useMutation({
+    mutationFn: async () => {
+       if(!community || !user) return;
+       await supabase.from('community_members').delete().eq('community_id', community.id).eq('user_id', user.id);
+    },
+    onSuccess: () => {
+        onClose();
+        window.location.reload(); // Simple way to reset state
     }
-
-    if (moderationAction === 'ban') {
-      banMutation.mutate({ userId: selectedMember.user_id, reason: moderationReason });
-    } else if (moderationAction === 'kick') {
-      kickMutation.mutate({ userId: selectedMember.user_id, reason: moderationReason });
-    }
-  };
+  });
 
   if (!community || community.type !== 'community') return null;
-
-  const canModerate = community.my_role === 'admin' || community.my_role === 'moderator';
-  const adminCount = members.filter(m => m.role === 'admin').length;
-  const activeMemberCount = members.filter(m => !m.is_banned).length;
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[550px] max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <div className="relative">
-            {/* Header / Cover Photo */}
-            <div className="h-32 w-full bg-muted relative overflow-hidden">
-                {community.cover_url ? (
-                  <img src={community.cover_url} alt="Cover" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-purple-500/20" />
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-background/90 to-transparent" />
-            </div>
-
-            <div className="relative px-6 -mt-12 pb-4">
-              <div className="flex items-end gap-4">
-                <Avatar className="h-24 w-24 rounded-2xl ring-4 ring-background shadow-xl">
-                  <AvatarImage src={community.avatar} />
-                  <AvatarFallback className="text-3xl rounded-2xl bg-muted">{community.name[0]}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 pb-1">
-                  <h2 className="text-2xl font-bold mb-1 leading-none">{community.name}</h2>
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground mt-2">
-                    <span className="flex items-center gap-1.5">
-                      <Users className="w-4 h-4" />
-                      {activeMemberCount} members
-                    </span>
-                  </div>
-                </div>
-              </div>
+        <DialogContent className="sm:max-w-[600px] h-[80vh] flex flex-col p-0 gap-0 overflow-hidden bg-background">
+          
+          {/* Parallax-style Header */}
+          <div className="relative h-32 w-full flex-shrink-0 bg-muted">
+            {community.cover_url ? (
+              <img src={community.cover_url} alt="Cover" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-r from-primary/10 to-primary/5" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+            
+            <div className="absolute -bottom-6 left-6 flex items-end gap-4">
+              <Avatar className="h-20 w-20 ring-4 ring-background shadow-xl rounded-2xl">
+                <AvatarImage src={community.avatar} />
+                <AvatarFallback className="text-2xl rounded-2xl">{community.name[0]}</AvatarFallback>
+              </Avatar>
             </div>
           </div>
 
-          <div className="flex-1 overflow-hidden px-6 pb-6">
-             {community.description && (
-                <div className="py-4 border-b mb-4">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">About</h4>
-                  <p className="text-sm leading-relaxed">{community.description}</p>
-                </div>
-              )}
-
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-lg flex items-center gap-2">
-                Members
-              </h3>
-              <div className="flex gap-2">
-                 <Badge variant="secondary" className="text-xs">
-                    {activeMemberCount} active
-                 </Badge>
-                 {canModerate && (
-                    <Badge variant="outline" className="text-xs border-dashed">
-                        Moderation View
-                    </Badge>
-                 )}
-              </div>
+          <div className="px-6 pt-8 pb-2 flex-shrink-0">
+            <h2 className="text-2xl font-bold">{community.name}</h2>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+              <span className="flex items-center gap-1"><Users className="w-4 h-4" /> {members.filter(m=>!m.is_banned).length} Members</span>
+              {community.my_role !== 'member' && <Badge variant="secondary" className="capitalize">{community.my_role}</Badge>}
             </div>
-            
-            <ScrollArea className="h-[300px] pr-4">
-              <div className="space-y-2">
-                {members.map((m) => {
-                  const isMe = m.user_id === user?.id;
-                  const canManage = canModerate && !isMe && m.role !== 'admin';
+          </div>
 
-                  return (
-                    <div 
-                      key={m.user_id} 
-                      className={`flex items-center justify-between p-3 rounded-xl hover:bg-muted/40 transition-all group ${
-                        m.is_banned ? 'bg-red-50 dark:bg-red-950/20' : 'bg-muted/20'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <Avatar className="h-10 w-10 ring-2 ring-background">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+            <div className="px-6 border-b">
+              <TabsList className="bg-transparent h-10 p-0 gap-6">
+                <TabsTrigger value="info" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2">Overview</TabsTrigger>
+                <TabsTrigger value="members" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2">Members</TabsTrigger>
+                {canModerate && (
+                  <TabsTrigger value="banned" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-destructive rounded-none px-0 pb-2 text-destructive/80 data-[state=active]:text-destructive">
+                    Banned ({bannedMembers.length})
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </div>
+
+            <TabsContent value="info" className="flex-1 p-6 overflow-y-auto m-0">
+              <div className="space-y-6">
+                <div>
+                  <h3 className="font-semibold mb-2 text-sm uppercase tracking-wider text-muted-foreground">About</h3>
+                  <p className="text-sm leading-relaxed">{community.description || "No description provided."}</p>
+                </div>
+                {community.my_role !== 'admin' && (
+                     <Button variant="destructive" className="w-full sm:w-auto" onClick={() => leaveCommunity.mutate()}>
+                        <LogOut className="w-4 h-4 mr-2"/> Leave Community
+                     </Button>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="members" className="flex-1 flex flex-col overflow-hidden m-0">
+              <div className="p-4 border-b bg-muted/10">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input placeholder="Search members..." className="pl-9 bg-background" value={memberSearch} onChange={e=>setMemberSearch(e.target.value)} />
+                </div>
+              </div>
+              <ScrollArea className="flex-1">
+                <div className="divide-y">
+                  {activeMembers.map(m => (
+                    <div key={m.user_id} className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10">
                           <AvatarImage src={m.profile?.avatar_url} />
-                          <AvatarFallback>{m.profile?.display_name?.[0] || '?'}</AvatarFallback>
+                          <AvatarFallback>{m.profile?.display_name?.[0]}</AvatarFallback>
                         </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium truncate text-sm">
-                              {m.profile?.display_name || 'Unknown User'}
-                            </span>
-                            {isMe && <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">You</Badge>}
-                            {m.is_banned && <Badge variant="destructive" className="text-[10px] h-4">Banned</Badge>}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {m.role === 'admin' && <Badge className="text-[10px] bg-amber-500 h-4 px-1.5">Admin</Badge>}
-                            {m.role === 'moderator' && <Badge className="text-[10px] bg-blue-500 h-4 px-1.5">Moderator</Badge>}
-                          </div>
+                        <div>
+                          <p className="font-medium text-sm flex items-center gap-2">
+                            {m.profile?.display_name}
+                            {m.user_id === user?.id && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">You</span>}
+                          </p>
+                          <p className="text-xs text-muted-foreground capitalize">{m.role}</p>
                         </div>
                       </div>
-
-                      {canManage && (
+                      
+                      {canModerate && m.user_id !== user?.id && m.role !== 'admin' && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="w-4 h-4" /></Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuLabel>Manage Member</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {community.my_role === 'admin' && m.role !== 'moderator' && !m.is_banned && (
-                              <DropdownMenuItem onClick={() => promoteMutation.mutate({ userId: m.user_id, newRole: 'moderator' })}>
-                                <Shield className="w-4 h-4 mr-2" /> Promote to Moderator
-                              </DropdownMenuItem>
-                            )}
-                            {community.my_role === 'admin' && m.role === 'moderator' && (
-                              <DropdownMenuItem onClick={() => promoteMutation.mutate({ userId: m.user_id, newRole: 'member' })}>
-                                <Users className="w-4 h-4 mr-2" /> Demote to Member
-                              </DropdownMenuItem>
-                            )}
-                            {m.is_banned ? (
-                              <DropdownMenuItem onClick={() => unbanMutation.mutate(m.user_id)}>
-                                <Check className="w-4 h-4 mr-2" /> Unban Member
-                              </DropdownMenuItem>
-                            ) : (
-                              <>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Manage</DropdownMenuLabel>
+                            {isAdmin && (
+                                <>
+                                {m.role === 'member' && <DropdownMenuItem onClick={()=>updateRole.mutate({uid:m.user_id, role:'moderator'})}><Shield className="w-4 h-4 mr-2"/> Promote to Mod</DropdownMenuItem>}
+                                {m.role === 'moderator' && <DropdownMenuItem onClick={()=>updateRole.mutate({uid:m.user_id, role:'member'})}><UserX className="w-4 h-4 mr-2"/> Demote to Member</DropdownMenuItem>}
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem 
-                                  className="text-orange-600 focus:text-orange-700"
-                                  onClick={() => {
-                                    setSelectedMember(m);
-                                    setModerationAction('kick');
-                                    setShowModeration(true);
-                                  }}
-                                >
-                                  <AlertCircle className="w-4 h-4 mr-2" /> Kick from Community
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  className="text-red-600 focus:text-red-700" 
-                                  onClick={() => {
-                                    setSelectedMember(m);
-                                    setModerationAction('ban');
-                                    setShowModeration(true);
-                                  }}
-                                >
-                                  <Ban className="w-4 h-4 mr-2" /> Ban from Community
-                                </DropdownMenuItem>
-                              </>
+                                </>
                             )}
+                            <DropdownMenuItem className="text-orange-600" onClick={()=>{setSelectedMember(m); setModAction('kick'); setShowModAction(true);}}>
+                              <AlertCircle className="w-4 h-4 mr-2"/> Kick
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={()=>{setSelectedMember(m); setModAction('ban'); setShowModAction(true);}}>
+                              <Ban className="w-4 h-4 mr-2"/> Ban
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-          </div>
-          <div className="p-4 border-t bg-muted/20">
-            <Button variant="outline" className="w-full" onClick={onClose}>Close</Button>
+                  ))}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="banned" className="flex-1 flex flex-col overflow-hidden m-0">
+               {bannedMembers.length === 0 ? (
+                 <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-6 text-center">
+                    <Shield className="w-12 h-12 mb-2 opacity-20" />
+                    <p>No banned users.</p>
+                 </div>
+               ) : (
+                 <ScrollArea className="flex-1">
+                   <div className="divide-y">
+                     {bannedMembers.map(m => (
+                       <div key={m.user_id} className="flex items-center justify-between p-4 bg-destructive/5">
+                         <div className="flex items-center gap-3 opacity-60">
+                           <Avatar className="h-10 w-10">
+                             <AvatarImage src={m.profile?.avatar_url} />
+                             <AvatarFallback>{m.profile?.display_name?.[0]}</AvatarFallback>
+                           </Avatar>
+                           <div>
+                             <p className="font-medium text-sm strike-through decoration-destructive">{m.profile?.display_name}</p>
+                             <p className="text-xs text-destructive font-medium">Banned</p>
+                           </div>
+                         </div>
+                         <Button size="sm" variant="outline" onClick={() => unbanMember.mutate(m.user_id)}>
+                           <Check className="w-4 h-4 mr-2" /> Revoke Ban
+                         </Button>
+                       </div>
+                     ))}
+                   </div>
+                 </ScrollArea>
+               )}
+            </TabsContent>
+          </Tabs>
+
+          <div className="p-4 border-t bg-muted/20 flex justify-end">
+            <Button variant="outline" onClick={onClose}>Close</Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showModeration} onOpenChange={setShowModeration}>
-        <DialogContent className="sm:max-w-[500px]">
+      {/* Confirmation Dialog for Kick/Ban */}
+      <Dialog open={showModAction} onOpenChange={setShowModAction}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-orange-500" />
-              {moderationAction === 'ban' ? 'Ban Member' : 'Kick Member'}
-            </DialogTitle>
+            <DialogTitle>{modAction === 'ban' ? 'Ban User' : 'Kick User'}</DialogTitle>
             <DialogDescription>
-              {moderationAction === 'ban' 
-                ? 'This will prevent the member from rejoining the community.' 
-                : 'The member will be removed but can rejoin later.'}
+              {modAction === 'ban' 
+                ? `Are you sure you want to ban ${selectedMember?.profile.display_name}? They will not be able to rejoin.` 
+                : `Are you sure you want to kick ${selectedMember?.profile.display_name}? They can rejoin if they have the link.`}
             </DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            {selectedMember && (
-              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={selectedMember.profile?.avatar_url} />
-                  <AvatarFallback>{selectedMember.profile?.display_name?.[0]}</AvatarFallback>
-                </Avatar>
-                <span className="font-medium">{selectedMember.profile?.display_name}</span>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Reason *</Label>
-              <Textarea 
-                placeholder="Explain why this action is being taken..."
-                value={moderationReason}
-                onChange={(e) => setModerationReason(e.target.value)}
-                rows={4}
-                className="resize-none"
-              />
-              <p className="text-xs text-muted-foreground">
-                This reason will be logged for moderation records.
-              </p>
-            </div>
+          <div className="space-y-2 py-2">
+             <Label>Reason (Optional)</Label>
+             <Textarea placeholder="Violation of rules..." value={modReason} onChange={e => setModReason(e.target.value)} />
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowModeration(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={handleModerationSubmit}
-              disabled={!moderationReason.trim() || banMutation.isPending || kickMutation.isPending}
-            >
-              {(banMutation.isPending || kickMutation.isPending) && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              )}
-              {moderationAction === 'ban' ? 'Ban Member' : 'Kick Member'}
+            <Button variant="ghost" onClick={() => setShowModAction(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => executeModAction.mutate()} disabled={executeModAction.isPending}>
+               {executeModAction.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+               Confirm {modAction === 'ban' ? 'Ban' : 'Kick'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
-}
+};
