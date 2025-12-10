@@ -77,6 +77,21 @@ serve(async (req) => {
       throw new Error('Invalid tx_ref format');
     }
 
+    // Add at the start of the function:
+const authHeader = req.headers.get('Authorization');
+const { data: { user }, error: authError } = await supabase.auth.getUser(
+  authHeader?.replace('Bearer ', '')
+);
+
+if (authError || !user) {
+  throw new Error('Unauthorized');
+}
+
+// Verify the caller owns this transaction
+if (!tx_ref.startsWith(`lynq-${user.id}`)) {
+  throw new Error('Transaction does not belong to this user');
+}
+
     const userId = txRefParts[1];
 
     // 5. UPGRADE THE USER
