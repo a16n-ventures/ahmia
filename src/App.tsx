@@ -52,10 +52,10 @@ const App = () => {
                 
                 {/* --- Public Routes --- */}
                 {/* The Landing Page */}
-                <Route path="/lynq-africa" element={<Index />} />
+                <Route path="/ahmia" element={<Index />} />
                 
                 {/* Redirect root (/) to landing page */}
-                <Route path="/" element={<Navigate to="/lynq-africa" replace />} />
+                <Route path="/" element={<Navigate to="/ahmia" replace />} />
 
                 {/* --- Admin Routes --- */}
                 <Route path="/admin" element={<AdminLayout />}>
