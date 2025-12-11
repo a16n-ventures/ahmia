@@ -736,7 +736,7 @@ export default function Messages() {
 
   // Chat list view
   return (
-    <div className="container-mobile py-4 space-y-4 min-h-screen bg-background pb-24">
+    <div className="m-auto py-4 space-y-4 min-h-screen bg-background pb-24">
       {/* Header */}
       <div className="sticky top-0 z-20 bg-gradient-to-b from-background via-background to-background/80 backdrop-blur-xl pt-4 px-4 pb-2">
         <div className="flex items-center justify-between mb-4">
