@@ -111,20 +111,6 @@ export default function Messages() {
     return () => window.clearTimeout(id);
   }, [searchQuery]);
 
-((msg: any) => {
-        const isMeSender = msg.sender_id === user.id;
-        const partnerId = isMeSender ? msg.receiver_id : msg.sender_id;
-        if (!partnerMap.has(partnerId)) {
-          partnerMap.set(partnerId, {
-            last_msg: msg.content ?? (msg.image_url ? '📷 Photo' : 'Message'),
-            time: msg.created_at
-          });
-          partnerIds.add(partnerId);
-        }
-      });
-
-      if (partnerIds.size === 0) return [];
-
 // DM list query - Fixed profile ID lookup
   const { data: dmList = [], isLoading: loadingDMs } = useQuery({
     queryKey: ['dm_list', user?.id],
@@ -202,6 +188,75 @@ export default function Messages() {
     enabled: !!user?.id,
     staleTime: 30000
   });
+
+  // Communities list query - Added Sort Order
+  const { data: commList = [], isLoading: loadingComms } = useQuery({
+    queryKey: ['comm_list', user?.id],
+    queryFn: async (): Promise<CommunityListItem[]> => {
+      if (!user?.id) return [];
+      
+      try {
+        // FIXED: Added order('created_at') to ensure new communities show at the top
+        const { data: communities, error: commError } = await supabase
+          .from('communities')
+          .select('id, name, description, avatar_url, member_count, creator_id')
+          .order('created_at', { ascending: false });
+
+        if (commError) throw commError;
+        if (!communities || communities.length === 0) return [];
+
+        const { data: memberships, error: memError } = await supabase
+          .from('community_members')
+          .select('community_id, role')
+          .eq('user_id', user.id);
+
+        if (memError) throw memError;
+
+        const membershipMap = new Map<string, string>();
+        memberships?.forEach((m: any) => membershipMap.set(m.community_id, m.role));
+
+        return communities.map((c: any) => {
+          const myRole = membershipMap.get(c.id);
+          return {
+            type: 'community' as const,
+            id: c.id,
+            name: c.name || 'Unnamed Community',
+            description: c.description,
+            avatar: c.avatar_url,
+            member_count: c.member_count || 0,
+            my_role: (myRole || 'none') as 'admin' | 'moderator' | 'member' | 'none',
+            is_joined: !!myRole,
+          };
+        });
+      } catch (e) {
+        console.error("Community fetch error:", e);
+        return [];
+      }
+    },
+    enabled: !!user?.id,
+    staleTime: 30000
+  });
+
+  // Friends hook - Improved Name Resolution
+  const { friends: rawFriends = [] } = useFriends(user?.id);
+
+  const friends = useMemo(() => {
+    if (!rawFriends || !user?.id) return [];
+    return rawFriends.map((f: any) => {
+      const rawProfile = f.requester_id === user.id ? f.addressee : f.requester;
+      const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
+      if (!profile) return null;
+      return {
+        // Robust ID check
+        id: profile.id ?? profile.user_id, 
+        // Improved name check
+        name: profile.display_name || profile.username || 'Friend', 
+        avatar: profile.avatar_url,
+        is_online: false,
+        last_seen: null
+      };
+    }).filter(Boolean);
+  }, [rawFriends, user?.id]);
 
   // Messages in selected chat
   const { data: messages = [] } = useQuery({
