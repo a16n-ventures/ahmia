@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { 
   Search, Send, ArrowLeft, Plus, Settings, Users, 
   MessageSquare, X, Loader2, 
-  MoreVertical, Info, Image as ImageIcon, Grid
+  MoreVertical, Info, Image as ImageIcon, Grid, Pin, ChevronDown, ChevronUp, Upload
 } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -62,6 +62,12 @@ export default function Messages() {
   // Create community state
   const [newCommName, setNewCommName] = useState('');
   const [newCommDesc, setNewCommDesc] = useState('');
+  const [newCommCoverFile, setNewCommCoverFile] = useState<File | null>(null);
+  const [newCommCoverPreview, setNewCommCoverPreview] = useState<string | null>(null);
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
+  
+  // Pinned messages state
+  const [showPinnedMessages, setShowPinnedMessages] = useState(false);
 
   const [friendSearch, setFriendSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
@@ -350,9 +356,25 @@ export default function Messages() {
       if (!user) throw new Error("Not authenticated");
       if (!newCommName.trim()) throw new Error("Community name is required");
 
+      let coverUrl: string | null = null;
+      if (newCommCoverFile) {
+        const fileExt = newCommCoverFile.name.split('.').pop();
+        const filePath = `community-covers/${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('chat-attachments').upload(filePath, newCommCoverFile);
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from('chat-attachments').getPublicUrl(filePath);
+        coverUrl = urlData.publicUrl;
+      }
+
       const { data: comm, error } = await supabase
         .from('communities')
-        .insert({ name: newCommName.trim(), description: newCommDesc.trim(), creator_id: user.id, member_count: 1 })
+        .insert({ 
+          name: newCommName.trim(), 
+          description: newCommDesc.trim(), 
+          creator_id: user.id, 
+          member_count: 1,
+          avatar_url: coverUrl
+        })
         .select()
         .single();
       if (error) throw error;
@@ -364,10 +386,32 @@ export default function Messages() {
       setIsCreateCommunityOpen(false);
       setNewCommName('');
       setNewCommDesc('');
+      setNewCommCoverFile(null);
+      if (newCommCoverPreview?.startsWith('blob:')) {
+        try { URL.revokeObjectURL(newCommCoverPreview); } catch {}
+      }
+      setNewCommCoverPreview(null);
       queryClient.invalidateQueries({ queryKey: ['comm_list'] });
       toast.success("Community created!");
     },
     onError: (e: any) => toast.error(e?.message ?? "Failed to create community")
+  });
+
+  // Pin message mutation
+  const pinMessage = useMutation({
+    mutationFn: async ({ messageId, isPinned }: { messageId: string; isPinned: boolean }) => {
+      if (!selectedChat || selectedChat.type !== 'community') return;
+      const { error } = await supabase
+        .from('community_messages')
+        .update({ is_pinned: !isPinned } as any)
+        .eq('id', messageId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      toast.success(vars.isPinned ? "Message unpinned" : "Message pinned");
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedChat?.type, selectedChat?.id] });
+    },
+    onError: () => toast.error("Failed to update pin status")
   });
 
   const sendMessage = useMutation({
@@ -408,6 +452,7 @@ export default function Messages() {
         is_me: true,
         pending: true
       };
+
       queryClient.setQueryData(['messages', selectedChat.type, selectedChat.id], (old: Message[] | undefined) => {
         return old ? [...old, optimisticMessage] : [optimisticMessage];
       });
@@ -474,6 +519,16 @@ export default function Messages() {
     setImagePreview(URL.createObjectURL(file));
   }, []);
 
+  const handleCoverSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const error = validateImage(file);
+    if (error) return toast.error(error);
+    
+    setNewCommCoverFile(file);
+    setNewCommCoverPreview(URL.createObjectURL(file));
+  }, []);
+
   const handleInputChange = useCallback((value: string) => {
     setMessageInput(value);
     
@@ -531,6 +586,7 @@ export default function Messages() {
     const canType = !isComm || (isComm && selectedChat.my_role !== 'none');
     const canModerate = isComm && (selectedChat.my_role === 'admin' || selectedChat.my_role === 'moderator');
     const chatImages = messages.filter(m => m.image_url && !m.is_deleted).map(m => ({ url: m.image_url!, id: m.id }));
+    const pinnedMessages = isComm ? messages.filter(m => m.is_pinned && !m.is_deleted) : [];
 
     return (
       <div className="fixed inset-0 z-[100] bg-background flex flex-col h-[100dvh]">
@@ -611,6 +667,56 @@ export default function Messages() {
           </>
         )}
 
+        {/* Pinned Messages Section */}
+        {isComm && pinnedMessages.length > 0 && (
+          <div className="border-b bg-gradient-to-r from-amber-50/50 to-amber-100/30 dark:from-amber-900/10 dark:to-amber-800/5">
+            <button
+              onClick={() => setShowPinnedMessages(!showPinnedMessages)}
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-amber-100/30 dark:hover:bg-amber-900/20 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                <Pin className="w-4 h-4" />
+                <span className="text-sm font-medium">{pinnedMessages.length} Pinned Message{pinnedMessages.length > 1 ? 's' : ''}</span>
+              </div>
+              {showPinnedMessages ? (
+                <ChevronUp className="w-4 h-4 text-amber-600 dark:text-amber-500" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-amber-600 dark:text-amber-500" />
+              )}
+            </button>
+            {showPinnedMessages && (
+              <div className="px-4 pb-3 space-y-2 max-h-[200px] overflow-y-auto">
+                {pinnedMessages.map((m) => (
+                  <div 
+                    key={m.id}
+                    onClick={() => scrollToId(m.id)}
+                    className="flex items-start gap-3 p-3 bg-background/80 rounded-xl border border-amber-200/50 dark:border-amber-700/30 cursor-pointer hover:bg-background transition-colors"
+                  >
+                    <Pin className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-muted-foreground mb-1">{m.sender_name}</p>
+                      <p className="text-sm text-foreground line-clamp-2">{m.content || '📷 Photo'}</p>
+                    </div>
+                    {canModerate && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 hover:bg-red-100 dark:hover:bg-red-900/20"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          pinMessage.mutate({ messageId: m.id, isPinned: true });
+                        }}
+                      >
+                        <X className="w-3.5 h-3.5 text-red-500" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Messages */}
         <div className="flex-1 overflow-y-auto bg-gradient-to-b from-muted/5 to-muted/10 p-4 scroll-smooth" ref={scrollRef}>
           <div className="flex flex-col justify-end min-h-[60px] pb-2">
@@ -636,6 +742,7 @@ export default function Messages() {
                     onDelete={(msgId) => deleteMessage.mutate(msgId)}
                     onReply={(msg) => setReplyingTo(msg)}
                     onEdit={(msg, content) => editMessage.mutateAsync({ msg, newContent: content })}
+                    onPin={canModerate ? (msg) => pinMessage.mutate({ messageId: msg.id, isPinned: !!msg.is_pinned }) : undefined}
                     onImageLoad={() => scrollToBottom(true)}
                     scrollToId={scrollToId}
                   />
@@ -736,7 +843,7 @@ export default function Messages() {
 
   // Chat list view
   return (
-    <div className="m-auto py-4 space-y-4 min-h-screen bg-background pb-24">
+    <div className="container-mobile min-h-screen bg-background pb-24">
       {/* Header */}
       <div className="sticky top-0 z-20 bg-gradient-to-b from-background via-background to-background/80 backdrop-blur-xl pt-4 px-4 pb-2">
         <div className="flex items-center justify-between mb-4">
@@ -989,13 +1096,72 @@ export default function Messages() {
       </Dialog>
 
       {/* Create Community Dialog */}
-      <Dialog open={isCreateCommunityOpen} onOpenChange={setIsCreateCommunityOpen}>
+      <Dialog open={isCreateCommunityOpen} onOpenChange={(open) => {
+        setIsCreateCommunityOpen(open);
+        if (!open) {
+          setNewCommName('');
+          setNewCommDesc('');
+          setNewCommCoverFile(null);
+          if (newCommCoverPreview?.startsWith('blob:')) {
+            try { URL.revokeObjectURL(newCommCoverPreview); } catch {}
+          }
+          setNewCommCoverPreview(null);
+        }
+      }}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Create Community</DialogTitle>
             <DialogDescription>Create a space for your community to connect</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* Cover Image Upload */}
+            <div className="space-y-2">
+              <Label>Cover Image</Label>
+              <input 
+                type="file" 
+                accept="image/jpeg,image/png,image/webp" 
+                className="hidden" 
+                ref={coverInputRef} 
+                onChange={handleCoverSelect} 
+              />
+              {newCommCoverPreview ? (
+                <div className="relative w-full h-32 rounded-xl overflow-hidden border-2 border-dashed border-primary/30 group">
+                  <img src={newCommCoverPreview} className="w-full h-full object-cover" alt="Cover preview" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => coverInputRef.current?.click()}
+                    >
+                      Change
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setNewCommCoverFile(null);
+                        if (newCommCoverPreview?.startsWith('blob:')) {
+                          try { URL.revokeObjectURL(newCommCoverPreview); } catch {}
+                        }
+                        setNewCommCoverPreview(null);
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => coverInputRef.current?.click()}
+                  className="w-full h-32 rounded-xl border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 transition-colors flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary"
+                >
+                  <Upload className="w-6 h-6" />
+                  <span className="text-sm">Upload cover image</span>
+                </button>
+              )}
+            </div>
+            
             <div className="space-y-2">
               <Label>Community Name *</Label>
               <Input placeholder="Enter community name" value={newCommName} onChange={(e) => setNewCommName(e.target.value)} maxLength={50} />

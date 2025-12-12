@@ -214,7 +214,7 @@ export default function Friends() {
 
           return {
             user_id: candidate.user_id,
-            display_name: profile.display_name || 'Unknown',
+            display_name: profile.display_name || 'Nearby User',
             avatar_url: profile.avatar_url,
             distance_km: candidate.distance,
             match_score: Math.max(0, 100 - candidate.distance)
