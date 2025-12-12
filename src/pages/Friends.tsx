@@ -27,31 +27,60 @@ import { AddContactForm } from "@/components/friends/AddContactForm";
 
 // Utilities
 const DEBOUNCE_DELAY = 500;
+const NEARBY_RADIUS_KM = 100;
+const MAX_NEARBY_USERS = 50;
+const LOCATION_CHANGE_THRESHOLD_KM = 1;
+const REFRESH_INTERVAL_MS = 120000; // 2 minutes
+
+/**
+ * ✅ FIXED: useDebounce hook
+ * Previous issue: Used useState instead of useEffect
+ */
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
-  useState(() => {
+  
+  useEffect(() => {
     const handler = setTimeout(() => setDebouncedValue(value), delay);
     return () => clearTimeout(handler);
-  });
+  }, [value, delay]);
+  
   return debouncedValue;
 }
 
-// Haversine Formula for Client-Side Distance Calculation
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+/**
+ * Haversine Formula for Client-Side Distance Calculation
+ */
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Radius of the earth in km
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a = 
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2); 
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
+    Math.sin(dLon / 2) * Math.sin(dLon / 2); 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
   return R * c; // Distance in km
+}
+
+/**
+ * ✅ ENHANCEMENT: Safe display name formatter
+ */
+function getDisplayName(name: string | null | undefined): string {
+  return name?.trim() || 'Unknown User';
 }
 
 type SortOption = 'newest' | 'alphabetical';
 type TabValue = 'friends' | 'requests' | 'discover';
 type RequestView = 'received' | 'sent';
 type DiscoverView = 'nearby' | 'contacts';
+
+interface NearbyUser {
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  distance_km: number;
+  match_score: number;
+}
 
 export default function Friends() {
   const { user } = useAuth();
@@ -78,6 +107,9 @@ export default function Friends() {
     userName?: string;
   }>({ open: false, type: 'block', userId: '' });
 
+  // ✅ ENHANCEMENT: Error state for nearby users
+  const [nearbyError, setNearbyError] = useState<string | null>(null);
+
   // Hooks
   const {
     friends,
@@ -95,29 +127,33 @@ export default function Friends() {
     inviteContact,
   } = useContacts(userId);
 
-  // --- IMPROVED FRIEND FINDER LOGIC ---
+  // Geolocation & Nearby Users
   const { location: userLocation, requestLocation, isLoading: isLocationLoading } = useGeolocation();
-  const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
+  const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
   const [isFetchingFriends, setIsFetchingFriends] = useState(false);
   
   // Refs to prevent flickering and unnecessary refetches
   const isFetchingRef = useRef(false);
   const lastFetchLocationRef = useRef<{ lat: number; lon: number } | null>(null);
-  const nearbyDataCacheRef = useRef<any[]>([]);
+  const nearbyDataCacheRef = useRef<NearbyUser[]>([]);
   const hasInitializedRef = useRef(false);
 
-  // Helper: Check if location has changed significantly (>1km)
-  const hasLocationChangedSignificantly = useCallback((newLat: number, newLon: number) => {
+  /**
+   * ✅ ENHANCEMENT: Check if location has changed significantly
+   */
+  const hasLocationChangedSignificantly = useCallback((newLat: number, newLon: number): boolean => {
     if (!lastFetchLocationRef.current) return true;
     const { lat, lon } = lastFetchLocationRef.current;
     const distance = calculateDistance(lat, lon, newLat, newLon);
-    return distance > 1; // Only refetch if moved >1km
+    return distance > LOCATION_CHANGE_THRESHOLD_KM;
   }, []);
 
   // Combine loading states - only show loading on initial load
   const loadingNearby = (isLocationLoading || isFetchingFriends) && !hasInitializedRef.current;
 
-  // Main fetch function with optimizations
+  /**
+   * ✅ ENHANCED: Main fetch function with better error handling and data validation
+   */
   const fetchNearbyUsers = useCallback(async () => {
     if (!userId || !userLocation) return;
     
@@ -126,7 +162,6 @@ export default function Friends() {
     
     // Check if location changed significantly
     if (!hasLocationChangedSignificantly(userLocation.latitude, userLocation.longitude)) {
-      // Use cached data if location hasn't changed much
       if (nearbyDataCacheRef.current.length > 0) {
         setNearbyUsers(nearbyDataCacheRef.current);
         return;
@@ -135,13 +170,16 @@ export default function Friends() {
 
     isFetchingRef.current = true;
     setIsFetchingFriends(true);
+    setNearbyError(null);
 
     try {
       // 1. Get IDs of people I am already friends with or have pending requests with
-      const { data: existingFriendships } = await supabase
+      const { data: existingFriendships, error: friendshipError } = await supabase
         .from('friendships')
         .select('requester_id, addressee_id, status')
         .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+      
+      if (friendshipError) throw friendshipError;
       
       const excludedIds = new Set<string>();
       excludedIds.add(userId); // Exclude myself
@@ -151,22 +189,37 @@ export default function Friends() {
         excludedIds.add(f.addressee_id);
       });
 
-      // 2. Fetch locations of ALL users (not just those sharing location)
-      // This ensures we see all nearby friends within 100km radius
+      // 2. Fetch locations of ALL users within reasonable range
       const { data: allLocations, error: locError } = await supabase
         .from('user_locations')
         .select('user_id, latitude, longitude, last_seen')
-        .not('user_id', 'eq', userId) // Exclude current user
+        .not('user_id', 'eq', userId)
         .order('last_seen', { ascending: false })
-        .limit(500); // Increased limit for better coverage
+        .limit(500);
 
       if (locError) throw locError;
 
-      // 3. Client-Side Filtering & Deduplication
+      // ✅ ENHANCEMENT: Validate location data
+      if (!allLocations || allLocations.length === 0) {
+        setNearbyUsers([]);
+        nearbyDataCacheRef.current = [];
+        hasInitializedRef.current = true;
+        return;
+      }
+
+      // 3. Client-Side Filtering & Deduplication with validation
       const uniqueCandidatesMap = new Map();
       
-      (allLocations || []).forEach(loc => {
-        // Only add if not excluded AND not already in our map (Deduplication)
+      allLocations.forEach(loc => {
+        // ✅ ENHANCEMENT: Validate location data
+        if (!loc.user_id || 
+            typeof loc.latitude !== 'number' || 
+            typeof loc.longitude !== 'number' ||
+            isNaN(loc.latitude) || 
+            isNaN(loc.longitude)) {
+          return; // Skip invalid entries
+        }
+
         if (!excludedIds.has(loc.user_id) && !uniqueCandidatesMap.has(loc.user_id)) {
           const dist = calculateDistance(
             userLocation.latitude, 
@@ -175,7 +228,7 @@ export default function Friends() {
             loc.longitude
           );
           
-          if (dist <= 100) { // 100km Limit
+          if (dist <= NEARBY_RADIUS_KM && !isNaN(dist)) {
             uniqueCandidatesMap.set(loc.user_id, { 
               ...loc, 
               distance: dist 
@@ -186,7 +239,7 @@ export default function Friends() {
 
       const validCandidates = Array.from(uniqueCandidatesMap.values())
         .sort((a: any, b: any) => a.distance - b.distance)
-        .slice(0, 50); // Show top 50 nearest
+        .slice(0, MAX_NEARBY_USERS);
 
       if (validCandidates.length === 0) {
         setNearbyUsers([]);
@@ -204,23 +257,21 @@ export default function Friends() {
 
       if (profError) throw profError;
 
-      // 5. Merge Data (Strict Matching)
-      const formatted = validCandidates
+      // 5. ✅ ENHANCED: Merge Data with proper null handling
+      const formatted: NearbyUser[] = validCandidates
         .map((candidate: any) => {
           const profile = profiles?.find(p => p.user_id === candidate.user_id);
           
-          // If profile is missing, SKIP this user
-          if (!profile) return null;
-
+          // ✅ FIX: Always include user, even without profile
           return {
             user_id: candidate.user_id,
-            display_name: profile.display_name || 'Nearby User',
-            avatar_url: profile.avatar_url,
+            display_name: getDisplayName(profile?.display_name),
+            avatar_url: profile?.avatar_url || null,
             distance_km: candidate.distance,
             match_score: Math.max(0, 100 - candidate.distance)
           };
         })
-        .filter(Boolean); // Removes the nulls
+        .filter((user): user is NearbyUser => user !== null);
 
       // Update cache and state
       nearbyDataCacheRef.current = formatted;
@@ -234,6 +285,9 @@ export default function Friends() {
 
     } catch (err) {
       console.error("Discovery error:", err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load nearby users';
+      setNearbyError(errorMessage);
+      
       // On error, use cached data if available
       if (nearbyDataCacheRef.current.length > 0) {
         setNearbyUsers(nearbyDataCacheRef.current);
@@ -244,7 +298,9 @@ export default function Friends() {
     }
   }, [userId, userLocation, hasLocationChangedSignificantly]);
 
-  // Effect: Fetch nearby users with smart caching
+  /**
+   * ✅ ENHANCED: Effect with proper cleanup
+   */
   useEffect(() => {
     // Only fetch if we are on the 'discover' -> 'nearby' tab
     if (activeTab !== 'discover' || discoverView !== 'nearby') {
@@ -252,7 +308,6 @@ export default function Friends() {
     }
 
     if (!userLocation) {
-      // Request location if not available
       if (!isLocationLoading) {
         requestLocation();
       }
@@ -273,25 +328,28 @@ export default function Friends() {
       if (userLocation && hasLocationChangedSignificantly(userLocation.latitude, userLocation.longitude)) {
         fetchNearbyUsers();
       }
-    }, 120000); // 2 minutes
+    }, REFRESH_INTERVAL_MS);
 
     return () => clearInterval(refreshInterval);
   }, [activeTab, discoverView, userLocation, isLocationLoading, requestLocation, fetchNearbyUsers, hasLocationChangedSignificantly]);
 
-  // Filtered data (Search logic)
+  /**
+   * ✅ ENHANCED: Filtered friends with null safety
+   */
   const filteredFriends = useMemo(() => {
     let res = [...friends];
     if (debouncedSearch) {
       res = res.filter(f => {
         const p = f.requester_id === userId ? f.addressee : f.requester;
-        return p.display_name?.toLowerCase().includes(debouncedSearch.toLowerCase());
+        const displayName = getDisplayName(p?.display_name);
+        return displayName.toLowerCase().includes(debouncedSearch.toLowerCase());
       });
     }
     res.sort((a, b) => {
       const pA = a.requester_id === userId ? a.addressee : a.requester;
       const pB = b.requester_id === userId ? b.addressee : b.requester;
       return sortOption === 'alphabetical' 
-        ? (pA.display_name || '').localeCompare(pB.display_name || '') 
+        ? getDisplayName(pA?.display_name).localeCompare(getDisplayName(pB?.display_name))
         : new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
     return res;
@@ -300,7 +358,7 @@ export default function Friends() {
   const filteredContacts = useMemo(() => {
     if (!debouncedSearch) return contacts;
     return contacts.filter(c => 
-      c.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      c.name?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
       c.email?.toLowerCase().includes(debouncedSearch.toLowerCase())
     );
   }, [contacts, debouncedSearch]);
@@ -398,8 +456,8 @@ export default function Friends() {
                     friendship={f}
                     currentUserId={userId!}
                     onRemove={(id) => mutations.removeFriend.mutate(id)}
-                    onBlock={(id) => handleOpenBlockDialog(id, friend.display_name || undefined)}
-                    onReport={(id) => handleOpenReportDialog(id, friend.display_name || undefined)}
+                    onBlock={(id) => handleOpenBlockDialog(id, getDisplayName(friend?.display_name))}
+                    onReport={(id) => handleOpenReportDialog(id, getDisplayName(friend?.display_name))}
                     onViewProfile={(profile) => handleViewProfile(profile, f.id)}
                     isRemoving={mutations.removeFriend.isPending}
                   />
@@ -472,152 +530,4 @@ export default function Friends() {
                     isCancelling={mutations.cancelRequest.isPending}
                   />
                 ))
-              )}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* DISCOVER TAB */}
-        <TabsContent value="discover" className="mt-4">
-          <div className="flex gap-2 mb-4 p-1 bg-muted/20 rounded-lg w-fit mx-auto">
-            <button 
-              onClick={() => setDiscoverView('nearby')} 
-              className={`px-4 py-1.5 text-sm rounded-md transition-all flex items-center gap-1 ${
-                discoverView === 'nearby' 
-                  ? 'bg-background shadow-sm font-medium text-foreground' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <MapPin className="w-3 h-3" /> Nearby
-            </button>
-            <button 
-              onClick={() => setDiscoverView('contacts')} 
-              className={`px-4 py-1.5 text-sm rounded-md transition-all ${
-                discoverView === 'contacts' 
-                  ? 'bg-background shadow-sm font-medium text-foreground' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              My Contacts {contacts.length > 0 && `(${contacts.length})`}
-            </button>
-          </div>
-
-          {/* NEARBY VIEW */}
-          {discoverView === 'nearby' && (
-            <div className="space-y-2">
-              {!userLocation ? (
-                <Card className="border-dashed">
-                  <CardContent className="py-8 text-center">
-                    <MapPin className="w-10 h-10 mx-auto text-muted-foreground/30 mb-3" />
-                    <p className="text-muted-foreground text-sm">Enable location to see nearby people</p>
-                    <Button variant="outline" className="mt-3" onClick={requestLocation}>
-                      <MapPin className="w-4 h-4 mr-2" /> Enable Location
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : loadingNearby ? (
-                <FriendSkeleton />
-              ) : nearbyUsers.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground">
-                  <MapPin className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No one nearby yet</p>
-                  <p className="text-xs mt-1">Invite friends to join!</p>
-                </div>
-              ) : (
-                nearbyUsers.map(p => (
-                  <NearbyUserCard
-                    key={p.user_id}
-                    profile={p}
-                    onAddFriend={(profile) => mutations.sendRequest.mutate(profile)}
-                    isAdding={mutations.sendRequest.isPending && mutations.sendRequest.variables?.user_id === p.user_id}
-                  />
-                ))
-              )}
-            </div>
-          )}
-
-          {/* CONTACTS VIEW */}
-          {discoverView === 'contacts' && (
-            <div className="space-y-3">
-              {showAddContact ? (
-                <AddContactForm
-                  onSubmit={(data) => {
-                    addContact.mutate(data);
-                    setShowAddContact(false);
-                  }}
-                  onCancel={() => setShowAddContact(false)}
-                  isPending={addContact.isPending}
-                />
-              ) : (
-                <Button className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white" onClick={() => setShowAddContact(true)}>
-                  <User className="w-4 h-4 mr-2" /> Add New Contact
-                </Button>
-              )}
-
-              {loadingContacts ? (
-                <FriendSkeleton />
-              ) : filteredContacts.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground">
-                  {search ? 'No contacts match your search' : !showAddContact && 'No contacts yet. Add someone to invite them!'}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredContacts.map(contact => (
-                    <ContactCard
-                      key={contact.id}
-                      contact={contact}
-                      onInvite={(c) => inviteContact.mutate(c)}
-                      onDelete={(id) => deleteContact.mutate(id)}
-                      isInviting={inviteContact.isPending && inviteContact.variables?.id === contact.id}
-                      isDeleting={deleteContact.isPending}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {!showAddContact && contacts.length > 0 && (
-                <Card className="border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-900">
-                  <CardContent className="p-4">
-                    <div className="flex gap-3">
-                      <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                      <div className="text-sm space-y-1">
-                        <p className="font-medium text-blue-900 dark:text-blue-100">Invite friends to join</p>
-                        <p className="text-blue-700 dark:text-blue-300 text-xs">Click "Invite" to send them a link via SMS or Email.</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      {/* Modals */}
-      <FriendProfilePreview
-        profile={previewProfile}
-        open={!!previewProfile}
-        onClose={() => setPreviewProfile(null)}
-        friendshipId={previewFriendshipId}
-        onRemoveFriend={(id) => mutations.removeFriend.mutate(id)}
-        onBlockUser={(id) => {
-          setPreviewProfile(null);
-          handleOpenBlockDialog(id, previewProfile?.display_name || undefined);
-        }}
-        onReportUser={(id) => {
-          setPreviewProfile(null);
-          handleOpenReportDialog(id, previewProfile?.display_name || undefined);
-        }}
-      />
-
-      <BlockReportDialog
-        open={blockReportDialog.open}
-        onClose={() => setBlockReportDialog({ open: false, type: 'block', userId: '' })}
-        type={blockReportDialog.type}
-        userName={blockReportDialog.userName}
-        onConfirm={handleBlockReport}
-        isPending={mutations.blockUser.isPending || mutations.reportUser.isPending}
-      />
-    </div>
-  );
-}
+      
