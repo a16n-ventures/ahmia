@@ -111,7 +111,7 @@ export default function Messages() {
     return () => window.clearTimeout(id);
   }, [searchQuery]);
 
-  // DM list query
+// DM list query - Fixed profile ID lookup
   const { data: dmList = [], isLoading: loadingDMs } = useQuery({
     queryKey: ['dm_list', user?.id],
     queryFn: async (): Promise<DMListItem[]> => {
@@ -156,14 +156,17 @@ export default function Messages() {
       if (partnerIds.size === 0) return [];
 
       const idsList = Array.from(partnerIds);
+      
+            // FIXED: Select 'id' instead of 'user_id' for profiles to ensure correct mapping
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_url')
-        .in('user_id', idsList);
+        .select('id, display_name, avatar_url')
+        .in('id', idsList);
 
       const profileLookup = new Map<string, any>();
       profiles?.forEach((p: any) => {
-        if (p.user_id) profileLookup.set(p.user_id, p);
+        // Map using 'id' which is the standard PK for profiles
+        if (p.id) profileLookup.set(p.id, p);
       });
 
       return idsList.map(pid => {
@@ -173,7 +176,8 @@ export default function Messages() {
           type: 'dm' as const,
           id: pid,
           partner_id: pid,
-          name: profile?.display_name || 'User',
+          // Fallback to 'User' only if profile or display_name is strictly missing
+          name: profile?.display_name || 'User', 
           avatar: profile?.avatar_url,
           last_msg: details.last_msg,
           time: details.time,
@@ -183,19 +187,21 @@ export default function Messages() {
       });
     },
     enabled: !!user?.id,
-    staleTime: 30_000
+    staleTime: 30000
   });
 
-  // Communities list query
+  // Communities list query - Added Sort Order
   const { data: commList = [], isLoading: loadingComms } = useQuery({
     queryKey: ['comm_list', user?.id],
     queryFn: async (): Promise<CommunityListItem[]> => {
       if (!user?.id) return [];
       
       try {
+        // FIXED: Added order('created_at') to ensure new communities show at the top
         const { data: communities, error: commError } = await supabase
           .from('communities')
-          .select('id, name, description, avatar_url, member_count, creator_id');
+          .select('id, name, description, avatar_url, member_count, creator_id')
+          .order('created_at', { ascending: false });
 
         if (commError) throw commError;
         if (!communities || communities.length === 0) return [];
@@ -229,10 +235,10 @@ export default function Messages() {
       }
     },
     enabled: !!user?.id,
-    staleTime: 30_000
+    staleTime: 30000
   });
 
-  // Friends hook
+  // Friends hook - Improved Name Resolution
   const { friends: rawFriends = [] } = useFriends(user?.id);
 
   const friends = useMemo(() => {
@@ -242,8 +248,10 @@ export default function Messages() {
       const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
       if (!profile) return null;
       return {
-        id: profile.user_id ?? profile.id,
-        name: profile.display_name || 'Friend',
+        // Robust ID check
+        id: profile.id ?? profile.user_id, 
+        // Improved name check
+        name: profile.display_name || profile.username || 'Friend', 
         avatar: profile.avatar_url,
         is_online: false,
         last_seen: null
