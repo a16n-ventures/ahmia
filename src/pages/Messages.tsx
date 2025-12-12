@@ -238,25 +238,25 @@ export default function Messages() {
   });
 
   // Friends hook - Improved Name Resolution
-  const { friends: rawFriends = [] } = useFriends(user?.id);
+  const { friends: rawFriends = [] } = useFriends(user_id);
 
   const friends = useMemo(() => {
-    if (!rawFriends || !user?.id) return [];
+    if (!rawFriends || !user_id) return [];
     return rawFriends.map((f: any) => {
-      const rawProfile = f.requester_id === user.id ? f.addressee : f.requester;
+      const rawProfile = f.requester_id === user_id ? f.addressee : f.requester;
       const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
       if (!profile) return null;
       return {
         // Robust ID check
-        id: profile.id ?? profile.user_id, 
+        id: profile.user_id, 
         // Improved name check
-        name: profile.display_name || profile.username || 'Friend', 
+        name: profile.display_name || 'Friend', 
         avatar: profile.avatar_url,
         is_online: false,
         last_seen: null
       };
     }).filter(Boolean);
-  }, [rawFriends, user?.id]);
+  }, [rawFriends, user_id]);
 
   // Messages in selected chat
   const { data: messages = [] } = useQuery({
