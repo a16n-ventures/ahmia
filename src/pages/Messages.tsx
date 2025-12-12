@@ -146,7 +146,7 @@ export default function Messages() {
         const partnerId = isMeSender ? msg.receiver_id : msg.sender_id;
         if (!partnerMap.has(partnerId)) {
           partnerMap.set(partnerId, {
-            last_msg: msg.content ?? (msg.image_url ? '📷 Photo' : 'Message'),
+            last_msg: msg.content ?? (msg.image_url ? '胴 Photo' : 'Message'),
             time: msg.created_at
           });
           partnerIds.add(partnerId);
@@ -160,13 +160,13 @@ export default function Messages() {
       // Query profiles using user_id instead of id
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_url')
+        .select('user_id, id, display_name, username, avatar_url')
         .in('user_id', idsList);
 
       const profileLookup = new Map<string, any>();
       profiles?.forEach((p: any) => {
-        // Map using user_id which links to auth.users
-        if (p.user_id) profileLookup.set(p.user_id, p);
+        // Map using user_id or id which links to auth.users
+        profileLookup.set(p.user_id || p.id, p);
       });
 
       return idsList.map(pid => {
@@ -176,7 +176,7 @@ export default function Messages() {
           type: 'dm' as const,
           id: pid,
           partner_id: pid,
-          name: profile?.display_name || 'Unknown User', 
+          name: profile?.display_name || profile?.username || 'User', 
           avatar: profile?.avatar_url,
           last_msg: details.last_msg,
           time: details.time,
@@ -199,7 +199,7 @@ export default function Messages() {
         // FIXED: Added order('created_at') to ensure new communities show at the top
         const { data: communities, error: commError } = await supabase
           .from('communities')
-          .select('id, name, description, avatar_url, member_count, creator_id')
+          .select('id, name, description, avatar_url, member_count, creator_id, created_at')
           .order('created_at', { ascending: false });
 
         if (commError) throw commError;
@@ -238,25 +238,25 @@ export default function Messages() {
   });
 
   // Friends hook - Improved Name Resolution
-  const { friends: rawFriends = [] } = useFriends(user_id);
+  const { friends: rawFriends = [] } = useFriends(user?.id);
 
   const friends = useMemo(() => {
-    if (!rawFriends || !user_id) return [];
+    if (!rawFriends || !user?.id) return [];
     return rawFriends.map((f: any) => {
-      const rawProfile = f.requester_id === user_id ? f.addressee : f.requester;
+      const rawProfile = f.requester_id === user.id ? f.addressee : f.requester;
       const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
       if (!profile) return null;
       return {
         // Robust ID check
-        id: profile.user_id, 
+        id: profile.user_id || profile.id, 
         // Improved name check
-        name: profile.display_name || 'Friend', 
+        name: profile.display_name || profile.username || 'Friend', 
         avatar: profile.avatar_url,
         is_online: false,
         last_seen: null
       };
     }).filter(Boolean);
-  }, [rawFriends, user_id]);
+  }, [rawFriends, user?.id]);
 
   // Messages in selected chat
   const { data: messages = [] } = useQuery({
@@ -702,7 +702,7 @@ export default function Messages() {
                     <Pin className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-muted-foreground mb-1">{m.sender_name}</p>
-                      <p className="text-sm text-foreground line-clamp-2">{m.content || '📷 Photo'}</p>
+                      <p className="text-sm text-foreground line-clamp-2">{m.content || '胴 Photo'}</p>
                     </div>
                     {canModerate && (
                       <Button
@@ -773,7 +773,7 @@ export default function Messages() {
                       Replying to {replyingTo.is_me ? 'yourself' : replyingTo.sender_name}
                     </p>
                     <p className="text-sm text-muted-foreground truncate">
-                      {replyingTo.content || '📷 Photo'}
+                      {replyingTo.content || '胴 Photo'}
                     </p>
                   </div>
                   <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full shrink-0" onClick={() => setReplyingTo(null)}>
@@ -1028,7 +1028,7 @@ export default function Messages() {
                       <div className="flex items-center gap-2 mb-3 px-1">
                         <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                          Online • {onlineFriends.length}
+                          Online 窶｢ {onlineFriends.length}
                         </h3>
                       </div>
                       <div className="space-y-1">
@@ -1064,7 +1064,7 @@ export default function Messages() {
                       <div className="flex items-center gap-2 mb-3 px-1">
                         <Users className="w-3.5 h-3.5 text-muted-foreground" />
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                          All Friends • {offlineFriends.length}
+                          All Friends 窶｢ {offlineFriends.length}
                         </h3>
                       </div>
                       <div className="space-y-1">
@@ -1102,7 +1102,7 @@ export default function Messages() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Community Dialog */}
+ {/* Create Community Dialog */}
       <Dialog open={isCreateCommunityOpen} onOpenChange={(open) => {
         setIsCreateCommunityOpen(open);
         if (!open) {
