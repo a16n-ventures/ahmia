@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -8,32 +8,10 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
 import { 
-  Edit3, 
-  MapPin, 
-  Users, 
-  Camera, 
-  Bell, 
-  LogOut, 
-  Crown, 
-  Trash2,
-  Loader2,
-  Gift,
-  Copy,
-  Radar,
-  BarChart3,
-  Eye,
-  Share2,
-  ChevronRight,
-  Shield,
-  Check,
-  X,
-  Calendar,
-  MessageSquare,
-  Heart,
-  Star,
-  Zap,
-  AlertCircle,
-  RefreshCw // Added for manual refresh
+  Edit3, MapPin, Users, Camera, Bell, LogOut, Crown, Trash2,
+  Loader2, Gift, Copy, Radar, BarChart3, Eye, Share2, ChevronRight,
+  Shield, Check, X, Calendar, MessageSquare, Heart, Star, Zap,
+  AlertCircle, RefreshCw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -41,18 +19,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from '@/components/ui/badge';
-// Added Context Import
 import { useGeolocation } from '@/contexts/LocationContext';
 
 // --- TYPES ---
@@ -86,32 +57,32 @@ interface CombinedProfile {
   stats: ProfileStats;
 }
 
+// --- CONSTANTS ---
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_BIO_LENGTH = 200;
+const MAX_NAME_LENGTH = 50;
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const REFETCH_INTERVAL = 30000; // 30 seconds
+const STALE_TIME = 120000; // 2 minutes
+
+// --- HELPERS ---
+const validateImageFile = (file: File): { valid: boolean; error?: string } => {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    return { valid: false, error: 'Please select a valid image (JPEG, PNG, WebP, or GIF)' };
+  }
+  if (file.size > MAX_AVATAR_SIZE) {
+    return { valid: false, error: 'Image must be less than 5MB' };
+  }
+  return { valid: true };
+};
+
+const getAvatarPath = (url: string): string | null => {
+  const match = url.match(/\/avatars\/(.+)$/);
+  return match ? match[1] : null;
+};
+
 // --- DATA FETCHING ---
 const fetchProfileData = async (userId: string): Promise<CombinedProfile> => {
-  const profileQuery = supabase.from('profiles').select('*').eq('user_id', userId).single();
-  const locationQuery = supabase.from('user_locations').select('is_sharing_location').eq('user_id', userId).maybeSingle();
-  
-  const friendQuery = supabase
-    .from('friendships')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'accepted')
-    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
-
-  const eventQuery = supabase
-    .from('event_attendees')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId);
-
-  const messageQuery = supabase
-    .from('messages')
-    .select('*', { count: 'exact', head: true })
-    .eq('sender_id', userId);
-
-  const eventViewsQuery = supabase
-    .from('events')
-    .select('event_views_30d')
-    .eq('creator_id', userId);
-
   const [
     { data: profileData, error: profileError },
     { data: locationData },
@@ -120,14 +91,19 @@ const fetchProfileData = async (userId: string): Promise<CombinedProfile> => {
     { count: messageCount },
     { data: eventViewsData }
   ] = await Promise.all([
-    profileQuery, locationQuery, friendQuery, eventQuery, messageQuery, eventViewsQuery
+    supabase.from('profiles').select('*').eq('user_id', userId).single(),
+    supabase.from('user_locations').select('is_sharing_location').eq('user_id', userId).maybeSingle(),
+    supabase.from('friendships').select('*', { count: 'exact', head: true })
+      .eq('status', 'accepted')
+      .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+    supabase.from('event_attendees').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+    supabase.from('messages').select('*', { count: 'exact', head: true }).eq('sender_id', userId),
+    supabase.from('events').select('event_views_30d').eq('creator_id', userId)
   ]);
 
   if (profileError && profileError.code !== 'PGRST116') throw profileError;
   
   const totalEventViews = eventViewsData?.reduce((acc, curr) => acc + (curr.event_views_30d || 0), 0) || 0;
-
-  // Cast preferences from Json to the expected type
   const preferences = profileData?.preferences as { notifications: boolean; discovery_radius?: number } | null;
 
   return {
@@ -145,13 +121,12 @@ const fetchProfileData = async (userId: string): Promise<CombinedProfile> => {
   };
 };
 
+// --- COMPONENT ---
 const Profile = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const queryClient = useQueryClient();
-  
-  // INTEGRATED: Use Global Location Context
-  const { location: currentLocation, requestLocation } = useGeolocation();
+  const { location: currentLocation, requestLocation, isLoading: locationLoading } = useGeolocation();
 
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState('');
@@ -159,21 +134,25 @@ const Profile = () => {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [discoveryRadius, setDiscoveryRadius] = useState([5000]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [isLocating, setIsLocating] = useState(false); 
 
-  // MODIFIED: Added refetchInterval for real-time analytics updates
-  const { data, isLoading: loading, refetch, isRefetching } = useQuery<CombinedProfile, Error>({
+  // Query with optimized settings
+  const { data, isLoading, refetch, isRefetching, error } = useQuery<CombinedProfile, Error>({
     queryKey: ['profile', user?.id],
     queryFn: () => fetchProfileData(user!.id),
     enabled: !!user,
-    staleTime: 1000 * 60 * 2, // 2 minutes stale time
-    refetchInterval: 30000,   // Poll every 30 seconds for live stats
+    staleTime: STALE_TIME,
+    refetchInterval: REFETCH_INTERVAL,
+    retry: 2,
+    retryDelay: 1000,
   });
 
   const { profile, location, stats } = data || { 
-    profile: null, location: null, stats: { friends: 0, events: 0, messages: 0, event_views_30d: 0 } 
+    profile: null, 
+    location: null, 
+    stats: { friends: 0, events: 0, messages: 0, event_views_30d: 0 } 
   };
 
+  // Sync form state with profile data
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.display_name || '');
@@ -184,6 +163,7 @@ const Profile = () => {
     }
   }, [profile]);
 
+  // Enhanced profile update mutation
   const updateProfileMutation = useMutation({
     mutationFn: async (updates: { displayName?: string; bio?: string; preferences?: any }) => {
       const currentPrefs = profile?.preferences || {};
@@ -194,8 +174,15 @@ const Profile = () => {
         preferences: newPrefs,
       };
 
-      if (updates.displayName !== undefined) dbUpdates.display_name = updates.displayName;
-      if (updates.bio !== undefined) dbUpdates.bio = updates.bio;
+      if (updates.displayName !== undefined) {
+        const trimmedName = updates.displayName.trim();
+        if (!trimmedName) throw new Error('Display name cannot be empty');
+        dbUpdates.display_name = trimmedName;
+      }
+      
+      if (updates.bio !== undefined) {
+        dbUpdates.bio = updates.bio.trim();
+      }
 
       const { error } = await supabase
         .from('profiles')
@@ -203,57 +190,125 @@ const Profile = () => {
         .eq('user_id', user!.id);
         
       if (error) throw error;
+      return dbUpdates;
     },
-    onSuccess: () => {
+    onSuccess: (updates) => {
       toast.success('Profile updated successfully');
       setIsEditing(false);
+      
+      // Optimistic update
+      queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          profile: {
+            ...oldData.profile,
+            ...updates
+          }
+        };
+      });
+      
       queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
     },
-    onError: (error: Error) => toast.error('Failed to update: ' + error.message)
+    onError: (error: Error) => {
+      toast.error('Failed to update: ' + error.message);
+    }
   });
 
-  // MODIFIED: Updated to use LocationContext instead of manual navigator.geolocation
+  // Enhanced avatar upload mutation with proper error handling
+  const uploadAvatarMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const validation = validateImageFile(file);
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      const fileName = `${user!.id}/${Date.now()}.${fileExt}`;
+      
+      // Delete old avatar if exists
+      if (profile?.avatar_url) {
+        const oldPath = getAvatarPath(profile.avatar_url);
+        if (oldPath && !oldPath.includes('default')) {
+          await supabase.storage.from('avatars').remove([oldPath]);
+        }
+      }
+      
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { 
+          upsert: true,
+          contentType: file.type 
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+      
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          avatar_url: publicUrl,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user!.id);
+      
+      if (updateError) throw updateError;
+      
+      return publicUrl;
+    },
+    onSuccess: (newAvatarUrl) => {
+      toast.success('Avatar updated successfully!');
+      
+      // Immediate cache update for instant UI feedback
+      queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          profile: {
+            ...oldData.profile,
+            avatar_url: newAvatarUrl
+          }
+        };
+      });
+      
+      setAvatarPreview(null);
+      queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Upload failed');
+      setAvatarPreview(null);
+    }
+  });
+
+  // Enhanced location toggle with proper async handling
   const toggleLocationMutation = useMutation({
-    mutationFn: async ({ checked }: { checked: boolean }) => {
-      // 1. Disabling location sharing
+    mutationFn: async ({ checked, coords }: { checked: boolean; coords?: { lat: number; lng: number } }) => {
       if (!checked) {
         const { error } = await supabase
           .from('user_locations')
           .update({ is_sharing_location: false })
           .eq('user_id', user!.id);
-
         if (error) throw error;
         return false;
       }
 
-      // 2. Enabling location sharing
       if (checked) {
-        // Use cached location from context if available, otherwise fetch
-        let lat = currentLocation?.latitude;
-        let lng = currentLocation?.longitude;
-
-        if (!lat || !lng) {
-           await requestLocation(); // Trigger context update
-           // Note: We might not have coords immediately if this is async, 
-           // but the Context handles the DB update on success.
-           // For immediate toggle, we optimistically proceed or throw if strictly needed.
-           if (!currentLocation) throw new Error("Please enable location services first");
+        if (!coords) {
+          throw new Error("Location coordinates required");
         }
 
-        // Context might have updated by now if requestLocation resolved fast
-        lat = lat || currentLocation!.latitude;
-        lng = lng || currentLocation!.longitude;
-        
         const { error } = await supabase
           .from('user_locations')
           .upsert({ 
             user_id: user!.id, 
             is_sharing_location: true,
-            latitude: lat,
-            longitude: lng,
+            latitude: coords.lat,
+            longitude: coords.lng,
             updated_at: new Date().toISOString()
-          })
-          .select();
+          });
         
         if (error) throw error;
         return true;
@@ -263,7 +318,6 @@ const Profile = () => {
     },
     onSuccess: (newState) => {
       toast.success(newState ? 'Location sharing enabled' : 'Location sharing disabled');
-      setIsLocating(false);
       
       queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
         if (!oldData) return oldData;
@@ -277,51 +331,46 @@ const Profile = () => {
       });
     },
     onError: (error: any) => {
-      const msg = error.message || "Failed to update location settings";
-      toast.error(msg);
-      setIsLocating(false);
+      toast.error(error.message || "Failed to update location settings");
       queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
     }
   });
   
-  // MODIFIED: Simplified handler to use the mutation directly
-  const handleLocationToggle = (checked: boolean) => {
-    setIsLocating(true);
-    if (checked && !currentLocation) {
-        // Trigger context request if we don't have location yet
-        requestLocation().then(() => {
-            // Retry mutation after request
-            toggleLocationMutation.mutate({ checked });
-        }).catch(() => {
-            setIsLocating(false);
-            toast.error("Could not access location");
-        });
-    } else {
+  // Improved location toggle handler
+  const handleLocationToggle = useCallback(async (checked: boolean) => {
+    try {
+      if (checked) {
+        let coords = currentLocation ? {
+          lat: currentLocation.latitude,
+          lng: currentLocation.longitude
+        } : null;
+
+        if (!coords) {
+          await requestLocation();
+          
+          // Wait a bit for context to update
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          if (!currentLocation) {
+            throw new Error("Could not access location services. Please enable location permissions.");
+          }
+          
+          coords = {
+            lat: currentLocation.latitude,
+            lng: currentLocation.longitude
+          };
+        }
+
+        toggleLocationMutation.mutate({ checked, coords });
+      } else {
         toggleLocationMutation.mutate({ checked });
-    }
-  };
-  
-  const uploadAvatarMutation = useMutation({
-    mutationFn: async (file: File) => {
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Image size must be less than 5MB');
       }
+    } catch (error: any) {
+      toast.error(error.message || "Could not access location");
+    }
+  }, [currentLocation, requestLocation, toggleLocationMutation]);
 
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user!.id}/${Date.now()}.${fileExt}`;
-      await supabase.storage.from('avatars').upload(fileName, file, { upsert: true });
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
-      await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('user_id', user!.id);
-      return publicUrl;
-    },
-    onSuccess: () => {
-      toast.success('Avatar updated successfully!');
-      setAvatarPreview(null);
-      queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
-    },
-    onError: (error: any) => toast.error(error.message || 'Upload failed')
-  });
-
+  // Delete account mutation with cascade handling
   const deleteAccountMutation = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.rpc('delete_user');
@@ -329,46 +378,65 @@ const Profile = () => {
     },
     onSuccess: async () => {
       await signOut();
-      navigate('/');
+      navigate('/', { replace: true });
       toast.success('Account deleted successfully');
     },
-    onError: () => {
-      toast.error('Failed to delete account');
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to delete account');
     }
   });
 
-  const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      const file = e.target.files[0];
-      if (!file.type.startsWith('image/')) {
-        toast.error('Please select an image file');
-        return;
-      }
-      setAvatarPreview(URL.createObjectURL(file));
-      uploadAvatarMutation.mutate(file);
+  // Handlers
+  const handleAvatarSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      return;
     }
-  };
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/');
-  };
+    const previewUrl = URL.createObjectURL(file);
+    setAvatarPreview(previewUrl);
+    uploadAvatarMutation.mutate(file);
 
-  const handleReferralCopy = () => {
+    // Cleanup
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [uploadAvatarMutation]);
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut();
+      navigate('/', { replace: true });
+    } catch (error) {
+      toast.error('Failed to sign out');
+    }
+  }, [signOut, navigate]);
+
+  const handleReferralCopy = useCallback(() => {
     const refCode = `LYNQ-${user?.id.slice(0, 6).toUpperCase()}`;
     const refLink = `${window.location.origin}/lynq-africa?ref=${refCode}`;
-    navigator.clipboard.writeText(refLink);
-    toast.success("Referral link copied to clipboard!");
-  };
+    
+    navigator.clipboard.writeText(refLink).then(() => {
+      toast.success("Referral link copied!");
+    }).catch(() => {
+      toast.error("Failed to copy link");
+    });
+  }, [user?.id]);
 
-  const handleRadiusChange = (value: number[]) => setDiscoveryRadius(value);
-  const saveRadius = () => {
-    updateProfileMutation.mutate({ preferences: { discovery_radius: discoveryRadius[0] } });
-    toast.success('Discovery radius updated');
-  };
+  const handleRadiusChange = useCallback((value: number[]) => {
+    setDiscoveryRadius(value);
+  }, []);
 
-  // Calculate profile completion
-  const calculateCompletion = () => {
+  const saveRadius = useCallback(() => {
+    updateProfileMutation.mutate({ 
+      preferences: { discovery_radius: discoveryRadius[0] } 
+    });
+  }, [discoveryRadius, updateProfileMutation]);
+
+  // Memoized calculations
+  const profileCompletion = useMemo(() => {
     let completed = 0;
     const total = 5;
     if (profile?.display_name) completed++;
@@ -377,17 +445,35 @@ const Profile = () => {
     if (location?.is_sharing_location) completed++;
     if (stats.friends > 0) completed++;
     return Math.round((completed / total) * 100);
-  };
+  }, [profile, location, stats]);
 
-  const profileCompletion = calculateCompletion();
-
-  const statsList = [
+  const statsList = useMemo(() => [
     { label: 'Friends', value: stats.friends, icon: Users, color: 'text-blue-600', bg: 'bg-blue-100' },
     { label: 'Events', value: stats.events, icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-100' },
     { label: 'Messages', value: stats.messages, icon: MessageSquare, color: 'text-green-600', bg: 'bg-green-100' }
-  ];
+  ], [stats]);
 
-  if (loading) {
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 text-center space-y-4">
+            <AlertCircle className="w-12 h-12 text-destructive mx-auto" />
+            <h2 className="text-xl font-bold">Failed to Load Profile</h2>
+            <p className="text-sm text-muted-foreground">{error.message}</p>
+            <Button onClick={() => refetch()} className="w-full">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Loading state
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-3">
@@ -403,43 +489,46 @@ const Profile = () => {
       
       {/* HEADER SECTION */}
       <div className="relative gradient-primary text-white pb-12 pt-6 rounded-b-[2.5rem] shadow-xl overflow-hidden">
-        {/* Background decorations */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-3xl" />
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full -ml-24 -mb-24 blur-2xl" />
         
         <div className="container-mobile relative z-10">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold text-white tracking-tight">Profile</h1>
-            {/* Added Refresh Button */}
             <div className="flex items-center gap-2">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-white hover:bg-white/20 rounded-full"
-                  onClick={() => refetch()}
-                  disabled={isRefetching}
-                >
-                  <RefreshCw className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`} />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="text-white hover:bg-white/20 transition-all rounded-full px-4 font-semibold"
-                  onClick={() => setIsEditing(!isEditing)}
-                >
-                  {isEditing ? (
-                    <><X className="w-4 h-4 mr-2" /> Cancel</>
-                  ) : (
-                    <><Edit3 className="w-4 h-4 mr-2" /> Edit</>
-                  )}
-                </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="text-white hover:bg-white/20 rounded-full"
+                onClick={() => refetch()}
+                disabled={isRefetching}
+                aria-label="Refresh profile"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`} />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/20 transition-all rounded-full px-4 font-semibold"
+                onClick={() => setIsEditing(!isEditing)}
+              >
+                {isEditing ? (
+                  <><X className="w-4 h-4 mr-2" /> Cancel</>
+                ) : (
+                  <><Edit3 className="w-4 h-4 mr-2" /> Edit</>
+                )}
+              </Button>
             </div>
           </div>
 
           <div className="flex items-center gap-5">
             <div className="relative group">
               <Avatar className="w-28 h-28 border-4 border-white/30 shadow-2xl ring-4 ring-white/10">
-                <AvatarImage src={avatarPreview || profile?.avatar_url || ''} className="object-cover" />
+                <AvatarImage 
+                  src={avatarPreview || profile?.avatar_url || ''} 
+                  className="object-cover" 
+                  alt={`${displayName}'s avatar`}
+                />
                 <AvatarFallback className="bg-white/20 text-white text-4xl font-bold backdrop-blur-md">
                   {displayName.slice(0, 2).toUpperCase() || '?'}
                 </AvatarFallback>
@@ -453,10 +542,11 @@ const Profile = () => {
                 )}
                 <input 
                   type="file" 
-                  accept="image/*" 
+                  accept={ALLOWED_IMAGE_TYPES.join(',')}
                   className="hidden" 
                   onChange={handleAvatarSelect} 
-                  disabled={uploadAvatarMutation.isPending} 
+                  disabled={uploadAvatarMutation.isPending}
+                  aria-label="Upload avatar"
                 />
               </label>
             </div>
@@ -468,7 +558,8 @@ const Profile = () => {
                   onChange={(e) => setDisplayName(e.target.value)}
                   className="bg-white/15 border-white/30 text-white placeholder:text-white/60 h-11 rounded-xl focus-visible:ring-white/50 font-semibold"
                   placeholder="Display Name"
-                  maxLength={50}
+                  maxLength={MAX_NAME_LENGTH}
+                  aria-label="Display name"
                 />
               ) : (
                 <h2 className="text-2xl font-bold truncate tracking-tight">{profile?.display_name || 'User'}</h2>
@@ -623,10 +714,11 @@ const Profile = () => {
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="Write a short bio about yourself..."
                   className="resize-none bg-muted/50 min-h-[120px] focus-visible:ring-primary"
-                  maxLength={200}
+                  maxLength={MAX_BIO_LENGTH}
+                  aria-label="Bio"
                 />
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{bio.length}/200 characters</span>
+                  <span>{bio.length}/{MAX_BIO_LENGTH} characters</span>
                 </div>
                 <Button 
                   className="w-full gradient-primary text-white shadow-md font-semibold" 
@@ -679,6 +771,7 @@ const Profile = () => {
                   max={50000} 
                   step={500}
                   className="cursor-pointer"
+                  aria-label="Discovery radius"
                 />
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-3 font-semibold">
                   <span>0km</span>
@@ -696,11 +789,16 @@ const Profile = () => {
                 </div>
                 <div>
                   <div className="font-semibold text-sm">Location Sharing</div>
-                  <div className="text-xs text-muted-foreground">Visible to friends on map</div>
+                  <div className="text-xs text-muted-foreground">
+                    {locationLoading ? 'Requesting location...' : 'Visible to friends on map'}
+                  </div>
                 </div>
               </div>
-              <Switch checked={!!location?.is_sharing_location}
-  onCheckedChange={handleLocationToggle} disabled={toggleLocationMutation.isPending || isLocating} 
+              <Switch 
+                checked={!!location?.is_sharing_location}
+                onCheckedChange={handleLocationToggle}
+                disabled={toggleLocationMutation.isPending || locationLoading}
+                aria-label="Toggle location sharing"
               />
             </div>
 
@@ -717,7 +815,9 @@ const Profile = () => {
               </div>
               <Switch 
                 checked={profile?.preferences?.notifications ?? true} 
-                onCheckedChange={(c) => updateProfileMutation.mutate({ preferences: { notifications: c } })} 
+                onCheckedChange={(c) => updateProfileMutation.mutate({ preferences: { notifications: c } })}
+                disabled={updateProfileMutation.isPending}
+                aria-label="Toggle notifications"
               />
             </div>
             
@@ -725,6 +825,9 @@ const Profile = () => {
             <div 
               className="p-5 flex items-center justify-between hover:bg-amber-50/70 dark:hover:bg-amber-900/10 transition-all cursor-pointer group border-l-4 border-l-amber-400" 
               onClick={() => navigate('/premium')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && navigate('/premium')}
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
@@ -754,6 +857,9 @@ const Profile = () => {
               <div 
                 className="p-5 flex items-center gap-3 cursor-pointer hover:bg-muted/50 text-foreground transition-colors group"
                 onClick={handleSignOut}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && handleSignOut()}
               >
                 <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center group-hover:bg-muted/70 transition-colors">
                   <LogOut className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
@@ -768,6 +874,9 @@ const Profile = () => {
               <div 
                 className="p-5 flex items-center gap-3 cursor-pointer hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 transition-colors group"
                 onClick={() => setShowDeleteDialog(true)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && setShowDeleteDialog(true)}
               >
                 <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/30 flex items-center justify-center group-hover:bg-red-200 dark:group-hover:bg-red-900/40 transition-colors">
                   <Trash2 className="w-5 h-5" />
