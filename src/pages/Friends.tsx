@@ -254,7 +254,7 @@ export default function Friends() {
       const candidateIds = validCandidates.map((c: any) => c.user_id);
       const { data: profiles, error: profError } = await supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_url, username, email') // ✅ FIXED: Added username and email as fallbacks
+        .select('user_id, display_name, avatar_url, email') // ✅ FIXED: Added email as fallback
         .eq('user_id', candidateIds);
 
       if (profError) throw profError;
@@ -274,7 +274,6 @@ export default function Friends() {
           
           // ✅ FIX: Try multiple fields to get a display name
           const displayName = profile?.display_name || 
-                             profile?.username || 
                              profile?.email?.split('@')[0] || 
                              `User${candidate.user_id.slice(-4)}`; // Last resort: show last 4 chars of ID
           
