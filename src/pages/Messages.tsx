@@ -158,36 +158,45 @@ export default function Messages() {
       const idsList = Array.from(partnerIds);
       
       // Query profiles using user_id instead of id
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, id, display_name, username, avatar_url')
-        .eq('user_id', idsList);
+      // 1. Fetch profiles using 'id' (the standard primary key for profiles)
+const { data: profiles, error } = await supabase
+  .from('profiles')
+  .select('id, display_name, email, avatar_url') // CHANGED: user_id -> id
+  .in('id', idsList); // CHANGED: user_id -> id
 
-      const profileLookup = new Map<string, any>();
-      profiles?.forEach((p: any) => {
-        // Map using user_id or id which links to auth.users
-        profileLookup.set(p.user_id || p.id, p);
-      });
+if (error) {
+  console.error("Error loading profiles:", error);
+}
 
-      return idsList.map(pid => {
-        const details = partnerMap.get(pid)!;
-        const profile = profileLookup.get(pid);
-        return {
-          type: 'dm' as const,
-          id: pid,
-          partner_id: pid,
-          name: profile?.display_name || profile?.email || 'User', 
-          avatar: profile?.avatar_url,
-          last_msg: details.last_msg,
-          time: details.time,
-          is_online: false,
-          unread_count: unreadCounts.get(pid) || 0
-        };
-      });
-    },
-    enabled: !!user?.id,
-    staleTime: 30000
-  });
+// 2. Create the lookup map
+const profileLookup = new Map<string, any>();
+profiles?.forEach((p: any) => {
+  // CHANGED: Use p.id since that is what we selected
+  if (p.id) {
+    profileLookup.set(p.id, p);
+  }
+});
+
+return idsList.map(pid => {
+  const details = partnerMap.get(pid)!;
+  const profile = profileLookup.get(pid);
+
+  // Debugging: Check if we actually found a profile
+  if (!profile) console.warn(`Profile not found for ID: ${pid}`);
+
+  return {
+    type: 'dm' as const,
+    id: pid,
+    partner_id: pid,
+    // Improved Fallback Logic
+    name: profile?.display_name || profile?.email || 'User', 
+    avatar: profile?.avatar_url,
+    last_msg: details.last_msg,
+    time: details.time,
+    is_online: false,
+    unread_count: unreadCounts.get(pid) || 0
+  };
+});
 
   // Communities list query - Added Sort Order
   const { data: commList = [], isLoading: loadingComms } = useQuery({
