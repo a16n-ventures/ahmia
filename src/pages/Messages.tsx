@@ -146,7 +146,7 @@ export default function Messages() {
         const partnerId = isMeSender ? msg.receiver_id : msg.sender_id;
         if (!partnerMap.has(partnerId)) {
           partnerMap.set(partnerId, {
-            last_msg: msg.content ?? (msg.image_url ? '胴 Photo' : 'Message'),
+            last_msg: msg.content ?? (msg.image_url ? '📷 Photo' : 'Message'),
             time: msg.created_at
           });
           partnerIds.add(partnerId);
@@ -169,33 +169,45 @@ if (error) {
 }
 
 // 2. Create the lookup map
-const profileLookup = new Map<string, any>();
-profiles?.forEach((p: any) => {
-  // CHANGED: Use p.id since that is what we selected
-  if (p.id) {
-    profileLookup.set(p.id, p);
-  }
-});
+  const profileLookup = new Map<string, any>();
+    profiles?.forEach((p: any) => {
+      // Robustly handle if the DB returns 'user_id' OR 'id'
+      const key = p.id || p.user_id; 
+      if (key) profileLookup.set(key, p);
+    });
+    // 5. Fetch Unread Counts (Optional but recommended)
+    const { data: unreadData } = await supabase
+      .from('messages')
+      .select('sender_id')
+      .eq('receiver_id', user.id)
+      .eq('read', false); // Ensure this column name matches your DB ('read' or 'is_read')
+    const unreadCounts = new Map<string, number>();
+    unreadData?.forEach((m: any) => {
+      unreadCounts.set(m.sender_id, (unreadCounts.get(m.sender_id) || 0) + 1);
+    });
+    // 6. Map and Return
 
-return idsList.map(pid => {
-  const details = partnerMap.get(pid)!;
-  const profile = profileLookup.get(pid);
-
-  // Debugging: Check if we actually found a profile
-  if (!profile) console.warn(`Profile not found for ID: ${pid}`);
-
-  return {
-    type: 'dm' as const,
-    id: pid,
-    partner_id: pid,
-    // Improved Fallback Logic
-    name: profile?.display_name || profile?.email || 'User', 
-    avatar: profile?.avatar_url,
-    last_msg: details.last_msg,
-    time: details.time,
-    is_online: false,
-    unread_count: unreadCounts.get(pid) || 0
-  };
+    return idsList.map(pid => {
+      const details = partnerMap.get(pid)!;
+      const profile = profileLookup.get(pid);
+      // DEBUG: If this logs, your RLS policies are blocking view access
+      if (!profile) console.warn(`RLS Blocking or Missing Profile for: ${pid}`);
+      return {
+        type: 'dm' as const,
+        id: pid,
+        partner_id: pid,
+        // HIERARCHY OF FALLBACKS: Display Name -> Username -> "User"
+        name: profile?.display_name || profile?.username || 'User',
+        avatar: profile?.avatar_url,
+        last_msg: details.last_msg,
+        time: details.time,
+        is_online: false,
+        unread_count: unreadCounts.get(pid) || 0
+      };
+    });
+  },
+  enabled: !!user?.id,
+  staleTime: 30000
 });
 
   // Communities list query - Added Sort Order
@@ -259,7 +271,7 @@ return idsList.map(pid => {
         // Robust ID check
         id: profile.user_id || profile.id, 
         // Improved name check
-        name: profile.display_name || profile.username || 'Friend', 
+        name: profile.display_name || profile.email || 'Friend', 
         avatar: profile.avatar_url,
         is_online: false,
         last_seen: null
@@ -468,7 +480,6 @@ return idsList.map(pid => {
         is_me: true,
         pending: true
       };
-
       queryClient.setQueryData(['messages', selectedChat.type, selectedChat.id], (old: Message[] | undefined) => {
         return old ? [...old, optimisticMessage] : [optimisticMessage];
       });
