@@ -200,7 +200,7 @@ export default function Messages() {
         const { data: communities, error: commError } = await supabase
           .from('communities')
           .select('id, name, description, avatar_url, member_count, creator_id, created_at')
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: true });
 
         if (commError) throw commError;
         if (!communities || communities.length === 0) return [];
