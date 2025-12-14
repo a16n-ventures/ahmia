@@ -17,11 +17,10 @@ const INTEREST_TAGS = [
 ];
 
 interface InterestSelectorProps {
-  onComplete: () => void;
   initialSelected?: string[];
 }
 
-export function InterestSelector({ onComplete, initialSelected = [] }: InterestSelectorProps) {
+export function InterestSelector({ initialSelected = [] }: InterestSelectorProps) {
   const { user } = useAuth();
   const [selected, setSelected] = useState<string[]>(initialSelected);
   const [loading, setLoading] = useState(false);
