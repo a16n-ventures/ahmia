@@ -111,11 +111,13 @@ export default function Messages() {
     return () => window.clearTimeout(id);
   }, [searchQuery]);
 
-// DM list query - Fixed profile ID lookup
+  // 1. DM LIST QUERY (FIXED)
   const { data: dmList = [], isLoading: loadingDMs } = useQuery({
     queryKey: ['dm_list', user?.id],
     queryFn: async (): Promise<DMListItem[]> => {
       if (!user?.id) return [];
+
+      // A. Fetch Raw Messages
       const { data: rawMessages, error } = await supabase
         .from('messages')
         .select('*')
@@ -127,7 +129,45 @@ export default function Messages() {
         return [];
       }
 
-      // Fetch unread messages separately to count them
+      // B. Identify Unique Partners
+      const partnerMap = new Map<string, { last_msg: string; time: string }>();
+      const partnerIds = new Set<string>();
+
+      rawMessages?.forEach((msg: any) => {
+        const isMeSender = msg.sender_id === user.id;
+        const partnerId = isMeSender ? msg.receiver_id : msg.sender_id;
+        
+        if (!partnerMap.has(partnerId)) {
+          partnerMap.set(partnerId, {
+            last_msg: msg.content ?? (msg.image_url ? '📷 Photo' : 'Message'),
+            time: msg.created_at
+          });
+          partnerIds.add(partnerId);
+        }
+      });
+
+      const idsList = Array.from(partnerIds);
+      if (idsList.length === 0) return [];
+
+      // C. ROBUST PROFILE FETCH
+      // Selecting 'id' instead of 'user_id' as it is the standard PK
+      // Also selecting 'username' and 'email' for fallbacks
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, display_name, username, avatar_url') 
+        .in('id', idsList);
+
+      if (profileError) {
+        console.error("Error fetching profiles:", profileError);
+      }
+
+      // D. Create Lookup Map
+      const profileLookup = new Map<string, any>();
+      profiles?.forEach((p: any) => {
+        if (p.id) profileLookup.set(p.id, p);
+      });
+
+      // E. Fetch Unread Counts
       const { data: unreadData } = await supabase
         .from('messages')
         .select('sender_id')
@@ -139,78 +179,33 @@ export default function Messages() {
         unreadCounts.set(m.sender_id, (unreadCounts.get(m.sender_id) || 0) + 1);
       });
 
-      const partnerMap = new Map<string, { last_msg: string; time: string }>();
-      const partnerIds = new Set<string>();
-      rawMessages?.forEach((msg: any) => {
-        const isMeSender = msg.sender_id === user.id;
-        const partnerId = isMeSender ? msg.receiver_id : msg.sender_id;
-        if (!partnerMap.has(partnerId)) {
-          partnerMap.set(partnerId, {
-            last_msg: msg.content ?? (msg.image_url ? '📷 Photo' : 'Message'),
-            time: msg.created_at
-          });
-          partnerIds.add(partnerId);
-        }
+      // F. Map and Return
+      return idsList.map(pid => {
+        const details = partnerMap.get(pid)!;
+        const profile = profileLookup.get(pid);
+
+        // Debug log if profile is missing (RLS issue check)
+        if (!profile) console.warn(`RLS Blocking or Missing Profile for: ${pid}`);
+
+        return {
+          type: 'dm' as const,
+          id: pid,
+          partner_id: pid,
+          // HIERARCHY OF FALLBACKS: Display Name -> Username -> "User"
+          name: profile?.display_name || profile?.username || 'User',
+          avatar: profile?.avatar_url,
+          last_msg: details.last_msg,
+          time: details.time,
+          is_online: false,
+          unread_count: unreadCounts.get(pid) || 0
+        };
       });
+    },
+    enabled: !!user?.id,
+    staleTime: 30000
+  });
 
-      if (partnerIds.size === 0) return [];
-
-      const idsList = Array.from(partnerIds);
-      
-      // Query profiles using user_id instead of id
-      // 1. Fetch profiles using 'id' (the standard primary key for profiles)
-const { data: profiles, error } = await supabase
-  .from('profiles')
-  .select('id, display_name, email, avatar_url') // CHANGED: user_id -> id
-  .in('id', idsList); // CHANGED: user_id -> id
-
-if (error) {
-  console.error("Error loading profiles:", error);
-}
-
-// 2. Create the lookup map
-  const profileLookup = new Map<string, any>();
-    profiles?.forEach((p: any) => {
-      // Robustly handle if the DB returns 'user_id' OR 'id'
-      const key = p.id || p.user_id; 
-      if (key) profileLookup.set(key, p);
-    });
-    // 5. Fetch Unread Counts (Optional but recommended)
-    const { data: unreadData } = await supabase
-      .from('messages')
-      .select('sender_id')
-      .eq('receiver_id', user.id)
-      .eq('read', false); // Ensure this column name matches your DB ('read' or 'is_read')
-    const unreadCounts = new Map<string, number>();
-    unreadData?.forEach((m: any) => {
-      unreadCounts.set(m.sender_id, (unreadCounts.get(m.sender_id) || 0) + 1);
-    });
-    // 6. Map and Return
-
-    return idsList.map(pid => {
-      const details = partnerMap.get(pid)!;
-      const profile = profileLookup.get(pid);
-      // DEBUG: If this logs, your RLS policies are blocking view access
-      if (!profile) console.warn(`RLS Blocking or Missing Profile for: ${pid}`);
-      return {
-        type: 'dm' as const,
-        id: pid,
-        partner_id: pid,
-        // HIERARCHY OF FALLBACKS: Display Name -> Username -> "User"
-        name: profile?.display_name || profile?.username || 'User',
-        avatar: profile?.avatar_url,
-        last_msg: details.last_msg,
-        time: details.time,
-        is_online: false,
-        unread_count: unreadCounts.get(pid) || 0
-      };
-    });
-  },
-  enabled: !!user?.id,
-  staleTime: 30000
-});
-
-  // Communities list query - Added Sort Order
+  // 2. COMMUNITIES QUERY (FIXED SORTING)
   const { data: commList = [], isLoading: loadingComms } = useQuery({
     queryKey: ['comm_list', user?.id],
     queryFn: async (): Promise<CommunityListItem[]> => {
@@ -220,7 +215,7 @@ if (error) {
         // FIXED: Added order('created_at') to ensure new communities show at the top
         const { data: communities, error: commError } = await supabase
           .from('communities')
-          .select('*')
+          .select('id, name, description, avatar_url, member_count, creator_id')
           .order('created_at', { ascending: false });
 
         if (commError) throw commError;
@@ -258,7 +253,7 @@ if (error) {
     staleTime: 30000
   });
 
-  // Friends hook - Improved Name Resolution
+  // 3. FRIENDS HOOK (FIXED NAME RESOLUTION)
   const { friends: rawFriends = [] } = useFriends(user?.id);
 
   const friends = useMemo(() => {
@@ -269,9 +264,9 @@ if (error) {
       if (!profile) return null;
       return {
         // Robust ID check
-        id: profile.user_id || profile.id, 
+        id: profile.id ?? profile.user_id, 
         // Improved name check
-        name: profile.display_name || profile.email || 'Friend', 
+        name: profile.display_name || profile.username || 'Friend', 
         avatar: profile.avatar_url,
         is_online: false,
         last_seen: null
@@ -722,7 +717,7 @@ if (error) {
                     <Pin className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-muted-foreground mb-1">{m.sender_name}</p>
-                      <p className="text-sm text-foreground line-clamp-2">{m.content || '胴 Photo'}</p>
+                      <p className="text-sm text-foreground line-clamp-2">{m.content || '📷 Photo'}</p>
                     </div>
                     {canModerate && (
                       <Button
@@ -793,7 +788,7 @@ if (error) {
                       Replying to {replyingTo.is_me ? 'yourself' : replyingTo.sender_name}
                     </p>
                     <p className="text-sm text-muted-foreground truncate">
-                      {replyingTo.content || '胴 Photo'}
+                      {replyingTo.content || '📷 Photo'}
                     </p>
                   </div>
                   <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full shrink-0" onClick={() => setReplyingTo(null)}>
@@ -1048,7 +1043,7 @@ if (error) {
                       <div className="flex items-center gap-2 mb-3 px-1">
                         <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                          Online 窶｢ {onlineFriends.length}
+                          Online • {onlineFriends.length}
                         </h3>
                       </div>
                       <div className="space-y-1">
@@ -1084,7 +1079,7 @@ if (error) {
                       <div className="flex items-center gap-2 mb-3 px-1">
                         <Users className="w-3.5 h-3.5 text-muted-foreground" />
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                          All Friends 窶｢ {offlineFriends.length}
+                          All Friends • {offlineFriends.length}
                         </h3>
                       </div>
                       <div className="space-y-1">
@@ -1122,7 +1117,7 @@ if (error) {
         </DialogContent>
       </Dialog>
 
- {/* Create Community Dialog */}
+      {/* Create Community Dialog */}
       <Dialog open={isCreateCommunityOpen} onOpenChange={(open) => {
         setIsCreateCommunityOpen(open);
         if (!open) {
