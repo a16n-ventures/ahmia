@@ -4,39 +4,47 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
 
-export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  requireInterests?: boolean;
+}
+
+export const ProtectedRoute = ({ 
+  children, 
+  requireInterests = true 
+}: ProtectedRouteProps) => {
   const { user, loading: authLoading } = useAuth();
   const [isChecking, setIsChecking] = useState(true);
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => { 
-    // 1. Wait for Auth Context to initialize
     if (authLoading) return;
-    // 2. If not logged in, redirect to home immediately
+    
     if (!user) {
       navigate('/', { replace: true });
       return;
     }
+
     const checkOnboardingStatus = async () => {
       try {
-        // FIXED: Changed .eq('user_id', ...) to .eq('id', ...)
-        // This must match the column used in InterestSelector.tsx
         const { data: profile, error } = await supabase
           .from('profiles')
           .select('interests')
-          .eq('id', user.id) 
+          .eq('user_id', user.id)  // ← FIXED
           .maybeSingle();
+
         if (error) {
           console.error("Profile check error:", error);
-          // If error, assume valid to prevent loop, let the app handle data missing later
           setIsChecking(false);
           return;
         }
+
         const currentPath = location.pathname.toLowerCase().replace(/\/$/, "");
         const isOnboardingPage = currentPath.includes('onboarding');
-        // Check if interests exist
-        if (!profile?.interests || profile.interests.length === 0) {
+
+        // Only check interests if requireInterests is true
+        if (requireInterests && (!profile?.interests || profile.interests.length === 0)) {
           if (!isOnboardingPage) {
             console.log("Redirecting to onboarding...");
             navigate("/onboarding", { replace: true });
@@ -51,9 +59,8 @@ export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     };
     
     checkOnboardingStatus();
-  }, [user, authLoading, navigate, location.pathname]);
+  }, [user, authLoading, navigate, location.pathname, requireInterests]);
 
-  // Show loader while checking auth OR checking profile status
   if (authLoading || isChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -65,7 +72,6 @@ export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  // If user is not authenticated (safety fallback), don't render children
   if (!user) return null;
 
   return <>{children}</>;
