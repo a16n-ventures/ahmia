@@ -370,21 +370,6 @@ const Profile = () => {
     }
   }, [currentLocation, requestLocation, toggleLocationMutation]); 
 
-  const saveRadius = useCallback(() => {
-  console.log('🔵 saveRadius called with:', discoveryRadius[0]);
-  updateProfileMutation.mutate({ 
-    discovery_radius: discoveryRadius[0] 
-  }, {
-    onSuccess: () => {
-      console.log('✅ Radius saved successfully');
-      toast.success(`Discovery radius set to ${(discoveryRadius[0] / 1000).toFixed(1)}km`);
-    },
-    onError: (error) => {
-      console.error('❌ Failed to save radius:', error);
-    }
-  });
-}, [discoveryRadius, updateProfileMutation]);
-
   // Delete account mutation with cascade handling
   const deleteAccountMutation = useMutation({
     mutationFn: async () => {
@@ -440,15 +425,25 @@ const Profile = () => {
     });
   }, [user?.id]);
 
-  const handleRadiusChange = useCallback((value: number[]) => {
-    setDiscoveryRadius(value);
-  }, []);
-
   const saveRadius = useCallback(() => {
-    updateProfileMutation.mutate({ 
-      preferences: { discovery_radius: discoveryRadius[0] } 
-    });
-  }, [discoveryRadius, updateProfileMutation]);
+  console.log('🔵 saveRadius called with:', discoveryRadius[0]);
+  updateProfileMutation.mutate({ 
+    preferences: { discovery_radius: discoveryRadius[0] } // ✅ CORRECT: nested in preferences
+  }, {
+    onSuccess: () => {
+      console.log('✅ Radius saved successfully');
+      toast.success(`Discovery radius set to ${(discoveryRadius[0] / 1000).toFixed(1)}km`);
+    },
+    onError: (error) => {
+      console.error('❌ Failed to save radius:', error);
+    }
+  });
+}, [discoveryRadius, updateProfileMutation]);
+
+const handleRadiusChange = useCallback((value: number[]) => {
+  console.log('Slider changed to:', value[0]);
+  setDiscoveryRadius(value);
+}, []);
 
   // Memoized calculations
   const profileCompletion = useMemo(() => {
@@ -783,12 +778,11 @@ const Profile = () => {
   value={discoveryRadius} 
   onValueChange={handleRadiusChange} 
   onValueCommit={() => {
-    console.log('Saving radius:', discoveryRadius[0]);
+    console.log('💾 Slider committed, saving:', discoveryRadius[0]);
     saveRadius();
   }}
   onPointerUp={() => {
-    // ✅ ADDED: Fallback trigger
-    console.log('Pointer up, saving radius');
+    console.log('👆 Pointer up, saving radius');
     saveRadius();
   }}
   max={50000} 
