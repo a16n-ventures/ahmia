@@ -27,10 +27,38 @@ import { AddContactForm } from "@/components/friends/AddContactForm";
 
 // Utilities
 const DEBOUNCE_DELAY = 500;
-const NEARBY_RADIUS_KM = 50; 
 const MAX_NEARBY_USERS = 50;
 const LOCATION_CHANGE_THRESHOLD_KM = 0.1; // ✅ CHANGED: More sensitive to location changes (100m)
-const REFRESH_INTERVAL_MS = 120000; // 2 minutes
+const REFRESH_INTERVAL_MS = 120000; // 2 minutes 
+
+const { data: userProfile } = useQuery({
+  queryKey: ['user-profile-radius', userId],
+  queryFn: async () => {
+    if (!userId) return null;
+    const { data } = await supabase
+      .from('profiles')
+      .select('preferences')
+      .eq('user_id', userId)
+      .single();
+    return data;
+  },
+  enabled: !!userId,
+  staleTime: 60000, // Cache for 1 minute
+});
+
+// ✅ Calculate radius in KM from saved preferences (stored in meters)
+const NEARBY_RADIUS_KM = useMemo(() => {
+  const savedRadius = userProfile?.preferences?.discovery_radius;
+  // Default to 10km if not set, convert meters to km
+  return savedRadius ? savedRadius / 1000 : 10;
+}, [userProfile]); 
+
+if (dist <= NEARBY_RADIUS_KM && !isNaN(dist)) {
+  uniqueCandidatesMap.set(loc.user_id, { 
+    ...loc, 
+    distance: dist 
+  });
+}
 
 /**
  * ✅ FIXED: useDebounce hook
@@ -574,7 +602,26 @@ export default function Friends() {
             </button>
           </div>
 
-          {/* NEARBY VIEW */}
+          {/* NEARBY VIEW */} 
+          {discoverView === 'nearby' && (
+  <div className="mb-3 px-4">
+    <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
+      <div className="flex items-center gap-2">
+        <Radar className="w-3 h-3" />
+        <span>Search radius: <strong>{NEARBY_RADIUS_KM}km</strong></span>
+      </div>
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        className="h-6 text-xs"
+        onClick={() => navigate('/profile')}
+      >
+        Adjust in Profile →
+      </Button>
+    </div>
+  </div>
+)}
+          
           {discoverView === 'nearby' && (
             <div className="space-y-2">
               {!userLocation ? (
