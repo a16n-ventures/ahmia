@@ -801,15 +801,18 @@ const handleRadiusChange = useCallback((value: number[]) => {
     console.log('👆 Pointer up, saving radius');
     saveRadius();
   }}
-  max={50000} 
+  max={250000} 
   step={500}
+  min={25000}
   className="cursor-pointer"
   aria-label="Discovery radius"
 />
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-3 font-semibold">
-                  <span>0km</span>
                   <span>25km</span>
                   <span>50km</span>
+                  <span>100km</span>
+                  <span>150km</span>
+                  <span>250km</span>
                 </div>
               </div>
             </div>
