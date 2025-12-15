@@ -38,6 +38,19 @@ import { MediaGallery } from '@/components/messages/MediaGallery';
 import { CommunityInfoDialog } from '@/components/messages/CommunityInfoDialog';
 import { CommunitySettingsDialog } from '@/components/messages/CommunitySettingsDialog';
 
+// Helper function to extract display name from profile
+const getDisplayName = (profile: any): string => {
+  if (!profile) return 'Unknown User';
+  
+  // Priority order: display_name > username > full_name > email
+  if (profile.display_name?.trim()) return profile.display_name.trim();
+  if (profile.username?.trim()) return profile.username.trim();
+  if (profile.full_name?.trim()) return profile.full_name.trim();
+  if (profile.email) return profile.email.split('@')[0];
+  
+  return 'User';
+};
+
 export default function Messages() {
   const { user } = useAuth() || {};
   const queryClient = useQueryClient();
@@ -79,7 +92,7 @@ export default function Messages() {
       if (!user?.id) return null;
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, user_id, display_name, username, email, avatar_url')
+        .select('id, user_id, display_name, username, email, avatar_url, full_name')
         .eq('id', user.id)
         .single();
       
@@ -120,7 +133,7 @@ export default function Messages() {
     return () => window.clearTimeout(id);
   }, [searchQuery]);
 
-  // 1. FIXED DM LIST QUERY - Comprehensive profile fetching
+  // FIXED DM LIST QUERY - Properly fetch and display user names
   const { data: dmList = [], isLoading: loadingDMs } = useQuery({
     queryKey: ['dm_list', user?.id],
     queryFn: async (): Promise<DMListItem[]> => {
@@ -128,7 +141,7 @@ export default function Messages() {
 
       console.log("🔍 Fetching DM list for user:", user.id);
 
-      // A. Fetch Raw Messages
+      // Step 1: Get all messages involving this user
       const { data: rawMessages, error: msgError } = await supabase
         .from('messages')
         .select('*')
@@ -142,13 +155,12 @@ export default function Messages() {
 
       console.log("📧 Raw messages fetched:", rawMessages?.length);
 
-      // B. Identify Unique Partners
+      // Step 2: Build partner map with latest message details
       const partnerMap = new Map<string, { last_msg: string; time: string }>();
       const partnerIds = new Set<string>();
 
       rawMessages?.forEach((msg: any) => {
-        const isMeSender = msg.sender_id === user.id;
-        const partnerId = isMeSender ? msg.receiver_id : msg.sender_id;
+        const partnerId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
         
         if (!partnerMap.has(partnerId)) {
           partnerMap.set(partnerId, {
@@ -160,37 +172,33 @@ export default function Messages() {
       });
 
       const idsList = Array.from(partnerIds);
-      console.log("👥 Unique partner IDs:", idsList);
+      console.log("👥 Unique partner IDs:", idsList.length);
 
       if (idsList.length === 0) return [];
 
-      // C. Fetch profiles using user_id column
-const { data: profiles, error: profileError } = await supabase
-  .from('profiles')
-  .select('user_id, display_name, username, email, full_name, avatar_url, avatar')
-  .in('user_id', idsList);
+      // Step 3: Fetch ALL profiles for partners with comprehensive field selection
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, user_id, display_name, username, email, avatar_url, full_name')
+        .in('id', idsList);
 
-if (profileError) {
-  console.error("❌ Profile fetch error:", profileError);
-}
+      if (profileError) {
+        console.error("❌ Profile fetch error:", profileError);
+      }
 
-      console.log("👤 Profiles fetched:", profiles?.length, "Expected:", idsList.length);
-      console.log("📋 Sample profile structure:", profiles?.[0]);
+      console.log("👤 Profiles fetched:", profiles?.length, "/ Expected:", idsList.length);
 
-      // D. Create Lookup Map
+      // Step 4: Create profile lookup map
       const profileLookup = new Map<string, any>();
       profiles?.forEach((p: any) => {
-        // Store by the id field (primary key)
-        if (p.id) {
-          profileLookup.set(p.id, p);
-        }
-        // Also check user_id if it exists and is different
+        profileLookup.set(p.id, p);
+        // Also map by user_id if different
         if (p.user_id && p.user_id !== p.id) {
           profileLookup.set(p.user_id, p);
         }
       });
 
-      // E. Fetch Unread Counts
+      // Step 5: Fetch unread counts
       const { data: unreadData } = await supabase
         .from('messages')
         .select('sender_id')
@@ -202,43 +210,25 @@ if (profileError) {
         unreadCounts.set(m.sender_id, (unreadCounts.get(m.sender_id) || 0) + 1);
       });
 
-      // F. Map and Return with comprehensive fallbacks
+      // Step 6: Map to DMListItem with proper name resolution
       return idsList.map(pid => {
         const details = partnerMap.get(pid)!;
         const profile = profileLookup.get(pid);
 
-        // Debug missing profiles
         if (!profile) {
           console.warn(`⚠️ No profile found for partner ID: ${pid}`);
-          console.warn("   This could be an RLS issue - check profiles table RLS policies");
-        } else {
-          console.log(`✅ Profile found for ${pid}:`, {
-            display_name: profile.display_name,
-            username: profile.username,
-            email: profile.email
-          });
         }
 
-        // Comprehensive name resolution with detailed logging
-        let displayName = 'User';
-        if (profile) {
-          if (profile.display_name) {
-            displayName = profile.display_name;
-          } else if (profile.username) {
-            displayName = profile.username;
-          } else if (profile.email) {
-            displayName = profile.email.split('@')[0];
-          } else if (profile.full_name) {
-            displayName = profile.full_name;
-          }
-        }
+        const displayName = getDisplayName(profile);
+
+        console.log(`✅ DM mapped: ${displayName} (${pid})`);
 
         return {
           type: 'dm' as const,
           id: pid,
           partner_id: pid,
           name: displayName,
-          avatar: profile?.avatar_url || profile?.avatar,
+          avatar: profile?.avatar_url,
           last_msg: details.last_msg,
           time: details.time,
           is_online: false,
@@ -247,10 +237,11 @@ if (profileError) {
       }).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
     },
     enabled: !!user?.id,
-    staleTime: 30000
+    staleTime: 30000,
+    refetchInterval: 60000 // Refetch every minute to keep names updated
   });
 
-  // 2. FIXED COMMUNITIES QUERY - Complete field selection
+  // FIXED COMMUNITIES QUERY - Properly fetch all community data
   const { data: commList = [], isLoading: loadingComms } = useQuery({
     queryKey: ['comm_list', user?.id],
     queryFn: async (): Promise<CommunityListItem[]> => {
@@ -259,7 +250,7 @@ if (profileError) {
       try {
         console.log("🏘️ Fetching communities for user:", user.id);
 
-        // FIXED: Select all necessary fields explicitly
+        // Fetch ALL communities with complete field selection
         const { data: communities, error: commError } = await supabase
           .from('communities')
           .select('id, name, description, avatar_url, member_count, creator_id, created_at')
@@ -271,10 +262,9 @@ if (profileError) {
         }
         
         console.log("🏘️ Communities fetched:", communities?.length);
-        console.log("📋 Sample community:", communities?.[0]);
 
         if (!communities || communities.length === 0) {
-          console.log("ℹ️ No communities found in database");
+          console.log("ℹ️ No communities found");
           return [];
         }
 
@@ -286,48 +276,45 @@ if (profileError) {
 
         if (memError) {
           console.error("❌ Memberships fetch error:", memError);
-          throw memError;
         }
 
         console.log("👥 User memberships:", memberships?.length);
 
         const membershipMap = new Map<string, string>();
-        memberships?.forEach((m: any) => membershipMap.set(m.community_id, m.role));
+        memberships?.forEach((m: any) => {
+          membershipMap.set(m.community_id, m.role);
+        });
 
-        // Map communities with proper data
-        const mappedCommunities = communities.map((c: any) => {
+        // Map communities with proper data validation
+        return communities.map((c: any) => {
           const myRole = membershipMap.get(c.id);
           
-          console.log(`🏘️ Community "${c.name}":`, {
-            id: c.id,
-            member_count: c.member_count,
-            my_role: myRole || 'none'
-          });
+          const communityName = c.name?.trim() || 'Unnamed Community';
+          
+          console.log(`✅ Community: "${communityName}" - Role: ${myRole || 'none'}`);
 
           return {
             type: 'community' as const,
             id: c.id,
-            name: c.name?.trim() || 'Unnamed Community',
-            description: c.description || '',
+            name: communityName,
+            description: c.description?.trim() || '',
             avatar: c.avatar_url,
             member_count: c.member_count || 0,
             my_role: (myRole || 'none') as 'admin' | 'moderator' | 'member' | 'none',
             is_joined: !!myRole,
           };
         });
-
-        console.log("✅ Mapped communities:", mappedCommunities.length);
-        return mappedCommunities;
       } catch (e) {
         console.error("💥 Community fetch error:", e);
         return [];
       }
     },
     enabled: !!user?.id,
-    staleTime: 30000
+    staleTime: 30000,
+    refetchInterval: 60000
   });
 
-  // 3. FIXED FRIENDS HOOK - Robust name resolution
+  // FIXED FRIENDS HOOK - Robust name resolution
   const { friends: rawFriends = [] } = useFriends(user?.id);
 
   const friends = useMemo(() => {
@@ -345,26 +332,15 @@ if (profileError) {
         return null;
       }
 
-      // Comprehensive ID and name extraction
       const friendId = profile.id || profile.user_id;
-      let friendName = 'Friend';
-      
-      if (profile.display_name) {
-        friendName = profile.display_name;
-      } else if (profile.username) {
-        friendName = profile.username;
-      } else if (profile.full_name) {
-        friendName = profile.full_name;
-      } else if (profile.email) {
-        friendName = profile.email.split('@')[0];
-      }
+      const friendName = getDisplayName(profile);
 
-      console.log(`✅ Friend processed: ${friendName} (${friendId})`);
+      console.log(`✅ Friend: ${friendName} (${friendId})`);
       
       return {
         id: friendId,
         name: friendName,
-        avatar: profile.avatar_url || profile.avatar,
+        avatar: profile.avatar_url,
         is_online: false,
         last_seen: profile.last_seen || null
       };
@@ -395,7 +371,7 @@ if (profileError) {
           read: m.is_read
         }));
       } else {
-        // Community messages with proper sender join
+        // Community messages - fetch with full sender profile
         const { data, error } = await supabase
           .from('community_messages')
           .select(`
@@ -409,26 +385,13 @@ if (profileError) {
         
         return (data || []).map((m: any) => {
           const sender = Array.isArray(m.sender) ? m.sender[0] : m.sender;
-          
-          // Comprehensive sender name resolution
-          let senderName = 'Unknown User';
-          if (sender) {
-            if (sender.display_name) {
-              senderName = sender.display_name;
-            } else if (sender.username) {
-              senderName = sender.username;
-            } else if (sender.full_name) {
-              senderName = sender.full_name;
-            } else if (sender.email) {
-              senderName = sender.email.split('@')[0];
-            }
-          }
+          const senderName = m.sender_id === user.id ? 'You' : getDisplayName(sender);
           
           return {
             ...m,
             is_me: m.sender_id === user.id,
             sender_name: senderName,
-            sender_avatar: sender?.avatar_url || sender?.avatar,
+            sender_avatar: sender?.avatar_url,
             is_deleted: m.is_deleted || false
           };
         });
@@ -547,33 +510,24 @@ if (profileError) {
     onError: (e: any) => toast.error(e?.message ?? "Failed to create community")
   });
 
-  // FIXED: Pin message mutation with proper error handling
   const pinMessage = useMutation({
     mutationFn: async ({ messageId, isPinned }: { messageId: string; isPinned: boolean }) => {
       if (!selectedChat || selectedChat.type !== 'community') {
         throw new Error("Can only pin messages in communities");
       }
       
-      console.log(`📌 ${isPinned ? 'Unpinning' : 'Pinning'} message:`, messageId);
-      
       const { error } = await supabase
         .from('community_messages')
         .update({ is_pinned: !isPinned })
         .eq('id', messageId);
       
-      if (error) {
-        console.error("❌ Pin message error:", error);
-        throw error;
-      }
-      
-      console.log("✅ Message pin status updated successfully");
+      if (error) throw error;
     },
     onSuccess: (_data, vars) => {
       toast.success(vars.isPinned ? "Message unpinned" : "Message pinned");
       queryClient.invalidateQueries({ queryKey: ['messages', selectedChat?.type, selectedChat?.id] });
     },
     onError: (error: any) => {
-      console.error("💥 Pin mutation error:", error);
       toast.error(error.message || "Failed to update pin status");
     }
   });
