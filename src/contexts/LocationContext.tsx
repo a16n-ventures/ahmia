@@ -14,7 +14,7 @@ interface LocationContextType {
   location: LocationData | null;
   error: string | null;
   isLoading: boolean;
-  requestLocation: () => Promise<void>; // Manual trigger
+  requestLocation: () => Promise<void>;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
@@ -41,6 +41,9 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const lastSentRef = useRef<number>(0);
   const hasShownErrorRef = useRef(false);
   const initialLocationObtainedRef = useRef(false);
+  
+  // ✅ NEW: Track if user has location sharing enabled
+  const [isLocationSharingEnabled, setIsLocationSharingEnabled] = useState<boolean | null>(null);
 
   // Helper: Save to local storage
   const saveLocal = (loc: LocationData) => {
@@ -51,10 +54,40 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Helper: Update Database (Safe Patch Strategy)
-  // FIX: This function now ONLY updates coordinates. It NEVER touches is_sharing_location.
-  const updateDatabase = useCallback(async (loc: LocationData) => {
+  // ✅ FIXED: Load user's location sharing preference on mount
+  useEffect(() => {
     if (!user) return;
+    
+    const loadLocationPreference = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('user_locations')
+          .select('is_sharing_location')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (error) {
+          console.error('Error loading location preference:', error);
+          setIsLocationSharingEnabled(false);
+          return;
+        }
+        
+        // Set the user's saved preference
+        const isSharing = data?.is_sharing_location ?? false;
+        setIsLocationSharingEnabled(isSharing);
+        console.log('📍 Location sharing preference loaded:', isSharing);
+      } catch (err) {
+        console.error('Failed to load location preference:', err);
+        setIsLocationSharingEnabled(false);
+      }
+    };
+    
+    loadLocationPreference();
+  }, [user]);
+
+  // ✅ FIXED: Only update coordinates, NEVER touch is_sharing_location
+  const updateDatabase = useCallback(async (loc: LocationData) => {
+    if (!user || isLocationSharingEnabled === null) return;
 
     // Throttle: Prevent too-frequent updates (30s)
     const now = Date.now();
@@ -63,39 +96,30 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const payload = {
+        user_id: user.id,
         latitude: loc.latitude,
         longitude: loc.longitude,
         accuracy: loc.accuracy,
         last_seen: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
-      // 1. Try to UPDATE existing row first (Preserves is_sharing_location)
-      const { error: updateError, count } = await supabase
-  .from('user_locations')
-  .update(payload, { count: 'exact' })  // ✅ count goes here
-  .eq('user_id', user.id)
-  .select('user_id');  // ✅ select takes only columns
+      // ✅ CRITICAL FIX: Use upsert but DON'T override is_sharing_location
+      // We only update coordinates, the toggle is managed separately in Profile.tsx
+      const { error } = await supabase
+        .from('user_locations')
+        .upsert(payload, { 
+          onConflict: 'user_id',
+          ignoreDuplicates: false 
+        });
 
-      if (updateError) throw updateError;
+      if (error) throw error;
 
-      // 2. If no row existed, INSERT new row (Default is_sharing_location will apply)
-      if (count === 0) {
-        const { error: insertError } = await supabase
-          .from('user_locations')
-          .insert({
-            user_id: user.id,
-            ...payload,
-            is_sharing_location: false // Default to false for new rows
-          });
-        
-        if (insertError) throw insertError;
-      }
-
-      console.log('Location synced to cloud');
+      console.log('📍 Location coordinates synced (sharing status unchanged)');
     } catch (err) {
       console.error('Location sync error:', err);
     }
-  }, [user]);
+  }, [user, isLocationSharingEnabled]);
 
   // Core: Success Handler
   const handleSuccess = useCallback((pos: GeolocationPosition) => {
@@ -110,12 +134,16 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setLoading(false);
     saveLocal(loc);
-    updateDatabase(loc);
+    
+    // ✅ Only sync coordinates if sharing is enabled
+    if (isLocationSharingEnabled) {
+      updateDatabase(loc);
+    }
 
     if (!hasShownErrorRef.current) {
       hasShownErrorRef.current = true; 
     }
-  }, [updateDatabase]);
+  }, [updateDatabase, isLocationSharingEnabled]);
 
   // Core: Error Handler
   const handleError = useCallback((err: GeolocationPositionError) => {
@@ -160,14 +188,24 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     );
   }, [handleSuccess, handleError]);
 
-  // Effect: Auto-Start on Mount
+  // ✅ FIXED: Effect - Only start tracking if user has enabled sharing
   useEffect(() => {
-    if (!user) return;
+    if (!user || isLocationSharingEnabled === null) return;
+    
+    // ✅ If sharing is disabled, stop here
+    if (!isLocationSharingEnabled) {
+      setLoading(false);
+      console.log('📍 Location sharing is disabled, skipping location tracking');
+      return;
+    }
+    
     if (!navigator.geolocation) {
       setError('Geolocation not supported');
       setLoading(false);
       return;
     }
+
+    console.log('📍 Location sharing is enabled, starting location tracking');
 
     // 1. Try High Accuracy Single Shot
     let attempts = 0;
@@ -200,12 +238,13 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
     attemptFix();
 
-    // FIX: Removed the "beforeunload" listener that was resetting status to false on refresh.
-
     return () => {
-      if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+      if (watchId.current !== null) {
+        navigator.geolocation.clearWatch(watchId.current);
+        watchId.current = null;
+      }
     };
-  }, [user, handleSuccess, handleError]);
+  }, [user, handleSuccess, handleError, isLocationSharingEnabled]);
 
   return (
     <LocationContext.Provider value={{ location, error, isLoading: loading, requestLocation }}>
