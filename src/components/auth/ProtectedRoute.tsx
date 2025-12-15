@@ -14,7 +14,9 @@ export const ProtectedRoute = ({
   requireInterests = true 
 }: ProtectedRouteProps) => {
   const { user, loading: authLoading } = useAuth();
-  const [isChecking, setIsChecking] = useState(true);
+  // ✅ CRITICAL FIX: Start as false, only show loading if we need to redirect
+  const [isChecking, setIsChecking] = useState(false);
+  const [shouldRedirect, setShouldRedirect] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -29,6 +31,13 @@ export const ProtectedRoute = ({
     }
 
     const checkOnboardingStatus = async () => {
+      // ✅ Only set checking to true if we actually need to check
+      if (!requireInterests) {
+        return; // Skip check entirely
+      }
+
+      setIsChecking(true);
+
       try {
         const { data: profile, error } = await supabase
           .from('profiles')
@@ -45,14 +54,15 @@ export const ProtectedRoute = ({
         const currentPath = location.pathname.toLowerCase().replace(/\/$/, "");
         const isOnboardingPage = currentPath.includes('onboarding');
 
-        // Only check interests if requireInterests is true
-        if (requireInterests && (!profile?.interests || profile.interests.length === 0)) {
+        // Check if interests are missing
+        if (!profile?.interests || profile.interests.length === 0) {
           if (!isOnboardingPage) {
             console.log("Redirecting to onboarding...");
+            setShouldRedirect(true); // Keep loading screen visible during redirect
             navigate("/onboarding", { replace: true });
             return; 
           }
-        } 
+        }
       } catch (err) {
         console.error("Unexpected route guard error:", err);
       } finally {
@@ -63,8 +73,20 @@ export const ProtectedRoute = ({
     checkOnboardingStatus();
   }, [user, authLoading, navigate, location.pathname, requireInterests]);
 
-  // ✅ FIXED: Show loading only while actually checking
-  if (authLoading || isChecking) {
+  // ✅ FIXED: Only show loading during auth load OR if redirecting to onboarding
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="mt-4 text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Show loading ONLY if we're actively redirecting to onboarding
+  if (shouldRedirect || (isChecking && requireInterests)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
@@ -78,6 +100,6 @@ export const ProtectedRoute = ({
   // ✅ Safety check: Don't render if no user
   if (!user) return null;
 
-  // ✅ Render children (the protected content)
+  // ✅ Render children immediately (no loading screen)
   return <>{children}</>;
 };
