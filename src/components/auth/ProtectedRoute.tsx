@@ -41,7 +41,8 @@ export const ProtectedRoute = ({
         }
 
         const currentPath = location.pathname.toLowerCase().replace(/\/$/, "");
-        const isOnboardingPage = currentPath.includes('onboarding');
+        const isOnboardingPage = currentPath.includes('onboarding'); 
+        const homePage = currentPath.includes('app');
 
         // Only check interests if requireInterests is true
         if (requireInterests && (!profile?.interests || profile.interests.length === 0)) {
@@ -61,7 +62,7 @@ export const ProtectedRoute = ({
     checkOnboardingStatus();
   }, [user, authLoading, navigate, location.pathname, requireInterests]);
 
-  if (authLoading || isChecking) {
+  if (!homePage || authLoading || isChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
