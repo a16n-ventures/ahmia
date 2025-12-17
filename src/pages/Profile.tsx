@@ -442,8 +442,8 @@ const toggleLocationMutation = useMutation({
   }, [signOut, navigate]);
 
   const handleReferralCopy = useCallback(() => {
-    const refCode = `LYNQ-${user?.id.slice(0, 6).toUpperCase()}`;
-    const refLink = `${window.location.origin}/lynq-africa?ref=${refCode}`;
+    const refCode = `AHM-${user?.id.slice(0, 6).toUpperCase()}`;
+    const refLink = `${window.location.origin}/ahmia?ref=${refCode}`;
     
     navigator.clipboard.writeText(refLink).then(() => {
       toast.success("Referral link copied!");
