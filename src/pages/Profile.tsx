@@ -7,11 +7,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
+import { Label } from '@/components/ui/label';
 import { 
   Edit3, MapPin, Users, Camera, Bell, LogOut, Crown, Trash2,
   Loader2, Gift, Copy, Radar, BarChart3, Eye, Share2, ChevronRight,
   Shield, Check, X, Calendar, MessageSquare, Heart, Star, Zap,
-  AlertCircle, RefreshCw
+  AlertCircle, RefreshCw, Settings, AtSign, Mail, User
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +24,14 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from '@/components/ui/badge';
 import { useGeolocation } from '@/contexts/LocationContext';
 
@@ -30,6 +39,8 @@ import { useGeolocation } from '@/contexts/LocationContext';
 interface ProfileData {
   user_id: string;
   display_name: string;
+  username: string;
+  email: string;
   bio: string;
   avatar_url: string;
   created_at: string;
@@ -61,6 +72,7 @@ interface CombinedProfile {
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_BIO_LENGTH = 200;
 const MAX_NAME_LENGTH = 50;
+const MAX_USERNAME_LENGTH = 30;
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const REFETCH_INTERVAL = 30000; // 30 seconds
 const STALE_TIME = 120000; // 2 minutes
@@ -134,6 +146,14 @@ const Profile = () => {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [discoveryRadius, setDiscoveryRadius] = useState([5000]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  
+  // Profile Settings Dialog State
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    fullName: '',
+    username: '',
+    email: ''
+  });
 
   // Query with optimized settings
   const { data, isLoading, refetch, isRefetching, error } = useQuery<CombinedProfile, Error>({
@@ -154,14 +174,104 @@ const Profile = () => {
 
   // Sync form state with profile data
   useEffect(() => {
-  if (profile) {
-    setDisplayName(profile.display_name || '');
-    setBio(profile.bio || '');
-    // ✅ FIXED: Check preferences object
-    const radius = profile.preferences?.discovery_radius ?? 5000;
-    setDiscoveryRadius([radius]);
-  }
-}, [profile]);
+    if (profile) {
+      setDisplayName(profile.display_name || '');
+      setBio(profile.bio || '');
+      const radius = profile.preferences?.discovery_radius ?? 5000;
+      setDiscoveryRadius([radius]);
+      
+      // Sync settings form
+      setSettingsForm({
+        fullName: profile.display_name || '',
+        username: profile.username || '',
+        email: profile.email || user?.email || ''
+      });
+    }
+  }, [profile, user?.email]);
+
+  // Profile Settings Update Mutation
+  const updateProfileSettingsMutation = useMutation({
+    mutationFn: async (updates: { fullName?: string; username?: string; email?: string }) => {
+      const dbUpdates: any = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (updates.fullName !== undefined) {
+        const trimmedName = updates.fullName.trim();
+        if (!trimmedName) throw new Error('Full name cannot be empty');
+        if (trimmedName.length < 2) throw new Error('Full name must be at least 2 characters');
+        if (trimmedName.length > MAX_NAME_LENGTH) throw new Error(`Full name must be less than ${MAX_NAME_LENGTH} characters`);
+        dbUpdates.display_name = trimmedName;
+      }
+      
+      if (updates.username !== undefined) {
+        const trimmedUsername = updates.username.trim().toLowerCase();
+        if (!trimmedUsername) throw new Error('Username cannot be empty');
+        if (trimmedUsername.length < 3) throw new Error('Username must be at least 3 characters');
+        if (trimmedUsername.length > MAX_USERNAME_LENGTH) throw new Error(`Username must be less than ${MAX_USERNAME_LENGTH} characters`);
+        if (!/^[a-z0-9_]+$/.test(trimmedUsername)) {
+          throw new Error('Username can only contain lowercase letters, numbers, and underscores');
+        }
+        
+        // Check username uniqueness
+        const { data: existingUser, error: checkError } = await supabase
+          .from('profiles')
+          .select('user_id')
+          .eq('username', trimmedUsername)
+          .neq('user_id', user!.id)
+          .maybeSingle();
+        
+        if (checkError && checkError.code !== 'PGRST116') throw checkError;
+        if (existingUser) throw new Error('Username is already taken');
+        
+        dbUpdates.username = trimmedUsername;
+      }
+
+      if (updates.email !== undefined) {
+        const trimmedEmail = updates.email.trim().toLowerCase();
+        if (!trimmedEmail) throw new Error('Email cannot be empty');
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmedEmail)) throw new Error('Please enter a valid email address');
+        
+        // Update auth email
+        const { error: authError } = await supabase.auth.updateUser({ 
+          email: trimmedEmail 
+        });
+        if (authError) throw authError;
+        
+        dbUpdates.email = trimmedEmail;
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(dbUpdates)
+        .eq('user_id', user!.id);
+        
+      if (error) throw error;
+      return dbUpdates;
+    },
+    onSuccess: (updates) => {
+      toast.success('Profile settings updated successfully!');
+      setShowProfileSettings(false);
+      
+      // Optimistic update
+      queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          profile: {
+            ...oldData.profile,
+            ...updates
+          }
+        };
+      });
+      
+      queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update profile settings');
+    }
+  });
 
   // Enhanced profile update mutation
   const updateProfileMutation = useMutation({
@@ -284,118 +394,118 @@ const Profile = () => {
   });
 
   // Enhanced location toggle with proper async handling
-const toggleLocationMutation = useMutation({
-  mutationFn: async ({ checked, coords }: { checked: boolean; coords?: { lat: number; lng: number } }) => {
-    if (!user) throw new Error("User not authenticated");
+  const toggleLocationMutation = useMutation({
+    mutationFn: async ({ checked, coords }: { checked: boolean; coords?: { lat: number; lng: number } }) => {
+      if (!user) throw new Error("User not authenticated");
 
-    console.log('🔄 Updating location sharing:', { checked, hasCoords: !!coords });
+      console.log('🔄 Updating location sharing:', { checked, hasCoords: !!coords });
 
-    if (checked) {
-      // ✅ ENABLING: Include coordinates (required)
-      if (!coords) {
-        throw new Error("Coordinates required to enable location sharing");
+      if (checked) {
+        // ✅ ENABLING: Include coordinates (required)
+        if (!coords) {
+          throw new Error("Coordinates required to enable location sharing");
+        }
+
+        const payload = {
+          user_id: user.id,
+          is_sharing_location: true,
+          latitude: coords.lat,
+          longitude: coords.lng,
+          last_seen: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error } = await supabase
+          .from('user_locations')
+          .upsert(payload, { 
+            onConflict: 'user_id',
+            ignoreDuplicates: false 
+          });
+        
+        if (error) throw error;
+
+      } else {
+        // ✅ DISABLING: Only update the toggle, don't touch coordinates
+        const { error } = await supabase
+          .from('user_locations')
+          .update({ 
+            is_sharing_location: false,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id);
+        
+        if (error) throw error;
       }
 
-      const payload = {
-        user_id: user.id,
-        is_sharing_location: true,
-        latitude: coords.lat,
-        longitude: coords.lng,
-        last_seen: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('user_locations')
-        .upsert(payload, { 
-          onConflict: 'user_id',
-          ignoreDuplicates: false 
-        });
+      console.log('✅ Location sharing updated successfully:', checked);
+      return checked;
+    },
+    onSuccess: (newState) => {
+      toast.success(newState ? 'Location sharing enabled' : 'Location sharing disabled');
       
-      if (error) throw error;
+      // Update cache immediately
+      queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          location: { 
+            ...oldData.location, 
+            is_sharing_location: newState 
+          }
+        };
+      });
 
-    } else {
-      // ✅ DISABLING: Only update the toggle, don't touch coordinates
-      const { error } = await supabase
-        .from('user_locations')
-        .update({ 
-          is_sharing_location: false,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', user.id);
-      
-      if (error) throw error;
+      // Only reload if enabling (to restart LocationContext)
+      if (newState) {
+        setTimeout(() => window.location.reload(), 500);
+      }
+    },
+    onError: (error: any) => {
+      console.error('❌ Failed to toggle location:', error);
+      toast.error(error.message || "Failed to update location settings");
+      queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
     }
-
-    console.log('✅ Location sharing updated successfully:', checked);
-    return checked;
-  },
-  onSuccess: (newState) => {
-    toast.success(newState ? 'Location sharing enabled' : 'Location sharing disabled');
-    
-    // Update cache immediately
-    queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
-      if (!oldData) return oldData;
-      return {
-        ...oldData,
-        location: { 
-          ...oldData.location, 
-          is_sharing_location: newState 
-        }
-      };
-    });
-
-    // Only reload if enabling (to restart LocationContext)
-    if (newState) {
-      setTimeout(() => window.location.reload(), 500);
-    }
-  },
-  onError: (error: any) => {
-    console.error('❌ Failed to toggle location:', error);
-    toast.error(error.message || "Failed to update location settings");
-    queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
-  }
-});
+  });
   
   // Improved location toggle handler
   const handleLocationToggle = useCallback(async (checked: boolean) => {
-  try {
-    if (checked) {
-      // Enabling - need coordinates
-      let coords = currentLocation ? {
-        lat: currentLocation.latitude,
-        lng: currentLocation.longitude
-      } : null;
-
-      if (!coords) {
-        console.log('📍 No current location, requesting...');
-        await requestLocation();
-        
-        // Wait for location to be available
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        if (!currentLocation) {
-          throw new Error("Could not access location services. Please enable location permissions in your browser.");
-        }
-        
-        coords = {
+    try {
+      if (checked) {
+        // Enabling - need coordinates
+        let coords = currentLocation ? {
           lat: currentLocation.latitude,
           lng: currentLocation.longitude
-        };
-      }
+        } : null;
 
-      console.log('📍 Enabling location sharing with coords:', coords);
-      toggleLocationMutation.mutate({ checked: true, coords });
-    } else {
-      // Disabling - no coordinates needed
-      console.log('📍 Disabling location sharing');
-      toggleLocationMutation.mutate({ checked: false });
+        if (!coords) {
+          console.log('📍 No current location, requesting...');
+          await requestLocation();
+          
+          // Wait for location to be available
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          if (!currentLocation) {
+            throw new Error("Could not access location services. Please enable location permissions in your browser.");
+          }
+          
+          coords = {
+            lat: currentLocation.latitude,
+            lng: currentLocation.longitude
+          };
+        }
+
+        console.log('📍 Enabling location sharing with coords:', coords);
+        toggleLocationMutation.mutate({ checked: true, coords });
+      } else {
+        // Disabling - no coordinates needed
+        console.log('📍 Disabling location sharing');
+        toggleLocationMutation.mutate({ checked: false });
+      }
+    } catch (error: any) {
+      console.error('❌ Location toggle error:', error);
+      toast.error(error.message || "Could not access location");
     }
-  } catch (error: any) {
-    console.error('❌ Location toggle error:', error);
-    toast.error(error.message || "Could not access location");
-  }
-}, [currentLocation, requestLocation, toggleLocationMutation]);
+  }, [currentLocation, requestLocation, toggleLocationMutation]);
 
   // Delete account mutation with cascade handling
   const deleteAccountMutation = useMutation({
@@ -453,24 +563,32 @@ const toggleLocationMutation = useMutation({
   }, [user?.id]);
 
   const saveRadius = useCallback(() => {
-  console.log('🔵 saveRadius called with:', discoveryRadius[0]);
-  updateProfileMutation.mutate({ 
-    preferences: { discovery_radius: discoveryRadius[0] } // ✅ CORRECT: nested in preferences
-  }, {
-    onSuccess: () => {
-      console.log('✅ Radius saved successfully');
-      toast.success(`Discovery radius set to ${(discoveryRadius[0] / 1000).toFixed(1)}km`);
-    },
-    onError: (error) => {
-      console.error('❌ Failed to save radius:', error);
-    }
-  });
-}, [discoveryRadius, updateProfileMutation]);
+    console.log('🔵 saveRadius called with:', discoveryRadius[0]);
+    updateProfileMutation.mutate({ 
+      preferences: { discovery_radius: discoveryRadius[0] }
+    }, {
+      onSuccess: () => {
+        console.log('✅ Radius saved successfully');
+        toast.success(`Discovery radius set to ${(discoveryRadius[0] / 1000).toFixed(1)}km`);
+      },
+      onError: (error) => {
+        console.error('❌ Failed to save radius:', error);
+      }
+    });
+  }, [discoveryRadius, updateProfileMutation]);
 
-const handleRadiusChange = useCallback((value: number[]) => {
-  console.log('Slider changed to:', value[0]);
-  setDiscoveryRadius(value);
-}, []);
+  const handleRadiusChange = useCallback((value: number[]) => {
+    console.log('Slider changed to:', value[0]);
+    setDiscoveryRadius(value);
+  }, []);
+
+  const handleProfileSettingsSave = useCallback(() => {
+    updateProfileSettingsMutation.mutate({
+      fullName: settingsForm.fullName,
+      username: settingsForm.username,
+      email: settingsForm.email
+    });
+  }, [settingsForm, updateProfileSettingsMutation]);
 
   // Memoized calculations
   const profileCompletion = useMemo(() => {
@@ -802,22 +920,22 @@ const handleRadiusChange = useCallback((value: number[]) => {
               </div>
               <div className="px-2">
                 <Slider 
-  value={discoveryRadius} 
-  onValueChange={handleRadiusChange} 
-  onValueCommit={() => {
-    console.log('💾 Slider committed, saving:', discoveryRadius[0]);
-    saveRadius();
-  }}
-  onPointerUp={() => {
-    console.log('👆 Pointer up, saving radius');
-    saveRadius();
-  }}
-  max={100000} 
-  step={500}
-  min={25000}
-  className="cursor-pointer"
-  aria-label="Discovery radius"
-/>
+                  value={discoveryRadius} 
+                  onValueChange={handleRadiusChange} 
+                  onValueCommit={() => {
+                    console.log('💾 Slider committed, saving:', discoveryRadius[0]);
+                    saveRadius();
+                  }}
+                  onPointerUp={() => {
+                    console.log('👆 Pointer up, saving radius');
+                    saveRadius();
+                  }}
+                  max={100000} 
+                  step={500}
+                  min={25000}
+                  className="cursor-pointer"
+                  aria-label="Discovery radius"
+                />
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-3 font-semibold">
                   <span>25km</span>
                   <span>50km</span>
@@ -899,6 +1017,24 @@ const handleRadiusChange = useCallback((value: number[]) => {
           </h3>
           <Card className="border-0 shadow-md overflow-hidden">
             <div className="divide-y divide-border/50">
+              {/* Profile Settings Button - NEW */}
+              <div 
+                className="p-5 flex items-center gap-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all group"
+                onClick={() => setShowProfileSettings(true)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && setShowProfileSettings(true)}
+              >
+                <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950/30 text-blue-600 flex items-center justify-center group-hover:bg-blue-200 dark:group-hover:bg-blue-900/40 transition-colors">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">Profile Settings</span>
+                  <p className="text-xs text-blue-700/80 dark:text-blue-300/70">Update your name, username & email</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-blue-600 group-hover:translate-x-1 transition-transform" />
+              </div>
+
               <div 
                 className="p-5 flex items-center gap-3 cursor-pointer hover:bg-muted/50 text-foreground transition-colors group"
                 onClick={handleSignOut}
@@ -946,6 +1082,113 @@ const handleRadiusChange = useCallback((value: number[]) => {
           </div>
         </div>
       </div>
+
+      {/* Profile Settings Dialog - NEW */}
+      <Dialog open={showProfileSettings} onOpenChange={setShowProfileSettings}>
+        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] mx-4">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Settings className="w-5 h-5 text-primary" />
+              Profile Settings
+            </DialogTitle>
+            <DialogDescription>
+              Update your profile information. Changes will be reflected across the platform.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Full Name */}
+            <div className="space-y-2">
+              <Label htmlFor="settings-fullname" className="flex items-center gap-2">
+                <User className="w-4 h-4 text-muted-foreground" />
+                Full Name
+              </Label>
+              <Input
+                id="settings-fullname"
+                type="text"
+                placeholder="John Doe"
+                value={settingsForm.fullName}
+                onChange={(e) => setSettingsForm(prev => ({ ...prev, fullName: e.target.value }))}
+                maxLength={MAX_NAME_LENGTH}
+                className="h-11"
+              />
+              <p className="text-xs text-muted-foreground">
+                {settingsForm.fullName.length}/{MAX_NAME_LENGTH} characters
+              </p>
+            </div>
+
+            {/* Username */}
+            <div className="space-y-2">
+              <Label htmlFor="settings-username" className="flex items-center gap-2">
+                <AtSign className="w-4 h-4 text-muted-foreground" />
+                Username
+              </Label>
+              <Input
+                id="settings-username"
+                type="text"
+                placeholder="johndoe_123"
+                value={settingsForm.username}
+                onChange={(e) => setSettingsForm(prev => ({ 
+                  ...prev, 
+                  username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') 
+                }))}
+                maxLength={MAX_USERNAME_LENGTH}
+                className="h-11 font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Lowercase letters, numbers, and underscores only • {settingsForm.username.length}/{MAX_USERNAME_LENGTH} characters
+              </p>
+            </div>
+
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="settings-email" className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-muted-foreground" />
+                Email Address
+              </Label>
+              <Input
+                id="settings-email"
+                type="email"
+                placeholder="john@example.com"
+                value={settingsForm.email}
+                onChange={(e) => setSettingsForm(prev => ({ ...prev, email: e.target.value }))}
+                className="h-11"
+              />
+              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                Changing your email will require verification
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowProfileSettings(false)}
+              disabled={updateProfileSettingsMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleProfileSettingsSave}
+              disabled={updateProfileSettingsMutation.isPending || !settingsForm.fullName.trim() || !settingsForm.username.trim() || !settingsForm.email.trim()}
+              className="gradient-primary text-white"
+            >
+              {updateProfileSettingsMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4 mr-2" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Account Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
