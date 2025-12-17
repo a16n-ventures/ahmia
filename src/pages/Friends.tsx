@@ -328,10 +328,12 @@ export default function Friends() {
   /**
    * Effect with proper cleanup
    */
+  {/*
   useEffect(() => {
     if (activeTab !== 'discover' || discoverView !== 'nearby') {
       return;
-    }
+    } 
+    */}
 
     if (!userLocation) {
       if (!isLocationLoading) {
