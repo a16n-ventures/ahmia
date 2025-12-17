@@ -113,7 +113,7 @@ export default function Friends() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, DEBOUNCE_DELAY);
   const [sortOption, setSortOption] = useState<SortOption>('newest');
-  const [activeTab, setActiveTab] = useState<TabValue>("friends");
+  const [activeTab, setActiveTab] = useState<TabValue>("discover");
   const [requestView, setRequestView] = useState<RequestView>('received');
   const [discoverView, setDiscoverView] = useState<DiscoverView>('nearby');
   const [showAddContact, setShowAddContact] = useState(false);
@@ -328,12 +328,10 @@ export default function Friends() {
   /**
    * Effect with proper cleanup
    */
-  {/*
   useEffect(() => {
     if (activeTab !== 'discover' || discoverView !== 'nearby') {
       return;
-    } 
-    */}
+    }
 
     if (!userLocation) {
       if (!isLocationLoading) {
