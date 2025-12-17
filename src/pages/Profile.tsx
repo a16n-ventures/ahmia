@@ -1085,7 +1085,7 @@ const Profile = () => {
 
       {/* Profile Settings Dialog - NEW */}
       <Dialog open={showProfileSettings} onOpenChange={setShowProfileSettings}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100vw-2rem)] mx-4">
+        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Settings className="w-5 h-5 text-primary" />
