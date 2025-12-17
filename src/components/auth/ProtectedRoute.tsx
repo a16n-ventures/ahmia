@@ -53,6 +53,7 @@ export const ProtectedRoute = ({
 
         const currentPath = location.pathname.toLowerCase().replace(/\/$/, "");
         const isOnboardingPage = currentPath.includes('onboarding');
+        const isApp = currentPath.includes('app');
 
         // Check if interests are missing
         if (!profile?.interests || profile.interests.length === 0) {
@@ -86,7 +87,7 @@ export const ProtectedRoute = ({
   }
 
   // ✅ Show loading ONLY if we're actively redirecting to onboarding
-  if (shouldRedirect || (isChecking && requireInterests)) {
+  if (shouldRedirect && !isApp && isChecking && requireInterests) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
