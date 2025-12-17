@@ -444,7 +444,7 @@ export default function Friends() {
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="w-full">
         <TabsList className="grid w-full grid-cols-3 bg-muted/30 p-1 rounded-xl">
-          <TabsTrigger value="friends">Friends</TabsTrigger>
+          <TabsTrigger value="discover">Discover</TabsTrigger>
           <TabsTrigger value="requests" className="relative">
             Requests
             {incomingRequests.length > 0 && (
@@ -453,39 +453,66 @@ export default function Friends() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="discover">Discover</TabsTrigger>
+          <TabsTrigger value="friends">Friends</TabsTrigger>
         </TabsList>
 
-        {/* FRIENDS TAB */}
-        <TabsContent value="friends" className="mt-4 space-y-2">
-          {isLoading.friends ? (
-            <FriendSkeleton />
-          ) : filteredFriends.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground mb-2">
-                {search ? 'No friends found' : 'No friends yet'}
-              </p>
-              <Button variant="outline" onClick={() => setActiveTab('discover')} className="mt-2">
-                Find Friends
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredFriends.map(f => {
-                const friend = f.requester_id === userId ? f.addressee : f.requester;
-                return (
-                  <FriendCard
-                    key={f.id}
-                    friendship={f}
-                    currentUserId={userId!}
-                    onRemove={(id) => mutations.removeFriend.mutate(id)}
-                    onBlock={(id) => handleOpenBlockDialog(id, getDisplayName(friend?.display_name))}
-                    onReport={(id) => handleOpenReportDialog(id, getDisplayName(friend?.display_name))}
-                    onViewProfile={(profile) => handleViewProfile(profile, f.id)}
-                    isRemoving={mutations.removeFriend.isPending}
-                  />
-                );
-              })}
+                        )}
+              </div> 
+            </>
+          )}
+                    
+          {/* CONTACTS VIEW */}
+          {discoverView === 'contacts' && (
+            <div className="space-y-3">
+              {showAddContact ? (
+                <AddContactForm
+                  onSubmit={(data) => {
+                    addContact.mutate(data);
+                    setShowAddContact(false);
+                  }}
+                  onCancel={() => setShowAddContact(false)}
+                  isPending={addContact.isPending}
+                />
+              ) : (
+                <Button className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white" onClick={() => setShowAddContact(true)}>
+                  <User className="w-4 h-4 mr-2" /> Add New Contact
+                </Button>
+              )}
+
+              {loadingContacts ? (
+                <FriendSkeleton />
+              ) : filteredContacts.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  {search ? 'No contacts match your search' : !showAddContact && 'No contacts yet. Add someone to invite them!'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredContacts.map(contact => (
+                    <ContactCard
+                      key={contact.id}
+                      contact={contact}
+                      onInvite={(c) => inviteContact.mutate(c)}
+                      onDelete={(id) => deleteContact.mutate(id)}
+                      isInviting={inviteContact.isPending && inviteContact.variables?.id === contact.id}
+                      isDeleting={deleteContact.isPending}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {!showAddContact && contacts.length > 0 && (
+                <Card className="border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-900">
+                  <CardContent className="p-4">
+                    <div className="flex gap-3">
+                      <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <div className="text-sm space-y-1">
+                        <p className="font-medium text-blue-900 dark:text-blue-100">Invite friends to join</p>
+                        <p className="text-blue-700 dark:text-blue-300 text-xs">Click "Invite" to send them a link via SMS or Email.</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </TabsContent>
@@ -558,6 +585,39 @@ export default function Friends() {
           )}
         </TabsContent>
 
+        {/* FRIENDS TAB */}
+        <TabsContent value="friends" className="mt-4 space-y-2">
+          {isLoading.friends ? (
+            <FriendSkeleton />
+          ) : filteredFriends.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground mb-2">
+                {search ? 'No friends found' : 'No friends yet'}
+              </p>
+              <Button variant="outline" onClick={() => setActiveTab('discover')} className="mt-2">
+                Find Friends
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredFriends.map(f => {
+                const friend = f.requester_id === userId ? f.addressee : f.requester;
+                return (
+                  <FriendCard
+                    key={f.id}
+                    friendship={f}
+                    currentUserId={userId!}
+                    onRemove={(id) => mutations.removeFriend.mutate(id)}
+                    onBlock={(id) => handleOpenBlockDialog(id, getDisplayName(friend?.display_name))}
+                    onReport={(id) => handleOpenReportDialog(id, getDisplayName(friend?.display_name))}
+                    onViewProfile={(profile) => handleViewProfile(profile, f.id)}
+                    isRemoving={mutations.removeFriend.isPending}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
         {/* DISCOVER TAB */}
         <TabsContent value="discover" className="mt-4">
           <div className="flex gap-2 mb-4 p-1 bg-muted/20 rounded-lg w-fit mx-auto">
@@ -640,66 +700,6 @@ export default function Friends() {
                       isAdding={mutations.sendRequest.isPending && mutations.sendRequest.variables?.user_id === p.user_id}
                     />
                   ))
-                )}
-              </div> 
-            </>
-          )}
-                    
-          {/* CONTACTS VIEW */}
-          {discoverView === 'contacts' && (
-            <div className="space-y-3">
-              {showAddContact ? (
-                <AddContactForm
-                  onSubmit={(data) => {
-                    addContact.mutate(data);
-                    setShowAddContact(false);
-                  }}
-                  onCancel={() => setShowAddContact(false)}
-                  isPending={addContact.isPending}
-                />
-              ) : (
-                <Button className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white" onClick={() => setShowAddContact(true)}>
-                  <User className="w-4 h-4 mr-2" /> Add New Contact
-                </Button>
-              )}
-
-              {loadingContacts ? (
-                <FriendSkeleton />
-              ) : filteredContacts.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground">
-                  {search ? 'No contacts match your search' : !showAddContact && 'No contacts yet. Add someone to invite them!'}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredContacts.map(contact => (
-                    <ContactCard
-                      key={contact.id}
-                      contact={contact}
-                      onInvite={(c) => inviteContact.mutate(c)}
-                      onDelete={(id) => deleteContact.mutate(id)}
-                      isInviting={inviteContact.isPending && inviteContact.variables?.id === contact.id}
-                      isDeleting={deleteContact.isPending}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {!showAddContact && contacts.length > 0 && (
-                <Card className="border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-900">
-                  <CardContent className="p-4">
-                    <div className="flex gap-3">
-                      <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                      <div className="text-sm space-y-1">
-                        <p className="font-medium text-blue-900 dark:text-blue-100">Invite friends to join</p>
-                        <p className="text-blue-700 dark:text-blue-300 text-xs">Click "Invite" to send them a link via SMS or Email.</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-        </TabsContent>
       </Tabs>
 
       {/* Modals */}
