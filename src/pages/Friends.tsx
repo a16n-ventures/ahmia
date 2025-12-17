@@ -271,7 +271,7 @@ export default function Friends() {
       const candidateIds = validCandidates.map((c: any) => c.user_id);
       const { data: profiles, error: profError } = await supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_url, email')
+        .select('id, user_id, display_name, username, avatar_url, email')
         .in('user_id', candidateIds);
 
       if (profError) throw profError;
@@ -288,9 +288,7 @@ export default function Friends() {
         .map((candidate: any) => {
           const profile = profiles?.find(p => p.user_id === candidate.user_id);
           
-          const displayName = profile?.display_name || 
-                             profile?.email?.split('@')[0] || 
-                             `User${candidate.user_id.slice(-4)}`;
+          const displayName = profile?.display_name || profile?.username || profile?.email?.split('@')[0] || `User${candidate.user_id.slice(-4)}`;
           
           return {
             user_id: candidate.user_id,
