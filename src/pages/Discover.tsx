@@ -283,15 +283,15 @@ export default function Discover() {
 
       // 2. Communities with membership status (use left join instead of inner)
       const { data: comms, error: commsError } = await supabase
-  .from('communities')
-  .select('id, name, description, member_count, avatar_url, cover_url')  // ADDED cover_url
-  .limit(20);
+      .from('communities')
+      .select('id, name, description, member_count, avatar_url, cover_url')  // ADDED cover_url
+      .limit(20);
 
-if (commsError) {
-  console.error("❌ Communities fetch error:", commsError);
-} else {
-  console.log("🏛️ Communities fetched:", comms?.length);
-}
+      if (commsError) {
+        console.error("❌ Communities fetch error:", commsError);
+      } else {
+        console.log("🏛️ Communities fetched:", comms?.length);
+      }
       
       if (comms) {
         // Fetch memberships separately to avoid inner join filtering
@@ -303,23 +303,23 @@ if (commsError) {
         const membershipMap = new Map(memberships?.map(m => [m.community_id, m.role]) || []);
         
         const enrichedComms: Community[] = comms.map((c: any) => {
-  const isMember = membershipMap.has(c.id);
-  const role = membershipMap.get(c.id) as 'admin' | 'member' | undefined;
+        const isMember = membershipMap.has(c.id);
+        const role = membershipMap.get(c.id) as 'admin' | 'member' | undefined;
   
-  console.log(`✅ Community: "${c.name}" - Members: ${c.member_count || 0} - Cover: ${c.cover_url ? 'Yes' : 'No'} - Joined: ${isMember}`);
+        console.log(`✅ Community: "${c.name}" - Members: ${c.member_count || 0} - Cover: ${c.cover_url ? 'Yes' : 'No'} - Joined: ${isMember}`);
   
-  return {
-    id: c.id,
-    name: c.name,
-    member_count: c.member_count || 0,  // Ensure it's a number
-    description: c.description,
-    avatar_url: c.cover_url || c.avatar_url,  // FIXED: Prioritize cover_url
-    cover_url: c.cover_url,  // Keep original cover_url
-    is_member: isMember,
-    my_role: role || null
-  };
-});
-setCommunities(enrichedComms);
+          return {
+            id: c.id,
+            name: c.name,
+            member_count: c.member_count || 0,  // Ensure it's a number
+            description: c.description,
+            avatar_url: c.cover_url || c.avatar_url,  // FIXED: Prioritize cover_url
+            cover_url: c.cover_url,  // Keep original cover_url
+            is_member: isMember,
+            my_role: role || null
+          };
+        });
+        setCommunities(enrichedComms);
       }
       
       // 3. Events with RSVP status
@@ -342,37 +342,37 @@ setCommunities(enrichedComms);
         const rsvpSet = new Set(rsvps?.map(r => r.event_id) || []); 
 
         const { data: attendeeCounts } = await supabase
-  .from('event_attendees')
-  .select('event_id')
-  .in('event_id', eventIds)
-  .eq('status', 'confirmed');
+        .from('event_attendees')
+        .select('event_id')
+        .in('event_id', eventIds)
+        .eq('status', 'confirmed');
 
-const attendeeMap = new Map<string, number>();
-attendeeCounts?.forEach((a: any) => {
-  attendeeMap.set(a.event_id, (attendeeMap.get(a.event_id) || 0) + 1);
-});
+        const attendeeMap = new Map<string, number>();
+        attendeeCounts?.forEach((a: any) => {
+          attendeeMap.set(a.event_id, (attendeeMap.get(a.event_id) || 0) + 1);
+        });
 
         const mappedEvents: Event[] = evts.map((e: any) => {
-  const attendeeCount = attendeeMap.get(e.id) || e.attendee_count || 0;  // FIXED: Use actual count
-  const isAttending = rsvpSet.has(e.id);
+        const attendeeCount = attendeeMap.get(e.id) || e.attendee_count || 0;  // FIXED: Use actual count
+        const isAttending = rsvpSet.has(e.id);
+        
+        console.log(`✅ Event: "${e.title}" - Attendees: ${attendeeCount} - Attending: ${isAttending} - Sponsored: ${e.is_sponsored || false}`);
   
-  console.log(`✅ Event: "${e.title}" - Attendees: ${attendeeCount} - Attending: ${isAttending} - Sponsored: ${e.is_sponsored || false}`);
-  
-  return {
-    id: e.id,
-    title: e.title,
-    start_date: e.start_date,
-    end_date: e.end_date,
-    location: e.location,
-    image_url: e.image_url,
-    description: e.description,
-    price: e.price,
-    attendee_count: attendeeCount,  // Use calculated count
-    is_attending: isAttending,
-    is_sponsored: e.is_sponsored || false
-  };
-});
-setEvents(mappedEvents);
+          return {
+            id: e.id,
+            title: e.title,
+            start_date: e.start_date,
+            end_date: e.end_date,
+            location: e.location,
+            image_url: e.image_url,
+            description: e.description,
+            price: e.price,
+            attendee_count: attendeeCount,  // Use calculated count
+            is_attending: isAttending,
+            is_sponsored: e.is_sponsored || false
+          };
+        });
+        setEvents(mappedEvents);
       }
 
       // 4. Premium & AI (Enhanced)
@@ -405,9 +405,7 @@ setEvents(mappedEvents);
               if (error) throw error;
 
               if (ai) {
-                // FIX: Removed 'Event[]' type to avoid collision with global DOM Event
-                // You can use 'any[]' or import your specific type (e.g., AppEvent[])
-                const formatted = ai.map((item: any) => ({
+                const formatted: Event[] = ai.map((item: any) => ({
                   id: item.id,
                   title: item.title,
                   start_date: item.start_date || new Date().toISOString(),
@@ -418,7 +416,6 @@ setEvents(mappedEvents);
                   attendee_count: item.attendee_count || 0,
                   is_attending: item.is_attending || false,
                 }));
-                
                 setSmartFeed(formatted);
               }
             } catch (err) {
