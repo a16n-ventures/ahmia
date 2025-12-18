@@ -930,7 +930,7 @@ const Profile = () => {
                     console.log('👆 Pointer up, saving radius');
                     saveRadius();
                   }}
-                  max={100000} 
+                  max={150000} 
                   step={500}
                   min={25000}
                   className="cursor-pointer"
@@ -940,6 +940,7 @@ const Profile = () => {
                   <span>25km</span>
                   <span>50km</span>
                   <span>100km</span>
+                  <span>150km</span>
                 </div>
               </div>
             </div>
