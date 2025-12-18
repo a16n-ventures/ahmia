@@ -463,7 +463,7 @@ export default function Messages() {
     onError: (e: any) => toast.error(e?.message ?? "Failed to join community")
   });
 
-  const createCommunity = useMutation({
+const createCommunity = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
       if (!newCommName.trim()) throw new Error("Community name is required");
@@ -484,7 +484,7 @@ export default function Messages() {
           name: newCommName.trim(), 
           description: newCommDesc.trim(), 
           creator_id: user.id, 
-          member_count: newComm.member_count,
+          member_count: 1,
           cover_url: coverUrl
         })
         .select()
