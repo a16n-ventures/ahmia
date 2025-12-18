@@ -374,51 +374,70 @@ attendeeCounts?.forEach((a: any) => {
 setEvents(mappedEvents);
 
       // 4. Premium & AI (Enhanced)
-      const { data: sub } = await supabase.from('subscriptions').select('status').eq('user_id', user.id).single();
+      const init = async () => {
+      // 1. Fetch Subscription
+      const { data: sub } = await supabase
+        .from('subscriptions')
+        .select('status')
+        .eq('user_id', user.id)
+        .single();
+
       const prem = sub?.status === 'active';
       setIsPremium(prem);
 
       if (prem) {
-        // Get real location for AI context
-        navigator.geolocation.getCurrentPosition(async (position) => {
-          const { latitude, longitude } = position.coords;
-          
-          try {
-            // Call the AI Edge Function
-            const { data: ai, error } = await supabase.functions.invoke('generate-smart-feed', { 
-              body: { 
-                user_id: user.id, 
-                user_lat: latitude, 
-                user_long: longitude 
-              } 
-            });
+        // 2. Get Location & Fetch AI Feed
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
 
-            if (error) throw error;
+            try {
+              const { data: ai, error } = await supabase.functions.invoke('generate-smart-feed', {
+                body: {
+                  user_id: user.id,
+                  user_lat: latitude,
+                  user_long: longitude,
+                },
+              });
 
-            if (ai) {
-              const formatted: Event[] = ai.map((item: any) => ({
-  id: item.id,
-  title: item.title,
-  start_date: item.start_date || new Date().toISOString(),
-  location: item.location || 'Online',
-  image_url: item.image_url,
-  match_score: (item.final_score || item.similarity || 0) * 100,
-  is_sponsored: item.is_sponsored,
-  attendee_count: item.attendee_count || 0,  // ADDED: Include attendee count
-  is_attending: item.is_attending || false    // ADDED: Include RSVP status
-}));
-              setSmartFeed(formatted);
+              if (error) throw error;
+
+              if (ai) {
+                // FIX: Removed 'Event[]' type to avoid collision with global DOM Event
+                // You can use 'any[]' or import your specific type (e.g., AppEvent[])
+                const formatted = ai.map((item: any) => ({
+                  id: item.id,
+                  title: item.title,
+                  start_date: item.start_date || new Date().toISOString(),
+                  location: item.location || 'Online',
+                  image_url: item.image_url,
+                  match_score: (item.final_score || item.similarity || 0) * 100,
+                  is_sponsored: item.is_sponsored,
+                  attendee_count: item.attendee_count || 0,
+                  is_attending: item.is_attending || false,
+                }));
+                
+                setSmartFeed(formatted);
+              }
+            } catch (err) {
+              console.error('AI Feed Error:', err);
+            } finally {
+              // FIX: Stop loading ONLY after the async AI work is done
+              setLoading(false);
             }
-          } catch (err) {
-            console.error("AI Feed Error:", err);
+          },
+          (err) => {
+            console.warn('Location denied, falling back to basic AI', err);
+            // FIX: Ensure loading stops even if location is denied
+            setLoading(false);
           }
-        }, (err) => {
-          console.warn("Location denied, falling back to basic AI", err);
-        });
+        );
+      } else {
+        // FIX: If not premium, stop loading immediately
+        setLoading(false);
       }
-
-      setLoading(false);
     };
+
     init();
   }, [user]);
 
