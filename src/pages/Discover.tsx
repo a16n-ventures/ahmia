@@ -24,7 +24,7 @@ interface Community {
   member_count: number | null; 
   description: string | null; 
   avatar_url: string | null;
-  cover_url?: string | null;  // ADDED: Support cover_url from database
+  cover_url?: string | null;
   is_member?: boolean;
   my_role?: 'admin' | 'member' | null;
 }
@@ -41,7 +41,7 @@ interface Event {
   price?: number;
   attendee_count?: number;
   is_attending?: boolean;
-  is_sponsored?: boolean; // [MODIFIED: Added is_sponsored]
+  is_sponsored?: boolean;
 }
 
 type ProfileWithStoryInner = { id: string; display_name: string | null; avatar_url: string | null; stories: { id: string; created_at: string }[]; };
@@ -82,7 +82,6 @@ function EventDetailModal({ event, isOpen, onClose, onRSVP }: {
                 {event.match_score.toFixed(0)}% Match
               </Badge>
             )}
-             {/* [MODIFIED: Display Sponsored Badge in Modal] */}
             {event.is_sponsored && (
               <Badge className="absolute top-4 left-4 bg-yellow-500/90 hover:bg-yellow-600 text-white backdrop-blur-md border-0">
                 <Megaphone className="w-3 h-3 mr-1" />
@@ -134,7 +133,6 @@ function EventDetailModal({ event, isOpen, onClose, onRSVP }: {
               </div>
             )}
 
-            {/* [MODIFIED: Always show attendees] */}
             <div className="flex items-start gap-3">
               <Users className="w-5 h-5 text-primary mt-0.5" />
               <div>
@@ -219,7 +217,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
 
   const current = stories[index];
   const next = () => index < stories.length - 1 ? (setIndex(i => i + 1), setLiked(false)) : onClose();
-  const prev = () => setIndex(i => Math.max(i - 1, 0));
 
   if (loading) return <div className="fixed inset-0 z-50 bg-black flex items-center justify-center"><Loader2 className="text-white animate-spin" /></div>;
   if (!current) return null;
@@ -232,7 +229,7 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
           {stories.map((_, i) => <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm"><div className={`h-full bg-white transition-all duration-300 ${i <= index ? 'w-full' : 'w-0'}`} /></div>)}
         </div>
         <div className="absolute top-6 left-0 w-full p-4 z-20 flex items-center gap-3 bg-gradient-to-b from-black/60 to-transparent">
-          <img src={user.avatar_url || '/default-avatar.png'} className="w-10 h-10 rounded-full border-2 border-white/20 object-cover" />
+          <img src={user.avatar_url || '/default-avatar.png'} className="w-10 h-10 rounded-full border-2 border-white/20 object-cover" alt={user.display_name || 'User'} />
           <span className="text-white font-bold text-sm drop-shadow-md">{user.display_name || 'User'}</span>
         </div>
         <div className="flex-1 flex items-center justify-center bg-black relative" onClick={next}>
@@ -270,7 +267,10 @@ export default function Discover() {
 
   useEffect(() => {
     if (!user) return;
+    
     const init = async () => {
+      console.log("🔍 Initializing Discover page for user:", user.id);
+
       // 1. Profiles
       const { data: me } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
       if (me) {
@@ -281,11 +281,11 @@ export default function Discover() {
       const { data: storyData } = await supabase.from('profiles').select('id, display_name, avatar_url, stories:stories!author_id(id, created_at)').filter('stories.created_at', 'gte', yesterday).returns<ProfileWithStoryInner[]>();
       if (storyData) setStoryUsers(Array.from(new Map(storyData.map(i => [i.id, { id: i.id, display_name: i.display_name, avatar_url: i.avatar_url }])).values()));
 
-      // 2. Communities with membership status (use left join instead of inner)
+      // 2. Communities with membership status
       const { data: comms, error: commsError } = await supabase
-      .from('communities')
-      .select('id, name, description, member_count, avatar_url, cover_url')  // ADDED cover_url
-      .limit(20);
+        .from('communities')
+        .select('id, name, description, member_count, avatar_url, cover_url')
+        .limit(20);
 
       if (commsError) {
         console.error("❌ Communities fetch error:", commsError);
@@ -294,7 +294,6 @@ export default function Discover() {
       }
       
       if (comms) {
-        // Fetch memberships separately to avoid inner join filtering
         const { data: memberships } = await supabase
           .from('community_members')
           .select('community_id, role')
@@ -303,18 +302,18 @@ export default function Discover() {
         const membershipMap = new Map(memberships?.map(m => [m.community_id, m.role]) || []);
         
         const enrichedComms: Community[] = comms.map((c: any) => {
-        const isMember = membershipMap.has(c.id);
-        const role = membershipMap.get(c.id) as 'admin' | 'member' | undefined;
+          const isMember = membershipMap.has(c.id);
+          const role = membershipMap.get(c.id) as 'admin' | 'member' | undefined;
   
-        console.log(`✅ Community: "${c.name}" - Members: ${c.member_count || 0} - Cover: ${c.cover_url ? 'Yes' : 'No'} - Joined: ${isMember}`);
+          console.log(`✅ Community: "${c.name}" - Members: ${c.member_count || 0} - Cover: ${c.cover_url ? 'Yes' : 'No'} - Joined: ${isMember}`);
   
           return {
             id: c.id,
             name: c.name,
-            member_count: c.member_count || 0,  // Ensure it's a number
+            member_count: c.member_count || 0,
             description: c.description,
-            avatar_url: c.cover_url || c.avatar_url,  // FIXED: Prioritize cover_url
-            cover_url: c.cover_url,  // Keep original cover_url
+            avatar_url: c.cover_url || c.avatar_url,
+            cover_url: c.cover_url,
             is_member: isMember,
             my_role: role || null
           };
@@ -323,15 +322,20 @@ export default function Discover() {
       }
       
       // 3. Events with RSVP status
-      const { data: evts } = await supabase
+      const { data: evts, error: evtsError } = await supabase
         .from('events')
         .select('*')
         .gte('start_date', new Date().toISOString())
         .order('start_date', { ascending: true })
         .limit(20);
       
+      if (evtsError) {
+        console.error("❌ Events fetch error:", evtsError);
+      } else {
+        console.log("📅 Events fetched:", evts?.length);
+      }
+      
       if (evts) {
-        // Check RSVP status for each event
         const eventIds = evts.map((e: any) => e.id);
         const { data: rsvps } = await supabase
           .from('event_attendees')
@@ -342,10 +346,10 @@ export default function Discover() {
         const rsvpSet = new Set(rsvps?.map(r => r.event_id) || []); 
 
         const { data: attendeeCounts } = await supabase
-        .from('event_attendees')
-        .select('event_id')
-        .in('event_id', eventIds)
-        .eq('status', 'confirmed');
+          .from('event_attendees')
+          .select('event_id')
+          .in('event_id', eventIds)
+          .eq('status', 'confirmed');
 
         const attendeeMap = new Map<string, number>();
         attendeeCounts?.forEach((a: any) => {
@@ -353,10 +357,10 @@ export default function Discover() {
         });
 
         const mappedEvents: Event[] = evts.map((e: any) => {
-        const attendeeCount = attendeeMap.get(e.id) || e.attendee_count || 0;  // FIXED: Use actual count
-        const isAttending = rsvpSet.has(e.id);
-        
-        console.log(`✅ Event: "${e.title}" - Attendees: ${attendeeCount} - Attending: ${isAttending} - Sponsored: ${e.is_sponsored || false}`);
+          const attendeeCount = attendeeMap.get(e.id) || e.attendee_count || 0;
+          const isAttending = rsvpSet.has(e.id);
+          
+          console.log(`✅ Event: "${e.title}" - Attendees: ${attendeeCount} - Attending: ${isAttending} - Sponsored: ${e.is_sponsored || false}`);
   
           return {
             id: e.id,
@@ -367,7 +371,7 @@ export default function Discover() {
             image_url: e.image_url,
             description: e.description,
             price: e.price,
-            attendee_count: attendeeCount,  // Use calculated count
+            attendee_count: attendeeCount,
             is_attending: isAttending,
             is_sponsored: e.is_sponsored || false
           };
@@ -375,9 +379,7 @@ export default function Discover() {
         setEvents(mappedEvents);
       }
 
-      // 4. Premium & AI (Enhanced)
-      const init = async () => {
-      // 1. Fetch Subscription
+      // 4. Premium & AI
       const { data: sub } = await supabase
         .from('subscriptions')
         .select('status')
@@ -386,14 +388,15 @@ export default function Discover() {
 
       const prem = sub?.status === 'active';
       setIsPremium(prem);
+      console.log("💎 Premium status:", prem);
 
       if (prem) {
-        // 2. Get Location & Fetch AI Feed
         navigator.geolocation.getCurrentPosition(
           async (position) => {
             const { latitude, longitude } = position.coords;
 
             try {
+              console.log("🤖 Calling AI Edge Function...");
               const { data: ai, error } = await supabase.functions.invoke('generate-smart-feed', {
                 body: {
                   user_id: user.id,
@@ -402,7 +405,10 @@ export default function Discover() {
                 },
               });
 
-              if (error) throw error;
+              if (error) {
+                console.error("❌ AI Feed Error:", error);
+                throw error;
+              }
 
               if (ai) {
                 const formatted: Event[] = ai.map((item: any) => ({
@@ -416,25 +422,25 @@ export default function Discover() {
                   attendee_count: item.attendee_count || 0,
                   is_attending: item.is_attending || false,
                 }));
+                console.log("✅ AI Feed generated:", formatted.length, "events");
                 setSmartFeed(formatted);
               }
             } catch (err) {
-              console.error('AI Feed Error:', err);
+              console.error('❌ AI Feed Error:', err);
             } finally {
-              // FIX: Stop loading ONLY after the async AI work is done
               setLoading(false);
             }
           },
           (err) => {
-            console.warn('Location denied, falling back to basic AI', err);
-            // FIX: Ensure loading stops even if location is denied
+            console.warn('⚠️ Location denied, falling back to basic AI', err);
             setLoading(false);
           }
         );
       } else {
-        // FIX: If not premium, stop loading immediately
         setLoading(false);
       }
+
+      console.log("✅ Discover page initialization complete");
     };
 
     init();
@@ -457,132 +463,125 @@ export default function Discover() {
       setCaption("");
       window.location.reload();
     } catch (e) { 
+      console.error("❌ Story upload error:", e);
       toast.error("Upload failed"); 
     }
     setUploading(false);
   };
 
   const handleJoinCommunity = async (communityId: string) => {
-  if (!user) return;
-  try {
-    console.log("👥 Joining community:", communityId);
-    
-    const { error } = await supabase.from('community_members').insert({
-      community_id: communityId,
-      user_id: user.id,
-      role: 'member'
-    });
-    
-    if (error) {
-      console.error("❌ Join error:", error);
-      throw error;
-    }
-    
-    // FIXED: Increment member count in database
-    const { error: incrementError } = await supabase.rpc('increment_community_members', { 
-      community_id: communityId 
-    });
-    
-    if (incrementError) {
-      console.warn("⚠️ Failed to increment count:", incrementError);
-    }
-    
-    toast.success("Joined community!");
+    if (!user) return;
+    try {
+      console.log("👥 Joining community:", communityId);
       
-      // Update local state
-      setCommunities(prev => prev.map(c => 
-      c.id === communityId 
-        ? { 
-            ...c, 
-            is_member: true, 
-            my_role: 'member', 
-            member_count: (c.member_count || 0) + 1  // Properly increment
-          }
-        : c
-    ));
-    
-    console.log("✅ Successfully joined community");
-  } catch (e: any) {
-    console.error("❌ Join community error:", e);
-    toast.error(e.message || "Failed to join");
-  }
-};
-
-  const handleRSVP = async (eventId: string) => {
-  if (!user) return;
-  try {
-    const event = events.find(e => e.id === eventId) || smartFeed.find(e => e.id === eventId);
-    console.log("🎟️ RSVP for event:", eventId, "- Currently attending:", event?.is_attending);
-    
-    if (event?.is_attending) {
-      // Cancel RSVP
-      const { error } = await supabase.from('event_attendees').delete().match({
-        event_id: eventId,
-        user_id: user.id
+      const { error } = await supabase.from('community_members').insert({
+        community_id: communityId,
+        user_id: user.id,
+        role: 'member'
       });
       
-      if (error) throw error;
-      
-      // FIXED: Decrement attendee count in database
-      const { error: decrementError } = await supabase.rpc('decrement_event_attendees', { 
-        event_id: eventId 
-      });
-      
-      if (decrementError) {
-        console.warn("⚠️ Failed to decrement count:", decrementError);
+      if (error) {
+        console.error("❌ Join error:", error);
+        throw error;
       }
       
-      toast.success("RSVP cancelled");
-      console.log("✅ RSVP cancelled");
-      } else {
-        // Create RSVP - FIXED: Added status='confirmed'
-        const { error } = await supabase.from('event_attendees').insert({
-        event_id: eventId,
-        user_id: user.id,
-        status: 'confirmed'
-      });
-      
-      if (error) throw error;
-      
-      // FIXED: Increment attendee count in database
-      const { error: incrementError } = await supabase.rpc('increment_event_attendees', { 
-        event_id: eventId 
+      const { error: incrementError } = await supabase.rpc('increment_community_members', { 
+        community_id: communityId 
       });
       
       if (incrementError) {
         console.warn("⚠️ Failed to increment count:", incrementError);
       }
       
-      toast.success("You're going! 🎉");
-      console.log("✅ RSVP confirmed");
-    }
+      toast.success("Joined community!");
       
-      // Update local state
+      setCommunities(prev => prev.map(c => 
+        c.id === communityId 
+          ? { 
+              ...c, 
+              is_member: true, 
+              my_role: 'member', 
+              member_count: (c.member_count || 0) + 1
+            }
+          : c
+      ));
+      
+      console.log("✅ Successfully joined community");
+    } catch (e: any) {
+      console.error("❌ Join community error:", e);
+      toast.error(e.message || "Failed to join");
+    }
+  };
+
+  const handleRSVP = async (eventId: string) => {
+    if (!user) return;
+    try {
+      const event = events.find(e => e.id === eventId) || smartFeed.find(e => e.id === eventId);
+      console.log("🎟️ RSVP for event:", eventId, "- Currently attending:", event?.is_attending);
+      
+      if (event?.is_attending) {
+        const { error } = await supabase.from('event_attendees').delete().match({
+          event_id: eventId,
+          user_id: user.id
+        });
+        
+        if (error) throw error;
+        
+        const { error: decrementError } = await supabase.rpc('decrement_event_attendees', { 
+          event_id: eventId 
+        });
+        
+        if (decrementError) {
+          console.warn("⚠️ Failed to decrement count:", decrementError);
+        }
+        
+        toast.success("RSVP cancelled");
+        console.log("✅ RSVP cancelled");
+      } else {
+        const { error } = await supabase.from('event_attendees').insert({
+          event_id: eventId,
+          user_id: user.id,
+          status: 'confirmed'
+        });
+        
+        if (error) throw error;
+        
+        const { error: incrementError } = await supabase.rpc('increment_event_attendees', { 
+          event_id: eventId 
+        });
+        
+        if (incrementError) {
+          console.warn("⚠️ Failed to increment count:", incrementError);
+        }
+        
+        toast.success("You're going! 🎉");
+        console.log("✅ RSVP confirmed");
+      }
+      
       setEvents(prev => prev.map(e => 
-      e.id === eventId 
-        ? { 
-            ...e, 
-            is_attending: !e.is_attending,
-            attendee_count: (e.attendee_count || 0) + (e.is_attending ? -1 : 1)  // Properly update
-          }
-        : e
-    ));
-    
-    // Update local state for smart feed
-    setSmartFeed(prev => prev.map(e => 
-      e.id === eventId 
-        ? { 
-            ...e, 
-            is_attending: !e.is_attending,
-            attendee_count: (e.attendee_count || 0) + (e.is_attending ? -1 : 1)  // Properly update
-          }
-        : e
-    ));
-  } catch (e: any) {
-    console.error("❌ RSVP error:", e);
-    toast.error(e.message || "Failed to RSVP");
-  }
-};
+        e.id === eventId 
+          ? { 
+              ...e, 
+              is_attending: !e.is_attending,
+              attendee_count: (e.attendee_count || 0) + (e.is_attending ? -1 : 1)
+            }
+          : e
+      ));
+      
+      setSmartFeed(prev => prev.map(e => 
+        e.id === eventId 
+          ? { 
+              ...e, 
+              is_attending: !e.is_attending,
+              attendee_count: (e.attendee_count || 0) + (e.is_attending ? -1 : 1)
+            }
+          : e
+      ));
+    } catch (e: any) {
+      console.error("❌ RSVP error:", e);
+      toast.error(e.message || "Failed to RSVP");
+    }
+  };
 
   return (
     <div className="container-mobile py-4 space-y-6 pb-24">
@@ -597,7 +596,7 @@ export default function Discover() {
             <div className="flex flex-col items-center gap-2 flex-shrink-0 relative cursor-pointer group" onClick={() => fileRef.current?.click()}>
               <input type="file" ref={fileRef} className="hidden" accept="image/*,video/*" onChange={(e) => e.target.files?.[0] && setPreview({ file: e.target.files[0], url: URL.createObjectURL(e.target.files[0]) })} />
               <div className="w-16 h-16 rounded-full p-[2px] border-2 border-dashed border-muted-foreground/30 relative group-hover:border-primary transition-colors">
-                <img src={currentUserProfile?.avatar_url || '/default-avatar.png'} className="w-full h-full rounded-full object-cover opacity-50" />
+                <img src={currentUserProfile?.avatar_url || '/default-avatar.png'} className="w-full h-full rounded-full object-cover opacity-50" alt="Your avatar" />
                 <div className="absolute inset-0 flex items-center justify-center bg-background/20 rounded-full"><Plus className="w-6 h-6 text-primary drop-shadow-sm" /></div>
               </div>
               <span className="text-xs font-medium text-muted-foreground">Add Story</span>
@@ -605,7 +604,7 @@ export default function Discover() {
             {storyUsers.map(u => u.id !== user?.id && (
               <div key={u.id} className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" onClick={() => setSelectedStory(u)}>
                 <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-purple-600 group-hover:scale-105 transition-transform shadow-sm">
-                  <img src={u.avatar_url || '/default-avatar.png'} className="w-full h-full rounded-full object-cover border-2 border-background" />
+                  <img src={u.avatar_url || '/default-avatar.png'} className="w-full h-full rounded-full object-cover border-2 border-background" alt={u.display_name || 'User'} />
                 </div>
                 <span className="text-xs font-medium max-w-[70px] truncate">{u.display_name || 'User'}</span>
               </div>
@@ -614,11 +613,11 @@ export default function Discover() {
         )}
       </div>
 
-            <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
+      <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
         <DialogContent className="sm:max-w-md bg-background/95 backdrop-blur-xl border-0">
           <DialogHeader><DialogTitle>Create Story</DialogTitle></DialogHeader>
           <div className="aspect-[9/16] bg-black/10 rounded-xl overflow-hidden flex items-center justify-center relative border">
-            {preview?.file.type.startsWith('video') ? <video src={preview.url} controls className="max-h-full max-w-full" /> : <img src={preview?.url} className="max-h-full max-w-full object-contain" />}
+            {preview?.file.type.startsWith('video') ? <video src={preview.url} controls className="max-h-full max-w-full" /> : <img src={preview?.url} className="max-h-full max-w-full object-contain" alt="Preview" />}
           </div>
           <div className="space-y-4 pt-2">
             <Input placeholder="Add a caption..." value={caption} onChange={e => setCaption(e.target.value)} className="bg-muted/50 border-0" />
@@ -646,10 +645,10 @@ export default function Discover() {
                 <Card key={c.id} className="hover:shadow-md transition-all border-border/50 cursor-pointer">
                   <CardContent className="p-4 flex gap-4 items-center">
                     <img 
-  src={c.cover_url || c.avatar_url || '/default-avatar.png'} 
-  className="w-14 h-14 rounded-2xl bg-muted object-cover" 
-  alt={c.name}
-/>
+                      src={c.cover_url || c.avatar_url || '/default-avatar.png'} 
+                      className="w-14 h-14 rounded-2xl bg-muted object-cover" 
+                      alt={c.name}
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold truncate text-lg">{c.name}</h3>
@@ -719,7 +718,6 @@ export default function Discover() {
                             Going
                           </Badge>
                         )}
-                         {/* [MODIFIED: Added Sponsored Badge] */}
                         {e.is_sponsored && (
                           <Badge variant="outline" className="text-[10px] h-5 border-yellow-500 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/20 px-1.5">
                             Sponsored
@@ -730,7 +728,6 @@ export default function Discover() {
                         <MapPin className="w-3.5 h-3.5" /> 
                         <span className="truncate">{e.location}</span>
                       </div>
-                      {/* [MODIFIED: Ensure attendee count is always visible] */}
                       <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                         <Users className="w-3 h-3" />
                         {e.attendee_count || 0} attending
@@ -775,7 +772,7 @@ export default function Discover() {
                   onClick={() => setSelectedEvent(e)}
                 >
                   <div className="h-32 bg-muted relative">
-                    {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" />}
+                    {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" alt={e.title} />}
                     <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
                       <Sparkles className="w-3 h-3 text-yellow-400" /> 
                       {(e.match_score || 95).toFixed(0)}% Match
