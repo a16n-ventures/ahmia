@@ -27,7 +27,7 @@ interface Community {
   cover_url?: string | null;  // ADDED: Support cover_url from database
   is_member?: boolean;
   my_role?: 'admin' | 'member' | null;
-} 'admin' | 'member' | null;
+}
 
 interface Event { 
   id: string; 
