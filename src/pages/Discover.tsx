@@ -27,7 +27,7 @@ interface Community {
   cover_url?: string | null;  // ADDED: Support cover_url from database
   is_member?: boolean;
   my_role?: 'admin' | 'member' | null;
-} 'admin' | 'member' | null;
+} 
 
 interface Event { 
   id: string; 
@@ -262,6 +262,7 @@ export default function Discover() {
   const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
+  const [scriptLoaded, setScriptLoaded] = useState(false);
   
   const [preview, setPreview] = useState<{ file: File, url: string } | null>(null);
   const [caption, setCaption] = useState("");
@@ -516,7 +517,15 @@ export default function Discover() {
       interface Window {
         FlutterwaveCheckout?: (options: any) => void;
       }
-    }
+    } 
+
+    useEffect(() => {
+  if (!FLUTTERWAVE_PUBLIC_KEY) return;
+  
+  loadFlutterwaveScript()
+    .then(() => setScriptLoaded(true))
+    .catch(() => toast.error('Payment system unavailable'));
+}, [FLUTTERWAVE_PUBLIC_KEY]);
 
   const loadFlutterwaveScript = () => {
     return new Promise<void>((resolve, reject) => {
