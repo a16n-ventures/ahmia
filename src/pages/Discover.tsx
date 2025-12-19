@@ -285,7 +285,7 @@ export default function Discover() {
       // 2. Communities with membership status (use left join instead of inner)
       const { data: comms, error: commsError } = await supabase
         .from('communities')
-        .select('id, name, description, member_count, avatar_url, cover_url')
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(20);
       
