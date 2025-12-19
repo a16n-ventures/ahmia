@@ -518,13 +518,7 @@ export default function Discover() {
       }
     } 
 
-    useEffect(() => {
-  if (!FLUTTERWAVE_PUBLIC_KEY) return;
-  
-  loadFlutterwaveScript()
-    .then(() => setScriptLoaded(true))
-    .catch(() => toast.error('Payment system unavailable'));
-}, [FLUTTERWAVE_PUBLIC_KEY]);
+  const FLUTTERWAVE_PUBLIC_KEY = import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY;
 
   const loadFlutterwaveScript = () => {
     return new Promise<void>((resolve, reject) => {
@@ -542,7 +536,13 @@ export default function Discover() {
     });
   };
   
-  const FLUTTERWAVE_PUBLIC_KEY = import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY;
+  useEffect(() => {
+  if (!FLUTTERWAVE_PUBLIC_KEY) return;
+  
+  loadFlutterwaveScript()
+    .then(() => setScriptLoaded(true))
+    .catch(() => toast.error('Payment system unavailable'));
+}, [FLUTTERWAVE_PUBLIC_KEY]);
   
   const initiateFlutterwavePayment = async (paymentData: {
     amount: number;
