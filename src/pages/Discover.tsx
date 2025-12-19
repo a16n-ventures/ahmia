@@ -68,7 +68,7 @@ function EventDetailModal({ event, isOpen, onClose, onRSVP }: {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden">
+      <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto p-0 overflow-hidden">
         {event.image_url && (
           <div className="w-full h-48 bg-muted relative">
             <img 
@@ -199,7 +199,7 @@ function CommunityDetailModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden">
+      <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto p-0 overflow-hidden">
         {/* Cover Photo */}
         {(community.cover_url || community.avatar_url) && (
           <div className="w-full h-48 bg-muted relative">
