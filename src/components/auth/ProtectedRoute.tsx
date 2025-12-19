@@ -87,7 +87,7 @@ export const ProtectedRoute = ({
   }
 
   // ✅ Show loading ONLY if we're actively redirecting to onboarding
-  if (shouldRedirect && !isApp && isChecking && requireInterests) {
+  if (!isApp && shouldRedirect && isChecking && requireInterests) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
