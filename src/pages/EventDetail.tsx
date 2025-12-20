@@ -32,7 +32,8 @@ import {
   Trash2, 
   AlertCircle,
   Megaphone,
-  Search
+  Search,
+  Copy
 } from 'lucide-react';
 import {
   Dialog,
@@ -119,8 +120,10 @@ const EventDetail = () => {
 
   // [MODIFIED: Invite Dialog States]
   const [showInviteDialog, setShowInviteDialog] = useState(false);
-  const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -226,18 +229,104 @@ const EventDetail = () => {
     enabled: !!eventId,
   });
 
-  // [MODIFIED: Fetch Friends for Invite]
-  const { data: friends = [] } = useQuery<Friend[]>({
+    // [MODIFIED: Fetch Friends for Invite]
+    const { data: friends = [] } = useQuery<Friend[]>({
     queryKey: ['my-friends', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      // Assuming a friends table or fetching all profiles for demo
-      // In a real scenario, this would check a 'friendships' table
-      const { data } = await supabase.from('profiles').select('id, display_name, avatar_url').neq('id', user.id).limit(50);
-      return data || [];
+      
+      // Get accepted friendships first
+      const { data: friendships } = await supabase
+        .from('friendships')
+        .select('addressee_id, requester_id')
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+        .eq('status', 'accepted');
+      
+      if (!friendships || friendships.length === 0) return [];
+      
+      // Get the friend IDs (the other person in each friendship)
+      const friendIds = friendships.map(f => 
+        f.requester_id === user.id ? f.addressee_id : f.requester_id
+      );
+      
+      // Fetch friend profiles
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', friendIds);
+      
+      return profiles || [];
     },
     enabled: !!user && showInviteDialog
   });
+  
+  const { data: existingInvites = [] } = useQuery<string[]>({
+  queryKey: ['event-invites', eventId],
+  queryFn: async () => {
+    if (!eventId) return [];
+    // Use consistent table name - check your database schema
+    const { data } = await supabase
+      .from('event_invitations') // or 'event_invites' - match your schema
+      .select('invitee_id') // or 'receiver_id' - match your schema
+      .eq('event_id', eventId)
+      .in('status', ['pending', 'accepted']);
+    return data?.map(inv => inv.invitee_id) || [];
+  },
+  enabled: !!eventId && showInviteDialog
+});
+
+const invitedFriendIds = existingInvites;
+
+const filteredFriends = friends.filter(f => 
+  f.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
+);
+  
+  const selectAll = () => {
+    setSelectedFriends(new Set(filteredFriends.map(f => f.id)));
+  };
+  
+  const deselectAll = () => {
+    setSelectedFriends(new Set());
+  };
+
+  const handleSendInvites = () => {
+    if (selectedFriends.size === 0) {
+      toast.error('Please select at least one friend');
+      return;
+    }
+    sendInvitations.mutate(Array.from(selectedFriends));
+  };
+
+  const getShareLink = () => {
+    return `${window.location.origin}/events/${eventId}`;
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(getShareLink());
+      setCopied(true);
+      toast.success('Link copied!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
+
+  const handleExternalShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: event?.title,
+          text: `Join me at ${event?.title}`,
+          url: getShareLink(),
+        });
+      } catch (err) {
+        console.error('Share failed:', err);
+      }
+    } else {
+      await copyToClipboard();
+    }
+  };
 
   // Check if user is attending
   const { data: isAttending } = useQuery({
@@ -305,30 +394,38 @@ const EventDetail = () => {
     }
   });
 
-   // [MODIFIED: Invite Friends Mutation]
-  const inviteFriendsMutation = useMutation({
-  mutationFn: async (friendIds: string[]) => {
-    if (!eventId || !user) return;
-    
-    const invites = friendIds.map(friendId => ({
-      event_id: eventId,
-      sender_id: user.id,
-      receiver_id: friendId,
-      status: 'pending'
-    }));
-    const { error } = await supabase
-      .from('event_invites')
-      .insert(invites);
-    if (error) throw error;
-    return friendIds.length;
-  },
-    onSuccess: (count) => {
-      toast.success(`Invites sent to ${count} friends!`);
-      setShowInviteDialog(false);
-      setSelectedFriends([]);
+    // [MODIFIED: Invite Friends Mutation]
+    const inviteFriendsMutation = useMutation({
+    mutationFn: async (friendIds: string[]) => {
+      if (!eventId || !user) throw new Error('Missing data');
+      
+      const invites = friendIds.map(friendId => ({
+        event_id: eventId,
+        inviter_id: user.id, // Match Notifications schema
+        invitee_id: friendId, // Match Notifications schema
+        status: 'pending'
+      }));
+      
+      // Use consistent table name
+      const { error } = await supabase
+        .from('event_invitations') // Match Notifications.tsx
+        .insert(invites);
+        
+      if (error) throw error;
+      return friendIds.length;
     },
-    onError: () => toast.error("Failed to send invites")
-  });
+    onSuccess: (count) => {
+      toast.success(`Invites sent to ${count} friend${count !== 1 ? 's' : ''}!`);
+      setShowInviteDialog(false);
+      setSelectedFriends(new Set()); // Clear as Set
+      queryClient.invalidateQueries({ queryKey: ['event-invites', eventId] });
+    },
+    onError: (err: any) => {
+      toast.error("Failed to send invites: " + err.message);
+    }
+  }); 
+  
+  const sendInvitations = inviteFriendsMutation;
 
   // Video Call Functions
   const startVideoCall = async () => {
@@ -899,7 +996,7 @@ const EventDetail = () => {
 
       {/* NEW: Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto">
           <AlertDialogHeader>
             <div className="flex items-center gap-3 mb-2">
               <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-full">
@@ -937,9 +1034,71 @@ const EventDetail = () => {
       
       {/* [MODIFIED: Invite Friends Dialog] */}
       <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto">
           <DialogHeader>
-            <DialogTitle>Invite Friends</DialogTitle>
+            <DialogTitle>
+              <Card className="gradient-card shadow-card border-0">
+                <CardContent className="p-4 space-y-3">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <Share2 className="w-4 h-4" />
+                    Share Event Link
+                  </h3>
+                  <div className="flex gap-2">
+                    <Input
+                      value={getShareLink()}
+                      readOnly
+                      className="flex-1 bg-background/50"
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={copyToClipboard}
+                    >
+                      {copied ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleExternalShare}
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Share via Apps
+                  </Button>
+                </CardContent>
+              </Card>
+      
+              {/* Friend Selection */}
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Select Friends ({selectedFriends.size})
+                </h3>
+                <div className="flex gap-2">
+                  {selectedFriends.size > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={deselectAll}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={selectAll}
+                    disabled={filteredFriends.length === 0}
+                  >
+                    Select All
+                  </Button>
+                </div>
+              </div>
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
              <div className="relative">
@@ -953,18 +1112,22 @@ const EventDetail = () => {
              </div>
              <ScrollArea className="h-[200px] pr-4">
                 <div className="space-y-2">
-                  {friends
-                    .filter(f => f.display_name?.toLowerCase().includes(searchQuery.toLowerCase()))
+                  {filteredFriends.filter(f => !invitedFriendIds.includes(f.id))
                     .map((friend) => (
                       <div key={friend.id} className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50">
                         <Checkbox 
-                          id={`friend-${friend.id}`}
-                          checked={selectedFriends.includes(friend.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) setSelectedFriends([...selectedFriends, friend.id]);
-                            else setSelectedFriends(selectedFriends.filter(id => id !== friend.id));
-                          }}
-                        />
+                            id={`friend-${friend.id}`}
+                            checked={selectedFriends.has(friend.id)} // Use .has() for Set
+                            onCheckedChange={(checked) => {
+                              const newSelected = new Set(selectedFriends);
+                              if (checked) {
+                                newSelected.add(friend.id);
+                              } else {
+                                newSelected.delete(friend.id);
+                              }
+                              setSelectedFriends(newSelected);
+                            }}
+                          />
                         <Avatar className="h-8 w-8">
                           <AvatarImage src={friend.avatar_url || ''} />
                           <AvatarFallback>{friend.display_name?.[0]}</AvatarFallback>
@@ -981,15 +1144,40 @@ const EventDetail = () => {
                 </div>
              </ScrollArea>
           </div>
+          
+          {invitedFriendIds.length > 0 && (
+            <div className="bg-muted/30 p-3 rounded-lg text-sm text-muted-foreground">
+              {invitedFriendIds.length} friend{invitedFriendIds.length !== 1 ? 's' : ''} already invited
+            </div>
+          )}
+          
           <DialogFooter>
-             <Button variant="outline" onClick={() => setShowInviteDialog(false)}>Cancel</Button>
-             <Button 
-                onClick={() => inviteFriendsMutation.mutate(selectedFriends)}
-                disabled={selectedFriends.length === 0 || inviteFriendsMutation.isPending}
-                className="gradient-primary text-white"
-             >
-                {inviteFriendsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : `Send Invites (${selectedFriends.length})`}
+             <Button variant="outline" onClick={() => setShowInviteDialog(false)}>Cancel
              </Button>
+             
+              {/* Send Button */}
+              {selectedFriends.size > 0 && (
+                <div className="fixed bottom-4 left-0 right-0 px-4 z-10">
+                  <Button
+                    className="w-full gradient-primary text-white shadow-lg"
+                    size="lg"
+                    onClick={handleSendInvites}
+                    disabled={sendInvitations.isPending}
+                  >
+                    {sendInvitations.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        Send {selectedFriends.size} Invitation{selectedFriends.size !== 1 ? 's' : ''}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
