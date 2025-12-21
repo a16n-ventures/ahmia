@@ -1174,7 +1174,7 @@ const createCommunity = useMutation({
 
       {/* New Chat Dialog */}
       <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
-        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto flex flex-col p-0 overflow-y-auto">
+        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto max-h-[85vh] flex flex-col p-0 overflow-y-auto">
           <DialogHeader className="px-6 pt-6 pb-4 border-b">
             <DialogTitle className="text-xl">New Message</DialogTitle>
             <DialogDescription>
@@ -1199,7 +1199,7 @@ const createCommunity = useMutation({
             </div>
           )}
 
-          <ScrollArea className="flex-1 px-6 h-[400vh]"> 
+          <ScrollArea className="flex-1 px-6"> 
             <div className="space-y-6 pb-6 pt-2">
               {friends.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
