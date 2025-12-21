@@ -14,9 +14,7 @@ export const ProtectedRoute = ({
   requireInterests = true 
 }: ProtectedRouteProps) => {
   const { user, loading: authLoading } = useAuth();
-  // ✅ CRITICAL FIX: Start as false, only show loading if we need to redirect
   const [isChecking, setIsChecking] = useState(false);
-  const [shouldRedirect, setShouldRedirect] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -31,9 +29,23 @@ export const ProtectedRoute = ({
     }
 
     const checkOnboardingStatus = async () => {
-      // ✅ Only set checking to true if we actually need to check
+      const currentPath = location.pathname.toLowerCase().replace(/\/$/, "");
+      const isOnboardingPage = currentPath.includes('onboarding');
+      const isAppPage = currentPath.includes('/app');
+
+      // ✅ CRITICAL: Skip check entirely if already on onboarding page
+      if (isOnboardingPage) {
+        return;
+      }
+
+      // ✅ Skip check if route doesn't require interests
       if (!requireInterests) {
-        return; // Skip check entirely
+        return;
+      }
+
+      // ✅ ONLY check interests for app pages (silently redirect, no loader)
+      if (!isAppPage) {
+        return;
       }
 
       setIsChecking(true);
@@ -51,18 +63,16 @@ export const ProtectedRoute = ({
           return;
         }
 
-        const currentPath = location.pathname.toLowerCase().replace(/\/$/, "");
-        const isOnboardingPage = currentPath.includes('onboarding');
-        const isApp = currentPath.includes('app');
-
         // Check if interests are missing
-        if (!profile?.interests || profile.interests.length === 0) {
-          if (!isOnboardingPage) {
-            console.log("Redirecting to onboarding...");
-            setShouldRedirect(true); // Keep loading screen visible during redirect
-            navigate("/onboarding", { replace: true });
-            return; 
-          }
+        const hasInterests = profile?.interests && 
+                            Array.isArray(profile.interests) && 
+                            profile.interests.length > 0;
+
+        if (!hasInterests) {
+          console.log("No interests found, redirecting to onboarding...");
+          // Silently redirect - NO LOADER
+          navigate("/onboarding", { replace: true });
+          return;
         }
       } catch (err) {
         console.error("Unexpected route guard error:", err);
@@ -74,7 +84,7 @@ export const ProtectedRoute = ({
     checkOnboardingStatus();
   }, [user, authLoading, navigate, location.pathname, requireInterests]);
 
-  // ✅ FIXED: Only show loading during auth load OR if redirecting to onboarding
+  // ✅ ONLY show loading during initial auth check
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -86,21 +96,64 @@ export const ProtectedRoute = ({
     );
   }
 
-  // ✅ Show loading ONLY if we're actively redirecting to onboarding
-  if (shouldRedirect && !isApp && isChecking && requireInterests) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-          <p className="mt-4 text-muted-foreground">Setting up your experience...</p>
-        </div>
-      </div>
-    );
-  }
+  // ✅ REMOVED: No "Setting up your experience" loader anywhere
+  // The redirect happens silently in the background
 
   // ✅ Safety check: Don't render if no user
   if (!user) return null;
 
-  // ✅ Render children immediately (no loading screen)
+  // ✅ Render children immediately (even during interest check - it redirects silently)
   return <>{children}</>;
 };
+
+// ============================================================================
+// WHAT CHANGED - CRITICAL FIX
+// ============================================================================
+
+/**
+ * ❌ OLD BEHAVIOR (WRONG):
+ * - Shows "Setting up your experience..." loader on /app pages
+ * - Blocks user from seeing content while checking interests
+ * 
+ * ✅ NEW BEHAVIOR (CORRECT):
+ * - NO loader on app pages
+ * - NO loader on onboarding page
+ * - Silently redirects from /app → /onboarding if no interests
+ * - Only shows loader during initial authentication
+ * 
+ * REMOVED THIS ENTIRE BLOCK:
+ * ```
+ * if (isChecking && isAppPage && requireInterests) {
+ *   return <div>"Setting up your experience..."</div>
+ * }
+ * ```
+ * 
+ * NOW:
+ * - User goes to /app/discover
+ * - Route guard checks interests in background
+ * - If no interests → navigate("/onboarding") happens silently
+ * - User sees nothing (instant redirect)
+ * - Onboarding page loads normally without any loader
+ */
+
+// ============================================================================
+// IF YOU WANT A LOADER, IT SHOULD BE IN THE ONBOARDING COMPONENT ITSELF
+// ============================================================================
+
+/**
+ * If you want "Setting up your experience" to show anywhere,
+ * put it in your Onboarding.tsx component while interests are being saved:
+ * 
+ * const [isSaving, setIsSaving] = useState(false);
+ * 
+ * const handleComplete = async () => {
+ *   setIsSaving(true);
+ *   // Save interests...
+ *   setIsSaving(false);
+ *   navigate('/app/discover');
+ * };
+ * 
+ * if (isSaving) {
+ *   return <div>"Setting up your experience..."</div>
+ * }
+ */
