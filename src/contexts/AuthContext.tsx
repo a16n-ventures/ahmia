@@ -12,6 +12,29 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<{ error: any }>;
 }
 
+useEffect(() => {
+  // Listen for auth state changes
+  const { data: authListener } = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      if (event === 'TOKEN_REFRESHED') {
+        console.log('✅ Token refreshed automatically');
+      }
+      
+      if (event === 'SIGNED_OUT') {
+        console.log('🚪 User signed out');
+      }
+      
+      // Update your user state
+      setUser(session?.user ?? null);
+    }
+  );
+
+  // Cleanup listener
+  return () => {
+    authListener?.subscription.unsubscribe();
+  };
+}, []);
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
