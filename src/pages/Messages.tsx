@@ -1199,7 +1199,7 @@ const createCommunity = useMutation({
             </div>
           )}
 
-          <ScrollArea className="flex-1 max-h-[50vh] px-6"> 
+          <ScrollArea className="flex-1 px-6"> 
             <div className="space-y-6 pb-6 pt-2 pr-2">
               {friends.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
