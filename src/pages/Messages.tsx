@@ -921,7 +921,7 @@ const sendMessage = useMutation({
     return (
       <div className="fixed inset-0 z-[100] bg-background flex flex-col h-[100dvh]">
         {/* Header */}
-        <div className="px-4 py-3 border-b flex items-center gap-3 bg-gradient-to-r from-background to-muted/20 backdrop-blur-xl shadow-sm shrink-0 z-10">
+         <div className="px-4 py-3 border-b flex items-center gap-3 bg-gradient-to-r from-background to-muted/20 backdrop-blur-xl shadow-sm shrink-0 z-10">
           <Button variant="ghost" size="icon" className="-ml-2 rounded-full hover:bg-muted" onClick={() => setSelectedChat(null)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
@@ -951,6 +951,7 @@ const sendMessage = useMutation({
             </p>
           </div>
           
+          {/* ✅ ADD THIS - The buttons section */}
           <div className="flex items-center gap-1">
             {chatImages.length > 0 && (
               <Button variant="ghost" size="icon" className="rounded-full h-9 w-9" onClick={() => setIsGalleryOpen(true)}>
@@ -958,7 +959,6 @@ const sendMessage = useMutation({
               </Button>
             )}
             
-            {/* FIX: Proper DropdownMenu implementation */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full h-9 w-9">
@@ -1318,136 +1318,134 @@ const sendMessage = useMutation({
 
       {/* New Chat Dialog */}
       <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
-          <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto max-h-[85vh] flex flex-col p-0">
-            <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-              <DialogTitle className="text-xl">New Message</DialogTitle>
-              <DialogDescription>
-                {friends.length > 0 
-                  ? `Start a conversation with ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
-                  : "Start a conversation with your friends"
-                }
-              </DialogDescription>
-            </DialogHeader>
-            
-            {friends.length > 0 && (
-              <div className="px-6 py-4 bg-muted/10 shrink-0">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="Search friends..." 
-                    className="pl-10 bg-muted/50 rounded-xl border-muted-foreground/20 focus:border-primary" 
-                    value={friendSearch} 
-                    onChange={(e) => setFriendSearch(e.target.value)} 
-                  />
-                </div>
-              </div>
-            )}
-        
-            {/* ✅ FIX: Use plain div instead of ScrollArea */}
-            <div className="flex-1 overflow-hidden">
-              <div className="h-full overflow-y-auto px-6">
-                <div className="space-y-6 pb-6 pt-2">
-                  {/* ... keep all your existing friends list code ... */}
-                  {friends.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-                        <Users className="w-8 h-8 text-muted-foreground" />
-                      </div>
-                      <h3 className="font-semibold text-lg mb-2">No friends yet</h3>
-                      <p className="text-sm text-muted-foreground max-w-xs">
-                        Add friends to start messaging them directly
-                      </p>
-                    </div>
-                  ) : filteredFriends.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <Search className="w-12 h-12 text-muted-foreground mb-4" />
-                      <h3 className="font-semibold text-lg mb-2">No results found</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Try searching with a different name
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Online and offline friends sections remain the same */}
-                      {onlineFriends.length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-3 px-1">
-                            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              Online • {onlineFriends.length}
-                            </h3>
-                          </div>
-                          <div className="space-y-1">
-                            {onlineFriends.map((f: any) => (
-                              <div 
-                                key={f.id} 
-                                onClick={() => { 
-                                  setSelectedChat({ type: 'dm', id: f.id, partner_id: f.id, name: f.name, avatar: f.avatar, is_online: f.is_online }); 
-                                  setIsNewChatOpen(false); 
-                                }} 
-                                className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
-                              >
-                                <div className="relative">
-                                  <Avatar className="h-12 w-12 ring-2 ring-background">
-                                    <AvatarImage src={f.avatar} />
-                                    <AvatarFallback>{f.name?.[0]?.toUpperCase() || '?'}</AvatarFallback>
-                                  </Avatar>
-                                  <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 bg-green-500 rounded-full border-2 border-background" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-semibold text-[15px] truncate">{f.name}</p>
-                                  <p className="text-xs text-green-600 font-medium">Active now</p>
-                                </div>
-                                <MessageSquare className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-        
-                      {offlineFriends.length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-3 px-1">
-                            <Users className="w-3.5 h-3.5 text-muted-foreground" />
-                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              All Friends • {offlineFriends.length}
-                            </h3>
-                          </div>
-                          <div className="space-y-1">
-                            {offlineFriends.map((f: any) => (
-                              <div 
-                                key={f.id} 
-                                onClick={() => { 
-                                  setSelectedChat({ type: 'dm', id: f.id, partner_id: f.id, name: f.name, avatar: f.avatar, is_online: f.is_online }); 
-                                  setIsNewChatOpen(false); 
-                                }} 
-                                className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
-                              >
-                                <Avatar className="h-12 w-12 ring-2 ring-background opacity-90 group-hover:opacity-100 transition-opacity">
-                                  <AvatarImage src={f.avatar} />
-                                  <AvatarFallback>{f.name?.[0]?.toUpperCase() || '?'}</AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-semibold text-[15px] truncate">{f.name}</p>
-                                  {f.last_seen && (
-                                    <p className="text-xs text-muted-foreground">
-                                      Active {formatDistanceToNow(new Date(f.last_seen), { addSuffix: true })}
-                                    </p>
-                                  )}
-                                </div>
-                                <MessageSquare className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
+        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] h-[85vh] flex flex-col p-0 gap-0">
+          {/* Header - Fixed */}
+          <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
+            <DialogTitle className="text-xl">New Message</DialogTitle>
+            <DialogDescription>
+              {friends.length > 0 
+                ? `Start a conversation with ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
+                : "Start a conversation with your friends"
+              }
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Search - Fixed */}
+          {friends.length > 0 && (
+            <div className="px-6 py-4 bg-muted/10 flex-shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Search friends..." 
+                  className="pl-10 bg-muted/50 rounded-xl border-muted-foreground/20 focus:border-primary" 
+                  value={friendSearch} 
+                  onChange={(e) => setFriendSearch(e.target.value)} 
+                />
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
+          )}
+      
+          {/* ✅ Scrollable Content - This is the key fix */}
+          <div className="flex-1 min-h-0 overflow-y-auto px-6">
+            <div className="space-y-6 pb-6 pt-2">
+              {friends.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                    <Users className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="font-semibold text-lg mb-2">No friends yet</h3>
+                  <p className="text-sm text-muted-foreground max-w-xs">
+                    Add friends to start messaging them directly
+                  </p>
+                </div>
+              ) : filteredFriends.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Search className="w-12 h-12 text-muted-foreground mb-4" />
+                  <h3 className="font-semibold text-lg mb-2">No results found</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Try searching with a different name
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {onlineFriends.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3 px-1">
+                        <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Online • {onlineFriends.length}
+                        </h3>
+                      </div>
+                      <div className="space-y-1">
+                        {onlineFriends.map((f: any) => (
+                          <div 
+                            key={f.id} 
+                            onClick={() => { 
+                              setSelectedChat({ type: 'dm', id: f.id, partner_id: f.id, name: f.name, avatar: f.avatar, is_online: f.is_online }); 
+                              setIsNewChatOpen(false); 
+                            }} 
+                            className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
+                          >
+                            <div className="relative">
+                              <Avatar className="h-12 w-12 ring-2 ring-background">
+                                <AvatarImage src={f.avatar} />
+                                <AvatarFallback>{f.name?.[0]?.toUpperCase() || '?'}</AvatarFallback>
+                              </Avatar>
+                              <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 bg-green-500 rounded-full border-2 border-background" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-[15px] truncate">{f.name}</p>
+                              <p className="text-xs text-green-600 font-medium">Active now</p>
+                            </div>
+                            <MessageSquare className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+      
+                  {offlineFriends.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3 px-1">
+                        <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          All Friends • {offlineFriends.length}
+                        </h3>
+                      </div>
+                      <div className="space-y-1">
+                        {offlineFriends.map((f: any) => (
+                          <div 
+                            key={f.id} 
+                            onClick={() => { 
+                              setSelectedChat({ type: 'dm', id: f.id, partner_id: f.id, name: f.name, avatar: f.avatar, is_online: f.is_online }); 
+                              setIsNewChatOpen(false); 
+                            }} 
+                            className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
+                          >
+                            <Avatar className="h-12 w-12 ring-2 ring-background opacity-90 group-hover:opacity-100 transition-opacity">
+                              <AvatarImage src={f.avatar} />
+                              <AvatarFallback>{f.name?.[0]?.toUpperCase() || '?'}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-[15px] truncate">{f.name}</p>
+                              {f.last_seen && (
+                                <p className="text-xs text-muted-foreground">
+                                  Active {formatDistanceToNow(new Date(f.last_seen), { addSuffix: true })}
+                                </p>
+                              )}
+                            </div>
+                            <MessageSquare className="w-5 h-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Community Dialog */}
       <Dialog open={isCreateCommunityOpen} onOpenChange={(open) => {
