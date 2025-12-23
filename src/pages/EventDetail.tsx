@@ -290,14 +290,6 @@ const invitedFriendIds = existingInvites;
 const filteredFriends = friends.filter(f => 
   f.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
 );
-  
-  const selectAll = () => {
-    setSelectedFriends(new Set(filteredFriends.map(f => f.id)));
-  };
-  
-  const deselectAll = () => {
-    setSelectedFriends(new Set());
-  };
 
   const handleSendInvites = () => {
     if (selectedFriends.size === 0) {
