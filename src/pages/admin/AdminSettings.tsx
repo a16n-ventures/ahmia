@@ -158,7 +158,6 @@ export default function AdminSettings() {
 
   // ✅ ENHANCED: Save all settings with proper structure
   const saveMutation = useMutation({
-  const saveMutation = useMutation({
   mutationFn: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     
