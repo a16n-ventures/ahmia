@@ -118,7 +118,7 @@ export default function AdminSettings() {
             yearly: p.full_package?.yearly || 49999
           },
           event_boost: {
-            weekly: p.event_boost?.weekly || 4499
+            weekly: p.event_boost?.weekly || 4999
           },
           profile_boost: {
             monthly: p.profile_boost?.monthly || 2499,
@@ -158,104 +158,88 @@ export default function AdminSettings() {
 
   // ✅ ENHANCED: Save all settings with proper structure
   const saveMutation = useMutation({
+  const saveMutation = useMutation({
   mutationFn: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     
-    if (!user) {
-      throw new Error('Not authenticated');
+    if (!user) throw new Error('Not authenticated');
+
+    // Check if settings exist first
+    const { data: existing } = await supabase
+      .from('app_settings')
+      .select('key')
+      .in('key', ['premium_prices', 'system_flags', 'ai_settings']);
+
+    const existingKeys = new Set(existing?.map(s => s.key) || []);
+
+    // Update or Insert for Prices
+    if (existingKeys.has('premium_prices')) {
+      await supabase
+        .from('app_settings')
+        .update({ 
+          value: prices as any,
+          updated_by: user.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('key', 'premium_prices');
+    } else {
+      await supabase
+        .from('app_settings')
+        .insert({
+          key: 'premium_prices',
+          value: prices as any,
+          updated_by: user.id,
+          description: 'Premium pricing configuration'
+        });
     }
 
-    console.log('💾 Saving settings...', {
-      prices,
-      flags,
-      aiSettings
-    });
-
-    try {
-      // ✅ FIX: Use proper upsert with onConflict
-      // Save Pricing
-      const { data: priceResult, error: priceError } = await supabase
+    // Update or Insert for Flags
+    if (existingKeys.has('system_flags')) {
+      await supabase
         .from('app_settings')
-        .upsert({ 
-          key: 'premium_prices',
-          value: prices as any, 
-          updated_by: user.id, 
-          updated_at: new Date().toISOString(),
-          description: 'Premium pricing configuration for all features'
-        }, {
-          onConflict: 'key', // ✅ THIS IS CRITICAL - tells it to match on 'key' column
-          ignoreDuplicates: false // ✅ Update if exists, don't ignore
+        .update({ 
+          value: flags as any,
+          updated_by: user.id,
+          updated_at: new Date().toISOString()
         })
-        .select()
-        .single();
-
-      if (priceError) {
-        console.error('❌ Price save error:', priceError);
-        throw new Error(`Failed to save prices: ${priceError.message}`);
-      }
-      
-      console.log('✅ Prices saved:', priceResult);
-
-      // Save System Flags
-      const { data: flagResult, error: flagError } = await supabase
+        .eq('key', 'system_flags');
+    } else {
+      await supabase
         .from('app_settings')
-        .upsert({ 
+        .insert({
           key: 'system_flags',
-          value: flags as any, 
-          updated_by: user.id, 
-          updated_at: new Date().toISOString(),
+          value: flags as any,
+          updated_by: user.id,
           description: 'System feature flags'
-        }, {
-          onConflict: 'key',
-          ignoreDuplicates: false
-        })
-        .select()
-        .single();
+        });
+    }
 
-      if (flagError) {
-        console.error('❌ Flags save error:', flagError);
-        throw new Error(`Failed to save flags: ${flagError.message}`);
-      }
-      
-      console.log('✅ Flags saved:', flagResult);
-
-      // Save AI Settings
-      const { data: aiResult, error: aiError } = await supabase
+    // Update or Insert for AI Settings
+    if (existingKeys.has('ai_settings')) {
+      await supabase
         .from('app_settings')
-        .upsert({ 
-          key: 'ai_settings',
-          value: aiSettings as any, 
-          updated_by: user.id, 
-          updated_at: new Date().toISOString(),
-          description: 'AI recommendation engine settings'
-        }, {
-          onConflict: 'key',
-          ignoreDuplicates: false
+        .update({ 
+          value: aiSettings as any,
+          updated_by: user.id,
+          updated_at: new Date().toISOString()
         })
-        .select()
-        .single();
-
-      if (aiError) {
-        console.error('❌ AI settings save error:', aiError);
-        throw new Error(`Failed to save AI settings: ${aiError.message}`);
-      }
-      
-      console.log('✅ AI settings saved:', aiResult);
-
-      return { priceResult, flagResult, aiResult };
-      
-    } catch (error: any) {
-      console.error('❌ Save mutation error:', error);
-      throw error;
+        .eq('key', 'ai_settings');
+    } else {
+      await supabase
+        .from('app_settings')
+        .insert({
+          key: 'ai_settings',
+          value: aiSettings as any,
+          updated_by: user.id,
+          description: 'AI settings'
+        });
     }
   },
-  onSuccess: (data) => {
-    console.log('✅ All settings saved successfully:', data);
+  onSuccess: () => {
     toast.success("All settings saved successfully");
     queryClient.invalidateQueries({ queryKey: ['app_settings'] });
   },
   onError: (error: any) => {
-    console.error('❌ Save failed:', error);
     toast.error(error.message || "Failed to save changes");
   }
 });
@@ -276,7 +260,7 @@ export default function AdminSettings() {
           className="gap-2"
         >
           {saveMutation.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />}
-          Save All Changes
+          Save Changes
         </Button>
       </div>
 
@@ -297,8 +281,9 @@ export default function AdminSettings() {
         </TabsList>
 
         {/* ✅ ENHANCED PRICING TAB - Complete Feature-Based Pricing */}
-        <TabsContent value="pricing" className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
           
+        <TabsContent value="pricing" className="space-y-4">
           {/* 1. FULL PACKAGE - Unlimited Bundle */}
           <Card className="border-primary/30">
             <CardHeader>
@@ -518,6 +503,7 @@ export default function AdminSettings() {
           </Card>
 
         </TabsContent>
+        </div>
 
         {/* FEATURES TAB - UNCHANGED */}
         <TabsContent value="features" className="space-y-4">
