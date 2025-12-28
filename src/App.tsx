@@ -22,6 +22,7 @@ import EventInvite from "./pages/EventInvite";
 import EventDetail from "./pages/EventDetail";
 import Premium from "./pages/Premium";
 import Notifications from "./pages/Notifications";
+import Marketplace from "./pages/Marketplace";
 import MainLayout from "./components/layout/MainLayout";
 import NotFound from "./pages/NotFound";
 
@@ -34,6 +35,7 @@ import AdminModeration from "./pages/admin/AdminModeration";
 import AdminEvents from "./pages/admin/AdminEvents";
 import AdminWallet from "./pages/admin/AdminWallet";
 import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
+import AdminMarketplace from "./pages/admin/AdminMarketplace";
 
 const queryClient = new QueryClient();
 
@@ -72,6 +74,7 @@ const App = () => {
                   <Route path="moderation" element={<AdminModeration />} /> 
                   <Route path="events" element={<AdminEvents />} />
                   <Route path="subscriptions" element={<AdminSubscriptions />} />
+                  <Route path="marketplace" element={<AdminMarketplace />} />
                   <Route path="revenue" element={<AdminWallet />} />
                 </Route>
 
@@ -91,6 +94,7 @@ const App = () => {
                   <Route path="events/:eventId/invite" element={<EventInvite />} />
                   <Route path="profile" element={<Profile />} />
                   <Route path="notifications" element={<Notifications />} />
+                  <Route path="marketplace" element={<Marketplace />} />
                 </Route>
 
                 {/* --- Standalone Protected Routes --- */}
