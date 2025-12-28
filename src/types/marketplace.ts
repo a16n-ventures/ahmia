@@ -42,6 +42,5 @@ export const STORE_CATEGORIES = [
 ] as const;
 
 export const DELIVERY_MODES = {
-  onsite: 'Pay on Delivery',
-  payment_before_delivery: 'Pay Before Delivery'
-} as const;
+  onsite: 'Pay on Delivery'
+} as const; // , payment_before_delivery: 'Pay Before Delivery'
