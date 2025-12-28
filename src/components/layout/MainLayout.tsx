@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Compass, Users, MapPin, MessageSquare, Calendar, Bell, ShieldCheck, ShoppingBasket } from 'lucide-react';
+import { Compass, Users, MapPin, MessageSquare, Calendar, Bell, ShieldCheck, Cart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
@@ -204,14 +204,14 @@ const MainLayout = () => {
           </div>
 
           {/* Marketplace & Notification */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center">
             <Button
               variant="ghost"
               size="icon"
               className="relative hover:bg-muted/50 rounded-full h-10 w-10"
               onClick={() => navigate('/app/marketplace')}
             >
-              <ShoppingBasket className="w-5 h-5 text-foreground/80" />
+              <Cart className="w-5 h-5 text-foreground/80" />
             </Button>
           <Button
             variant="ghost"
