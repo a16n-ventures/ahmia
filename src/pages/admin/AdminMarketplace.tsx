@@ -3,50 +3,23 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Plus, Store as StoreIcon, Package, Edit, Trash2, Loader2, MapPin, Phone } from 'lucide-react';
-import { Store, StoreItem, STORE_CATEGORIES, DELIVERY_MODES } from '@/types/marketplace';
+import { Store as StoreIcon, Package, Edit, Trash2, Loader2 } from 'lucide-react';
+import { Store, StoreItem, DELIVERY_MODES } from '@/types/marketplace';
 import { format } from 'date-fns';
+import StoreFormDialog from '@/components/StoreFormDialog';
+import ItemFormDialog from '@/components/ItemFormDialog';
 
 export default function AdminMarketplace() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('stores');
-  const [storeDialog, setStoreDialog] = useState(false);
-  const [itemDialog, setItemDialog] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [editingItem, setEditingItem] = useState<StoreItem | null>(null);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
-
-  // Form states
-  const [storeForm, setStoreForm] = useState({
-    name: '',
-    description: '',
-    logo_url: '',
-    category: 'General',
-    location: '',
-    contact_phone: ''
-  });
-
-  const [itemForm, setItemForm] = useState({
-    store_id: '',
-    name: '',
-    description: '',
-    image_url: '',
-    price: 0,
-    discount_percent: 0,
-    delivery_mode: 'onsite' as 'onsite' | 'payment_before_delivery',
-    max_delivery_days: 3
-  });
 
   // Fetch stores
   const { data: stores = [], isLoading: storesLoading } = useQuery({
@@ -73,43 +46,6 @@ export default function AdminMarketplace() {
   });
 
   // Store mutations
-  const createStoreMutation = useMutation({
-    mutationFn: async (data: Partial<Store>) => {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) throw new Error('Not authenticated');
-      
-      const { error } = await (supabase.from('stores') as any).insert({
-        ...data,
-        owner_id: user.user.id
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_stores'] });
-      setStoreDialog(false);
-      resetStoreForm();
-      toast.success('Store created successfully');
-    },
-    onError: (error: any) => toast.error(error.message)
-  });
-
-  const updateStoreMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Store> }) => {
-      const { error } = await (supabase.from('stores') as any)
-        .update(data)
-        .eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_stores'] });
-      setStoreDialog(false);
-      setEditingStore(null);
-      resetStoreForm();
-      toast.success('Store updated successfully');
-    },
-    onError: (error: any) => toast.error(error.message)
-  });
-
   const deleteStoreMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await (supabase.from('stores') as any).delete().eq('id', id);
@@ -136,39 +72,6 @@ export default function AdminMarketplace() {
   });
 
   // Item mutations
-  const createItemMutation = useMutation({
-    mutationFn: async (data: Partial<StoreItem>) => {
-      const { error } = await (supabase.from('store_items') as any).insert(data);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_items'] });
-      queryClient.invalidateQueries({ queryKey: ['marketplace_items'] });
-      setItemDialog(false);
-      resetItemForm();
-      toast.success('Item created successfully');
-    },
-    onError: (error: any) => toast.error(error.message)
-  });
-
-  const updateItemMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<StoreItem> }) => {
-      const { error } = await (supabase.from('store_items') as any)
-        .update(data)
-        .eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_items'] });
-      queryClient.invalidateQueries({ queryKey: ['marketplace_items'] });
-      setItemDialog(false);
-      setEditingItem(null);
-      resetItemForm();
-      toast.success('Item updated successfully');
-    },
-    onError: (error: any) => toast.error(error.message)
-  });
-
   const deleteItemMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await (supabase.from('store_items') as any).delete().eq('id', id);
@@ -195,69 +98,6 @@ export default function AdminMarketplace() {
       toast.success('Item availability updated');
     }
   });
-
-  // Helpers
-  const resetStoreForm = () => {
-    setStoreForm({ name: '', description: '', logo_url: '', category: 'General', location: '', contact_phone: '' });
-  };
-
-  const resetItemForm = () => {
-    setItemForm({ store_id: '', name: '', description: '', image_url: '', price: 0, discount_percent: 0, delivery_mode: 'onsite', max_delivery_days: 3 });
-  };
-
-  const openEditStore = (store: Store) => {
-    setEditingStore(store);
-    setStoreForm({
-      name: store.name,
-      description: store.description || '',
-      logo_url: store.logo_url || '',
-      category: store.category,
-      location: store.location || '',
-      contact_phone: store.contact_phone || ''
-    });
-    setStoreDialog(true);
-  };
-
-  const openEditItem = (item: StoreItem) => {
-    setEditingItem(item);
-    setItemForm({
-      store_id: item.store_id,
-      name: item.name,
-      description: item.description || '',
-      image_url: item.image_url || '',
-      price: item.price,
-      discount_percent: item.discount_percent,
-      delivery_mode: item.delivery_mode,
-      max_delivery_days: item.max_delivery_days
-    });
-    setItemDialog(true);
-  };
-
-  const handleStoreSubmit = () => {
-    if (!storeForm.name.trim()) {
-      toast.error('Store name is required');
-      return;
-    }
-
-    if (editingStore) {
-      updateStoreMutation.mutate({ id: editingStore.id, data: storeForm });
-    } else {
-      createStoreMutation.mutate(storeForm);
-    }
-  };
-
-  const handleItemSubmit = () => {
-    if (!itemForm.name.trim() || !itemForm.store_id) {
-      toast.error('Item name and store are required');
-      return;
-    }
-
-    if (editingItem) {
-      updateItemMutation.mutate({ id: editingItem.id, data: itemForm });
-    } else {
-      createItemMutation.mutate(itemForm);
-    }
-  };
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-NG', {
@@ -322,119 +162,9 @@ export default function AdminMarketplace() {
             <TabsTrigger value="items">Items</TabsTrigger>
           </TabsList>
           {activeTab === 'stores' ? (
-            <Dialog open={storeDialog} onOpenChange={(open) => { setStoreDialog(open); if (!open) { setEditingStore(null); resetStoreForm(); } }}>
-              <DialogTrigger asChild>
-                <Button><Plus className="w-4 h-4 mr-2" /> Add Store</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{editingStore ? 'Edit Store' : 'Add New Store'}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Store Name *</Label>
-                    <Input value={storeForm.name} onChange={(e) => setStoreForm({ ...storeForm, name: e.target.value })} placeholder="My Awesome Store" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Description</Label>
-                    <Textarea value={storeForm.description} onChange={(e) => setStoreForm({ ...storeForm, description: e.target.value })} placeholder="What do you sell?" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Logo URL</Label>
-                    <Input value={storeForm.logo_url} onChange={(e) => setStoreForm({ ...storeForm, logo_url: e.target.value })} placeholder="https://..." />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Select value={storeForm.category} onValueChange={(v) => setStoreForm({ ...storeForm, category: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {STORE_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Location</Label>
-                    <Input value={storeForm.location} onChange={(e) => setStoreForm({ ...storeForm, location: e.target.value })} placeholder="Lagos, Nigeria" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Contact Phone</Label>
-                    <Input value={storeForm.contact_phone} onChange={(e) => setStoreForm({ ...storeForm, contact_phone: e.target.value })} placeholder="+234..." />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={handleStoreSubmit} disabled={createStoreMutation.isPending || updateStoreMutation.isPending}>
-                    {(createStoreMutation.isPending || updateStoreMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    {editingStore ? 'Update' : 'Create'}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <StoreFormDialog editingStore={editingStore} onSuccess={() => setEditingStore(null)} />
           ) : (
-            <Dialog open={itemDialog} onOpenChange={(open) => { setItemDialog(open); if (!open) { setEditingItem(null); resetItemForm(); } }}>
-              <DialogTrigger asChild>
-                <Button><Plus className="w-4 h-4 mr-2" /> Add Item</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{editingItem ? 'Edit Item' : 'Add New Item'}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-                  <div className="space-y-2">
-                    <Label>Store *</Label>
-                    <Select value={itemForm.store_id} onValueChange={(v) => setItemForm({ ...itemForm, store_id: v })}>
-                      <SelectTrigger><SelectValue placeholder="Select store" /></SelectTrigger>
-                      <SelectContent>
-                        {stores.filter(s => s.is_active).map((store) => (
-                          <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Item Name *</Label>
-                    <Input value={itemForm.name} onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })} placeholder="Product name" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Description</Label>
-                    <Textarea value={itemForm.description} onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })} placeholder="Item details" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Image URL</Label>
-                    <Input value={itemForm.image_url} onChange={(e) => setItemForm({ ...itemForm, image_url: e.target.value })} placeholder="https://..." />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Price (NGN)</Label>
-                      <Input type="number" value={itemForm.price} onChange={(e) => setItemForm({ ...itemForm, price: Number(e.target.value) })} min={0} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Discount %</Label>
-                      <Input type="number" value={itemForm.discount_percent} onChange={(e) => setItemForm({ ...itemForm, discount_percent: Number(e.target.value) })} min={0} max={100} />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Delivery Mode</Label>
-                    <Select value={itemForm.delivery_mode} onValueChange={(v: 'onsite' | 'payment_before_delivery') => setItemForm({ ...itemForm, delivery_mode: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="onsite">Pay on Delivery</SelectItem>
-                        <SelectItem value="payment_before_delivery">Pay Before Delivery</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Max Delivery Days (1-7)</Label>
-                    <Input type="number" value={itemForm.max_delivery_days} onChange={(e) => setItemForm({ ...itemForm, max_delivery_days: Math.min(7, Math.max(1, Number(e.target.value))) })} min={1} max={7} />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={handleItemSubmit} disabled={createItemMutation.isPending || updateItemMutation.isPending}>
-                    {(createItemMutation.isPending || updateItemMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    {editingItem ? 'Update' : 'Create'}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <ItemFormDialog editingItem={editingItem} onSuccess={() => setEditingItem(null)} />
           )}
         </div>
 
@@ -477,7 +207,10 @@ export default function AdminMarketplace() {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{format(new Date(store.created_at), 'MMM d, yyyy')}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openEditStore(store)}><Edit className="w-4 h-4" /></Button>
+                        <StoreFormDialog 
+                          editingStore={store} 
+                          trigger={<Button variant="ghost" size="icon"><Edit className="w-4 h-4" /></Button>} 
+                        />
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteStoreMutation.mutate(store.id)}><Trash2 className="w-4 h-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -538,7 +271,10 @@ export default function AdminMarketplace() {
                         <Switch checked={item.is_available} onCheckedChange={(checked) => toggleItemAvailabilityMutation.mutate({ id: item.id, is_available: checked })} />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openEditItem(item)}><Edit className="w-4 h-4" /></Button>
+                        <ItemFormDialog 
+                          editingItem={item} 
+                          trigger={<Button variant="ghost" size="icon"><Edit className="w-4 h-4" /></Button>} 
+                        />
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteItemMutation.mutate(item.id)}><Trash2 className="w-4 h-4" /></Button>
                       </TableCell>
                     </TableRow>
