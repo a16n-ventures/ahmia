@@ -203,7 +203,16 @@ const MainLayout = () => {
             )}
           </div>
 
-          {/* Notification Bell */}
+          {/* Marketplace & Notification */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative hover:bg-muted/50 rounded-full h-10 w-10"
+              onClick={() => navigate('/app/marketplace')}
+            >
+              <ShoppingBasket className="w-5 h-5 text-foreground/80" />
+            </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -219,6 +228,7 @@ const MainLayout = () => {
               </span>
             )}
           </Button>
+          </div>
         </div>
       </header>
 
