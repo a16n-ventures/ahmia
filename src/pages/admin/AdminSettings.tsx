@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { 
   Loader2, Save, AlertCircle, DollarSign, Sparkles, 
-  Settings2, Shield, Bell, Zap, Brain, Users, Crown, TrendingUp, Star, Calendar
+  Settings2, Shield, Bell, Zap, Brain, Users, Crown, TrendingUp, Star, Calendar, Heart
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import AdvertisementsManager from "@/components/admin/AdvertisementsManager";
@@ -274,9 +274,11 @@ export default function AdminSettings() {
             <Zap className="w-4 h-4" /> Features
           </TabsTrigger>
           <TabsTrigger value="premium" className="gap-2">
+            <Star className="w-4 h-4" />
             Premium 
           </TabsTrigger>
           <TabsTrigger value="ads" className="gap-2">
+            <Heart className="w-4 h-4" />
             Ads
           </TabsTrigger>
           <TabsTrigger value="ai" className="gap-2">
