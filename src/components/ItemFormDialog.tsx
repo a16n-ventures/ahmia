@@ -36,22 +36,23 @@ export default function ItemFormDialog({ editingItem, onSuccess, trigger }: Item
   });
 
   // Fetch only stores owned by the current user
-  const { data: stores = [] } = useQuery({
-    queryKey: ['user_stores'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+  const { data: stores = [], isLoading: storesLoading } = useQuery({
+  queryKey: ['user_stores'],
+  queryFn: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
 
-      const { data, error } = await (supabase.from('stores') as any)
-        .select('*')
-        .eq('owner_id', user.id)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data as Store[];
-    }
-  });
+    const { data, error } = await (supabase.from('stores') as any)
+      .select('*')
+      .eq('owner_id', user.id)  // ← FILTERS BY CURRENT USER
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data as Store[];
+  },
+  enabled: open // Only fetch when dialog is open
+});
 
   const resetForm = () => {
     setItemForm({ store_id: '', name: '', description: '', image_url: '', price: 0, discount_percent: 0, delivery_mode: 'onsite', max_delivery_days: 3 });
