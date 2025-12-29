@@ -58,7 +58,7 @@ export const AdvertBanner = () => {
   if (isPremium || !advert || !isVisible) return null;
 
   return (
-    <Card className="fixed bottom-16 left-0 right-0 z-40 mx-4 mb-2 border-primary/20 shadow-lg bg-card/95 backdrop-blur-sm animate-in slide-in-from-bottom-2">
+    <Card className="fixed bottom-16 left-0 right-0 z-40 mb-4 border-primary/20 shadow-lg bg-card/95 backdrop-blur-sm animate-in slide-in-from-bottom-2">
       <div className="relative p-3">
         <button
           onClick={() => setIsVisible(false)}
@@ -70,7 +70,6 @@ export const AdvertBanner = () => {
 
         <a
           href={advert.link_url}
-          target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 group"
         >
