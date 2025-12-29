@@ -745,6 +745,7 @@ const Profile = () => {
                   aria-label="Display name"
                 />
               ) : (
+                <>
                 {/* ✅ ADDED: Premium Badge beside name */}
                 <div className="flex items-center gap-2">
                   <h2 className="text-2xl font-bold truncate tracking-tight">
@@ -767,6 +768,7 @@ const Profile = () => {
                     </div>
                   )}
                 </div>
+                </>
               )}
               <p className="text-white/90 text-sm truncate font-medium flex items-center gap-2">
                 {user?.email}
@@ -1032,32 +1034,32 @@ const Profile = () => {
                 aria-label="Toggle notifications"
               />
             </div>
-            
-            {/* Premium Banner */}
-            {!hasPremiumBadge && (
-                <div 
-                  className="p-5 flex items-center justify-between hover:bg-amber-50/70 dark:hover:bg-amber-900/10 transition-all cursor-pointer group border-l-4 border-l-amber-400" 
-                  onClick={() => navigate('/premium')}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && navigate('/premium')}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
-                      <Crown className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-sm text-amber-900 dark:text-amber-100 flex items-center gap-2">
-                        Ahmia Premium
-                        <Star className="w-3.5 h-3.5 text-amber-500" />
-                      </div>
-                      <div className="text-xs text-amber-700/80 dark:text-amber-300/70">Unlock exclusive features & benefits</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-amber-500 group-hover:translate-x-1 transition-transform" />
-                </div>
-              )}
 
+            {/* Premium Banner */}
+{!hasPremiumBadge && (
+  <div 
+    className="p-5 flex items-center justify-between hover:bg-amber-50/70 dark:hover:bg-amber-900/10 transition-all cursor-pointer group border-l-4 border-l-amber-400" 
+    onClick={() => navigate('/premium')}
+    role="button"
+    tabIndex={0}
+    onKeyDown={(e) => e.key === 'Enter' && navigate('/premium')}
+  >
+    <div className="flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
+        <Crown className="w-5 h-5" />
+      </div>
+      <div>
+        <div className="font-semibold text-sm text-amber-900 dark:text-amber-100 flex items-center gap-2">
+          Ahmia Premium
+          <Star className="w-3.5 h-3.5 text-amber-500" />
+        </div>
+        <div className="text-xs text-amber-700/80 dark:text-amber-300/70">Unlock exclusive features & benefits</div>
+      </div>
+    </div>
+    <ChevronRight className="w-5 h-5 text-amber-500 group-hover:translate-x-1 transition-transform" />
+  </div>
+)}
+            
         {/* DANGER ZONE */}
         <div className="space-y-3 pb-8">
           <h3 className="text-xs font-bold text-muted-foreground ml-1 uppercase tracking-wider flex items-center gap-2">
