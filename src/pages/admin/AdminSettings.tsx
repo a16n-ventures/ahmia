@@ -15,6 +15,8 @@ import {
   Settings2, Shield, Bell, Zap, Brain, Users, Crown, TrendingUp, Star, Calendar
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import AdvertisementsManager from "@/components/admin/AdvertisementsManager";
+import PremiumFeaturesManager from "@/components/admin/PremiumFeaturesManager";
 
 // ✅ ENHANCED: Complete price structure matching database schema
 type PriceSettings = { 
@@ -270,6 +272,12 @@ export default function AdminSettings() {
           </TabsTrigger>
           <TabsTrigger value="features" className="gap-2">
             <Zap className="w-4 h-4" /> Features
+          </TabsTrigger>
+          <TabsTrigger value="premium" className="gap-2">
+            Premium 
+          </TabsTrigger>
+          <TabsTrigger value="ads" className="gap-2">
+            Ads
           </TabsTrigger>
           <TabsTrigger value="ai" className="gap-2">
             <Brain className="w-4 h-4" /> AI Engine
@@ -576,6 +584,14 @@ export default function AdminSettings() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="premium" className="space-y-4">
+          <PremiumFeaturesManager />
+        </TabsContent>
+
+        <TabsContent value="ads" className="space-y-4">
+          <AdvertisementsManager />
         </TabsContent>
 
         {/* AI ENGINE TAB - UNCHANGED */}
