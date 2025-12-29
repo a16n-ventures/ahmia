@@ -13,7 +13,8 @@ import {
   X,
   TrendingUp,
   Wallet,
-  Settings
+  Settings,
+  ShoppingBasket
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -71,6 +72,7 @@ export default function AdminLayout() {
     { label: 'Overview', path: '/admin', icon: LayoutDashboard },
     { label: 'Users', path: '/admin/users', icon: Users },
     { label: 'Events', path: '/admin/events', icon: Calendar },
+    { label: 'Marketplace', path: '/admin/marketplace', icon: ShoppingBasket },
     { label: 'Moderation', path: '/admin/moderation', icon: ShieldAlert },
     { label: 'Transactions', path: '/admin/finance', icon: TrendingUp },
     { label: 'Revenue', path: '/admin/revenue', icon: Wallet },
