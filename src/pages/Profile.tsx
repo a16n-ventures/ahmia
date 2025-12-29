@@ -172,6 +172,34 @@ const Profile = () => {
     stats: { friends: 0, events: 0, messages: 0, event_views_30d: 0 } 
   };
 
+  const { data: hasPremiumBadge } = useQuery({
+    queryKey: ['premium_badge', user?.id],
+    queryFn: async () => {
+      if (!user) return false;
+      
+      // Check if super_admin
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (roleData?.role === 'super_admin') return true;
+      
+      // Check if has premium badge feature
+      const { data: badgeData } = await supabase
+        .from('premium_features')
+        .select('is_active')
+        .eq('user_id', user.id)
+        .eq('feature_type', 'profile_badge')
+        .eq('is_active', true)
+        .maybeSingle();
+      
+      return !!badgeData;
+    },
+    enabled: !!user
+  });
+
   // Sync form state with profile data
   useEffect(() => {
     if (profile) {
@@ -717,7 +745,28 @@ const Profile = () => {
                   aria-label="Display name"
                 />
               ) : (
-                <h2 className="text-2xl font-bold truncate tracking-tight">{profile?.display_name || 'User'}</h2>
+                {/* ✅ ADDED: Premium Badge beside name */}
+                <div className="flex items-center gap-2">
+                  <h2 className="text-2xl font-bold truncate tracking-tight">
+                    {profile?.display_name || 'User'}
+                  </h2>
+                  {hasPremiumBadge && (
+                    <div className="relative group">
+                      <svg 
+                        viewBox="0 0 24 24" 
+                        className="w-5 h-5 text-blue-400" 
+                        fill="currentColor"
+                      >
+                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                        <circle cx="12" cy="12" r="3" fill="white" />
+                      </svg>
+                      {/* Tooltip */}
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-black/90 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        Verified Premium
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
               <p className="text-white/90 text-sm truncate font-medium flex items-center gap-2">
                 {user?.email}
@@ -726,7 +775,7 @@ const Profile = () => {
               <div className="flex items-center gap-2 mt-3">
                 <Badge className="bg-amber-100/20 text-amber-200 border-amber-300/30 backdrop-blur-sm px-3 py-1">
                   <Crown className="w-3.5 h-3.5 mr-1.5" />
-                  Free Member
+                  {hasPremiumBadge ? 'Premium Member' : 'Free Member'}
                 </Badge>
               </div>
             </div>
@@ -985,29 +1034,29 @@ const Profile = () => {
             </div>
             
             {/* Premium Banner */}
-            <div 
-              className="p-5 flex items-center justify-between hover:bg-amber-50/70 dark:hover:bg-amber-900/10 transition-all cursor-pointer group border-l-4 border-l-amber-400" 
-              onClick={() => navigate('/premium')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && navigate('/premium')}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
-                  <Crown className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="font-semibold text-sm text-amber-900 dark:text-amber-100 flex items-center gap-2">
-                    Ahmia Premium
-                    <Star className="w-3.5 h-3.5 text-amber-500" />
+            {!hasPremiumBadge && (
+                <div 
+                  className="p-5 flex items-center justify-between hover:bg-amber-50/70 dark:hover:bg-amber-900/10 transition-all cursor-pointer group border-l-4 border-l-amber-400" 
+                  onClick={() => navigate('/premium')}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && navigate('/premium')}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
+                      <Crown className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-sm text-amber-900 dark:text-amber-100 flex items-center gap-2">
+                        Ahmia Premium
+                        <Star className="w-3.5 h-3.5 text-amber-500" />
+                      </div>
+                      <div className="text-xs text-amber-700/80 dark:text-amber-300/70">Unlock exclusive features & benefits</div>
+                    </div>
                   </div>
-                  <div className="text-xs text-amber-700/80 dark:text-amber-300/70">Unlock exclusive features & benefits</div>
+                  <ChevronRight className="w-5 h-5 text-amber-500 group-hover:translate-x-1 transition-transform" />
                 </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-amber-500 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </Card>
-        </div>
+              )}
 
         {/* DANGER ZONE */}
         <div className="space-y-3 pb-8">

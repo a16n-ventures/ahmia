@@ -620,30 +620,62 @@ export default function Discover() {
       const yesterday = new Date();
 yesterday.setHours(yesterday.getHours() - 24);
 
-const { data: storyData } = await supabase
-  .from('profiles')
-  .select(`
-    id, 
-    display_name, 
-    avatar_url, 
-    stories:stories!author_id(id, created_at, content, media_url, media_type)
-  `)
-  .gte('stories.created_at', yesterday.toISOString())
-  .order('stories.created_at', { ascending: false, foreignTable: 'stories' });
+const { data: storyData, error: storyError } = await supabase
+      .from('stories')
+      .select(`
+        id,
+        created_at,
+        content,
+        media_url,
+        media_type,
+        author_id,
+        profiles:author_id (
+          id,
+          display_name,
+          avatar_url
+        )
+      `)
+      .gte('created_at', yesterday.toISOString())
+      .order('created_at', { ascending: false });
 
-if (storyData) {
-  // Only show profiles that have stories in the last 24 hours
-  const usersWithStories = storyData
-    .filter((p: any) => p.stories && p.stories.length > 0)
-    .map((p: any) => ({
-      id: p.id,
-      display_name: p.display_name,
-      avatar_url: p.avatar_url
-    }));
-  
-  setStoryUsers(usersWithStories);
-  console.log(`✅ Found ${usersWithStories.length} users with active stories`);
-}
+    if (storyError) {
+      console.error('❌ Stories fetch error:', storyError);
+    } else if (storyData) {
+      console.log('✅ Raw stories data:', storyData);
+      
+    // Group stories by author
+    const storyMap = new Map<string, any>();
+      
+      storyData.forEach((story: any) => {
+        const profile = story.profiles;
+        if (!profile) return; // Skip if no profile
+        
+        if (!storyMap.has(profile.id)) {
+          storyMap.set(profile.id, {
+            id: profile.id,
+            display_name: profile.display_name,
+            avatar_url: profile.avatar_url,
+            stories: []
+          });
+        }
+        
+        storyMap.get(profile.id).stories.push({
+          id: story.id,
+          created_at: story.created_at,
+          content: story.content,
+          media_url: story.media_url,
+          media_type: story.media_type
+        });
+      });
+    
+    if (storyData) {
+      // Convert map to array and filter users with stories
+      const usersWithStories = Array.from(storyMap.values())
+        .filter(user => user.stories && user.stories.length > 0);
+      
+      setStoryUsers(usersWithStories);
+      console.log(`✅ Found ${usersWithStories.length} users with active stories`);
+    }
 
       // 2. Communities with membership status (use left join instead of inner)
       const { data: comms, error: commsError } = await supabase
@@ -840,15 +872,24 @@ if (storyData) {
       .from('stories')
       .getPublicUrl(path);
     
-    // 3. Create story record with media URL
-    const { error: insertError } = await supabase
+    // 3. Get current user profile
+    const { data: currentProfile } = await supabase
+      .from('profiles')
+      .select('id, display_name, avatar_url')
+      .eq('user_id', user.id)
+      .single();
+    
+    // 4. Create story record with media URL
+    const { data: newStory, error: insertError } = await supabase
       .from('stories')
       .insert({ 
-        author_id: user.id, 
+        author_id: currentProfile?.id || user.id,
         content: caption || null,
-        media_url: publicUrl,  // ✅ Store media URL
+        media_url: publicUrl,
         media_type: preview.file.type.startsWith('video') ? 'video' : 'image'
-      });
+      })
+      .select()
+      .single();
     
     if (insertError) throw insertError;
     
@@ -856,27 +897,42 @@ if (storyData) {
     setPreview(null);
     setCaption("");
     
-    // Refresh stories without full page reload
-    const yesterday = new Date();
-    yesterday.setHours(yesterday.getHours() - 24);
-    
-    const { data: updatedStories } = await supabase
-      .from('profiles')
-      .select(`
-        id, display_name, avatar_url, 
-        stories:stories!author_id(id, created_at, content, media_url, media_type)
-      `)
-      .gte('stories.created_at', yesterday.toISOString());
-    
-    if (updatedStories) {
-      const usersWithStories = updatedStories
-        .filter((p: any) => p.stories && p.stories.length > 0)
-        .map((p: any) => ({
-          id: p.id,
-          display_name: p.display_name,
-          avatar_url: p.avatar_url
-        }));
-      setStoryUsers(usersWithStories);
+    // ✅ FIXED: Update storyUsers immediately with optimistic update
+    if (currentProfile && newStory) {
+      setStoryUsers(prev => {
+        // Check if user already has stories
+        const existingUserIndex = prev.findIndex(u => u.id === currentProfile.id);
+        
+        if (existingUserIndex >= 0) {
+          // User exists, add story to their array
+          const updated = [...prev];
+          updated[existingUserIndex] = {
+            ...updated[existingUserIndex],
+            stories: [...updated[existingUserIndex].stories, {
+              id: newStory.id,
+              created_at: newStory.created_at,
+              content: newStory.content,
+              media_url: newStory.media_url,
+              media_type: newStory.media_type
+            }]
+          };
+          return updated;
+        } else {
+          // New user, add to beginning
+          return [{
+            id: currentProfile.id,
+            display_name: currentProfile.display_name,
+            avatar_url: currentProfile.avatar_url,
+            stories: [{
+              id: newStory.id,
+              created_at: newStory.created_at,
+              content: newStory.content,
+              media_url: newStory.media_url,
+              media_type: newStory.media_type
+            }]
+          }, ...prev];
+        }
+      });
     }
     
   } catch (e: any) {
