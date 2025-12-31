@@ -56,13 +56,31 @@ const MainLayout = () => {
       .single()
       .then(({ data }) => setUserRole(data)); 
 
-    // ✅ ADDED: Get Premium Status
-    supabase
-      .from('subscriptions')
-      .select('status')
-      .eq('user_id', user.id)
-      .single()
-      .then(({ data }) => setIsPremium(data?.status === 'active'));
+// ✅ FIXED: Check premium_features table instead of subscriptions
+    const checkPremiumStatus = async () => {
+      // Check for active subscription OR manual premium feature
+      const { data: premiumFeature } = await supabase
+        .from('premium_features')
+        .select('is_active, expires_at')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .gt('expires_at', new Date().toISOString()) // Ensure not expired
+        .maybeSingle();
+
+      const { data: sub } = await supabase
+        .from('subscriptions')
+        .select('status')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      // User is premium if they have an active manual feature OR an active subscription
+      const hasActiveFeature = !!premiumFeature;
+      const hasActiveSub = sub?.status === 'active';
+      
+      setIsPremium(hasActiveFeature || hasActiveSub);
+    };
+    
+    checkPremiumStatus();
 
     // Get Initial Unread Count (friend requests + event invitations)
     const fetchNotifications = async () => {
