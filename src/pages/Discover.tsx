@@ -611,72 +611,72 @@ export default function Discover() {
   useEffect(() => {
     if (!user) return;
     const init = async () => {
-      // 1. Profiles
+      // 1. Fetch Current User Profile
       const { data: me } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
       if (me) {
         setCurrentUserProfile({ id: me.id, display_name: me.display_name, avatar_url: me.avatar_url });
       }
       
+      // 2. Fetch Stories (Raw)
       const yesterday = new Date();
-yesterday.setHours(yesterday.getHours() - 24);
+      yesterday.setHours(yesterday.getHours() - 24);
 
-const { data: storyData, error: storyError } = await supabase
-      .from('stories')
-      .select(`
-        id,
-        created_at,
-        content,
-        media_url,
-        media_type,
-        author_id,
-        profiles:author_id (
-          id,
-          display_name,
-          avatar_url
-        )
-      `)
-      .gte('created_at', yesterday.toISOString())
-      .order('created_at', { ascending: false });
+      const { data: storyData, error: storyError } = await supabase
+        .from('stories')
+        .select('*') // Select everything, don't try to join profiles yet
+        .gte('created_at', yesterday.toISOString())
+        .order('created_at', { ascending: false });
 
-    if (storyError) {
-      console.error('❌ Stories fetch error:', storyError);
-    } else if (storyData) {
-      console.log('✅ Raw stories data:', storyData);
-      
-    // Group stories by author
-    const storyMap = new Map<string, any>();
-      
-      storyData.forEach((story: any) => {
-        const profile = story.profiles;
-        if (!profile) return; // Skip if no profile
+      if (storyError) {
+        console.error('❌ Stories fetch error:', storyError);
+      } else if (storyData && storyData.length > 0) {
         
-        if (!storyMap.has(profile.id)) {
-          storyMap.set(profile.id, {
-            id: profile.id,
-            display_name: profile.display_name,
-            avatar_url: profile.avatar_url,
-            stories: []
-          });
-        }
+        // 3. Manual Join: Extract Author IDs and Fetch Profiles
+        // We assume author_id in stories table corresponds to user_id in profiles table
+        const authorIds = Array.from(new Set(storyData.map((s: any) => s.author_id)));
         
-        storyMap.get(profile.id).stories.push({
-          id: story.id,
-          created_at: story.created_at,
-          content: story.content,
-          media_url: story.media_url,
-          media_type: story.media_type
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, user_id, display_name, avatar_url')
+          .in('user_id', authorIds); // Fetch profiles where user_id matches the story author
+          
+        // Create a lookup map for profiles
+        const profileMap = new Map();
+        profiles?.forEach((p: any) => {
+          profileMap.set(p.user_id, p);
         });
-      });
-    
-    if (storyData) {
-      // Convert map to array and filter users with stories
-      const usersWithStories = Array.from(storyMap.values())
-        .filter(user => user.stories && user.stories.length > 0);
+
+        // 4. Group stories by author
+        const storyMap = new Map<string, any>();
+        
+        storyData.forEach((story: any) => {
+          // Look up profile using the author_id (which is the user_id)
+          const profile = profileMap.get(story.author_id);
+          
+          if (!profile) return; // Skip only if we genuinely can't find a profile
+          
+          if (!storyMap.has(profile.id)) {
+            storyMap.set(profile.id, {
+              id: profile.id,
+              display_name: profile.display_name,
+              avatar_url: profile.avatar_url,
+              stories: []
+            });
+          }
+          storyMap.get(profile.id).stories.push({
+            id: story.id,
+            created_at: story.created_at,
+            content: story.content,
+            media_url: story.media_url,
+            media_type: story.media_type
+          });
+        });
       
-      setStoryUsers(usersWithStories);
-      console.log(`✅ Found ${usersWithStories.length} users with active stories`);
-    }
-  }
+        const usersWithStories = Array.from(storyMap.values());
+        setStoryUsers(usersWithStories);
+      } else {
+        setStoryUsers([]);
+      }
 
       // 2. Communities with membership status (use left join instead of inner)
       const { data: comms, error: commsError } = await supabase
