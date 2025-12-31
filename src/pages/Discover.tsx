@@ -855,19 +855,7 @@ export default function Discover() {
     setUploading(true);
     
     try {
-      // 1. Check if profile exists first to avoid FK error
-      const { data: currentProfile, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, display_name, avatar_url')
-        .eq('user_id', user.id)
-        .single();
-      
-      // If profile is missing, we cannot proceed because of the Foreign Key constraint
-      if (!currentProfile) {
-        throw new Error("User profile not found. Please complete your profile setup.");
-      }
-  
-      // 2. Upload media to storage
+      // 1. Upload media to storage
       const ext = preview.file.name.split('.').pop();
       const path = `${user.id}/${Date.now()}.${ext}`;
       
@@ -877,16 +865,16 @@ export default function Discover() {
       
       if (uploadError) throw uploadError;
       
-      // 3. Get public URL
+      // 2. Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('stories')
         .getPublicUrl(path);
       
-      // 4. Create story record with CONFIRMED profile ID
+      // 3. Create story record using user.id (Auth ID)
       const { data: newStory, error: insertError } = await supabase
         .from('stories')
         .insert({ 
-          author_id: user.id,
+          author_id: user.id, // ✅ Keep using user.id as it passes RLS
           content: caption || null,
           media_url: publicUrl,
           media_type: preview.file.type.startsWith('video') ? 'video' : 'image'
@@ -900,40 +888,9 @@ export default function Discover() {
       setPreview(null);
       setCaption("");
       
-      // 5. Optimistic UI Update
-      if (newStory) {
-        setStoryUsers(prev => {
-          const existingUserIndex = prev.findIndex(u => u.id === user.id);
-          
-          if (existingUserIndex >= 0) {
-            const updated = [...prev];
-            updated[existingUserIndex] = {
-              ...updated[existingUserIndex],
-              stories: [...updated[existingUserIndex].stories, {
-                id: newStory.id,
-                created_at: newStory.created_at,
-                content: newStory.content,
-                media_url: newStory.media_url,
-                media_type: newStory.media_type
-              }]
-            };
-            return updated;
-          } else {
-            return [{
-              id: user.id,
-              display_name: currentProfile.display_name,
-              avatar_url: currentProfile.avatar_url,
-              stories: [{
-                id: newStory.id,
-                created_at: newStory.created_at,
-                content: newStory.content,
-                media_url: newStory.media_url,
-                media_type: newStory.media_type
-              }]
-            }, ...prev];
-          }
-        });
-      }
+      // 4. Force a reload of the feed to ensure clean state
+      // (Alternatively, you can keep your optimistic update logic here if preferred)
+      window.location.reload(); 
       
     } catch (e: any) {
       console.error("Story upload error:", e);
