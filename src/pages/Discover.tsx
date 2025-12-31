@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { 
   Users, Calendar, MapPin, X, Loader2, Plus, 
   Heart, Share2, Sparkles, Lock, RefreshCw, Check,
-  Clock, Ticket, ExternalLink, Megaphone, MessageSquare,
-MoreVertical, Trash2, Copy 
+  Ticket, Megaphone, MessageSquare,
+  MoreVertical, Trash2, Copy 
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns"; 
 import React, { useState, useEffect, useRef } from "react";
@@ -33,7 +33,7 @@ interface Community {
   member_count: number | null; 
   description: string | null; 
   avatar_url: string | null;
-  cover_url?: string | null;  // ADDED: Support cover_url from database
+  cover_url?: string | null;
   is_member?: boolean;
   my_role?: 'admin' | 'member' | null;
 } 
@@ -50,7 +50,7 @@ interface Event {
   price?: number;
   attendee_count?: number;
   is_attending?: boolean;
-  is_sponsored?: boolean; // [MODIFIED: Added is_sponsored]
+  is_sponsored?: boolean;
 }
 
 type ProfileWithStoryInner = { id: string; display_name: string | null; avatar_url: string | null; stories: { id: string; created_at: string }[]; };
@@ -91,7 +91,6 @@ function EventDetailModal({ event, isOpen, onClose, onRSVP }: {
                 {event.match_score.toFixed(0)}% Match
               </Badge>
             )}
-             {/* [MODIFIED: Display Sponsored Badge in Modal] */}
             {event.is_sponsored && (
               <Badge className="absolute top-4 left-4 bg-yellow-500/90 hover:bg-yellow-600 text-white backdrop-blur-md border-0">
                 <Megaphone className="w-3 h-3 mr-1" />
@@ -143,7 +142,6 @@ function EventDetailModal({ event, isOpen, onClose, onRSVP }: {
               </div>
             )}
 
-            {/* [MODIFIED: Always show attendees] */}
             <div className="flex items-start gap-3">
               <Users className="w-5 h-5 text-primary mt-0.5" />
               <div>
@@ -198,18 +196,9 @@ function CommunityDetailModal({
 }: CommunityDetailModalProps) {
   if (!community) return null;
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric'
-    });
-  };
-
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto p-0 overflow-hidden">
-        {/* Cover Photo */}
         {(community.cover_url || community.avatar_url) && (
           <div className="w-full h-48 bg-muted relative">
             <img 
@@ -227,7 +216,6 @@ function CommunityDetailModal({
         )}
         
         <div className="p-6 space-y-4">
-          {/* Title & Description */}
           <div>
             <h2 className="text-2xl font-bold mb-2">{community.name}</h2>
             {community.description && (
@@ -235,7 +223,6 @@ function CommunityDetailModal({
             )}
           </div>
 
-          {/* Community Stats */}
           <div className="space-y-3 border-t pt-4">
             <div className="flex items-start gap-3">
               <Users className="w-5 h-5 text-primary mt-0.5" />
@@ -272,7 +259,6 @@ function CommunityDetailModal({
             </div>
           </div>
 
-          {/* Action Buttons */}
           <DialogFooter className="gap-2 border-t pt-4 flex-col sm:flex-row">
             <Button variant="outline" onClick={onClose} className="w-full sm:w-auto">
               Close
@@ -336,8 +322,6 @@ const EmptyState = ({ icon: Icon, title, desc, action, onAction }: any) => (
   </Card>
 );
 
-// Then update the StoryViewer component:
-
 function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) {
   const { user: currentUser } = useAuth();
   const [stories, setStories] = useState<Story[]>([]);
@@ -345,15 +329,17 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
   const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
   const [msg, setMsg] = useState("");
-  const [showActions, setShowActions] = useState(false);  // ✅ NEW
+  const [showActions, setShowActions] = useState(false); 
+  const navigate = useNavigate();
 
   useEffect(() => {
     const load = async () => {
+      // Fetch stories using Auth ID (user.id)
       const yesterday = new Date(Date.now() - 864e5).toISOString();
       const { data } = await supabase
         .from('stories')
         .select('id, content, created_at, author_id, media_url, media_type')
-        .eq('author_id', user.id)
+        .eq('author_id', user.id) // This matches user.id from the storyUsers list
         .gte('created_at', yesterday)
         .order('created_at', { ascending: true });
       
@@ -364,12 +350,10 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
   }, [user.id]);
 
   const current = stories[index];
-  const isMyStory = currentUser?.id === user.id;  // ✅ Check if viewing own story
+  const isMyStory = currentUser?.id === user.id; 
   
   const next = () => index < stories.length - 1 ? (setIndex(i => i + 1), setLiked(false)) : onClose();
-  const prev = () => setIndex(i => Math.max(i - 1, 0));
 
-  // ✅ NEW: Delete story function
   const handleDeleteStory = async () => {
     if (!current || !currentUser) return;
     
@@ -377,28 +361,25 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
     if (!confirmed) return;
     
     try {
-      // Delete from database
       const { error } = await supabase
         .from('stories')
         .delete()
         .eq('id', current.id)
-        .eq('author_id', currentUser.id);  // Security: only delete own stories
+        .eq('author_id', currentUser.id);
       
       if (error) throw error;
       
-      // Delete from storage if has media
       if (current.media_url) {
-        const path = current.media_url.split('/').slice(-3).join('/');  // Extract path from URL
-        await supabase.storage.from('chat-attachments').remove([path]);
+        const path = current.media_url.split('/').slice(-3).join('/');
+        await supabase.storage.from('stories').remove([path]);
       }
       
       toast.success('Story deleted');
       
-      // If no more stories, close viewer
       if (stories.length === 1) {
         onClose();
+        window.location.reload(); // Reload to refresh the tray
       } else {
-        // Remove from local state
         setStories(prev => prev.filter(s => s.id !== current.id));
         if (index >= stories.length - 1) setIndex(Math.max(0, index - 1));
       }
@@ -409,11 +390,8 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
     }
   };
 
-  // ✅ NEW: Share to DM function
   const handleShareToDM = () => {
     toast.info('Share to DM - Coming soon!');
-    // TODO: Navigate to messages with story link
-    navigate('/app/messages', { state: { shareStory: current.id } });
   };
 
   if (loading) return (
@@ -426,7 +404,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex items-center justify-center sm:p-4 animate-in fade-in duration-300">
-      {/* Close button */}
       <button 
         onClick={onClose} 
         className="absolute top-6 right-6 z-50 text-white/80 hover:text-white"
@@ -434,7 +411,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
         <X className="w-8 h-8" />
       </button>
       
-      {/* ✅ NEW: Actions menu (only for own stories) */}
       {isMyStory && (
         <button 
           onClick={() => setShowActions(!showActions)} 
@@ -445,7 +421,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
       )}
       
       <div className="relative w-full h-full sm:max-w-md sm:h-[85vh] bg-black sm:rounded-2xl overflow-hidden flex flex-col border border-white/10 shadow-2xl">
-        {/* Progress bars */}
         <div className="absolute top-0 w-full z-20 flex gap-1 p-2">
           {stories.map((_, i) => (
             <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm">
@@ -454,7 +429,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
           ))}
         </div>
         
-        {/* User header */}
         <div className="absolute top-6 left-0 w-full p-4 z-20 flex items-center gap-3 bg-gradient-to-b from-black/60 to-transparent">
           <img 
             src={user.avatar_url || '/default-avatar.png'} 
@@ -471,7 +445,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
           </div>
         </div>
         
-        {/* ✅ NEW: Actions dropdown */}
         {isMyStory && showActions && (
           <div className="absolute top-20 right-4 z-30 bg-black/90 backdrop-blur-xl rounded-xl border border-white/20 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <button 
@@ -501,7 +474,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
           </div>
         )}
         
-        {/* Main content area */}
         <div className="flex-1 flex items-center justify-center bg-black relative" onClick={next}>
           <div className="w-full h-full flex items-center justify-center p-4">
             {current.media_url ? (
@@ -528,7 +500,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
             )}
           </div>
           
-          {/* Caption */}
           {current.media_url && current.content && (
             <div className="absolute bottom-20 left-0 right-0 px-6">
               <p className="text-white text-center text-sm bg-black/40 backdrop-blur-sm rounded-full py-2 px-4">
@@ -538,7 +509,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
           )}
         </div>
         
-        {/* Bottom bar - Only show reply/reaction for other people's stories */}
         {!isMyStory && (
           <div className="absolute bottom-0 w-full p-4 z-30 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex gap-3 pb-8">
             <Input 
@@ -574,7 +544,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
           </div>
         )}
         
-        {/* ✅ NEW: View count for own stories */}
         {isMyStory && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
             <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full flex items-center gap-2">
@@ -617,13 +586,13 @@ export default function Discover() {
         setCurrentUserProfile({ id: me.id, display_name: me.display_name, avatar_url: me.avatar_url });
       }
       
-      // 2. Fetch Stories (Raw)
+      // 2. Fetch Stories (Fetching RAW stories first)
       const yesterday = new Date();
       yesterday.setHours(yesterday.getHours() - 24);
 
       const { data: storyData, error: storyError } = await supabase
         .from('stories')
-        .select('*') // Select everything, don't try to join profiles yet
+        .select('*')
         .gte('created_at', yesterday.toISOString())
         .order('created_at', { ascending: false });
 
@@ -632,38 +601,38 @@ export default function Discover() {
       } else if (storyData && storyData.length > 0) {
         
         // 3. Manual Join: Extract Author IDs and Fetch Profiles
-        // We assume author_id in stories table corresponds to user_id in profiles table
         const authorIds = Array.from(new Set(storyData.map((s: any) => s.author_id)));
         
         const { data: profiles } = await supabase
           .from('profiles')
           .select('id, user_id, display_name, avatar_url')
-          .in('user_id', authorIds); // Fetch profiles where user_id matches the story author
+          .in('user_id', authorIds); 
           
-        // Create a lookup map for profiles
         const profileMap = new Map();
         profiles?.forEach((p: any) => {
           profileMap.set(p.user_id, p);
         });
 
-        // 4. Group stories by author
+        // 4. Group stories by author using AUTH ID (user_id) as key
         const storyMap = new Map<string, any>();
         
         storyData.forEach((story: any) => {
-          // Look up profile using the author_id (which is the user_id)
+          // Look up profile using the author_id (which is Auth ID)
           const profile = profileMap.get(story.author_id);
           
-          if (!profile) return; // Skip only if we genuinely can't find a profile
+          if (!profile) return;
           
-          if (!storyMap.has(profile.id)) {
-            storyMap.set(profile.id, {
-              id: profile.id,
+          // Use profile.user_id as the key so it matches user.id
+          if (!storyMap.has(profile.user_id)) {
+            storyMap.set(profile.user_id, {
+              id: profile.user_id, 
               display_name: profile.display_name,
               avatar_url: profile.avatar_url,
               stories: []
             });
           }
-          storyMap.get(profile.id).stories.push({
+          
+          storyMap.get(profile.user_id).stories.push({
             id: story.id,
             created_at: story.created_at,
             content: story.content,
@@ -678,21 +647,14 @@ export default function Discover() {
         setStoryUsers([]);
       }
 
-      // 2. Communities with membership status (use left join instead of inner)
+      // 5. Communities
       const { data: comms, error: commsError } = await supabase
         .from('communities')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(20);
       
-      if (commsError) {
-        console.error("❌ Communities fetch error:", commsError);
-      } else {
-        console.log("🏛️ Communities fetched:", comms?.length);
-      }
-      
       if (comms) {
-        // Fetch memberships separately to avoid inner join filtering
         const { data: memberships } = await supabase
           .from('community_members')
           .select('community_id, role')
@@ -711,17 +673,15 @@ export default function Discover() {
           memberCountMap.set(m.community_id, (memberCountMap.get(m.community_id) || 0) + 1);
         });
               
-              const enrichedComms: Community[] = comms.map((c: any) => {
+        const enrichedComms: Community[] = comms.map((c: any) => {
           const isMember = membershipMap.has(c.id);
           const role = membershipMap.get(c.id) as 'admin' | 'member' | undefined;
-          const actualMemberCount = memberCountMap.get(c.id) || 0;  // ✅ Always accurate
-          
-          console.log(`✅ Community: "${c.name}" - Actual: ${actualMemberCount} - DB: ${c.member_count} - Joined: ${isMember}`);
+          const actualMemberCount = memberCountMap.get(c.id) || 0;
           
           return {
             id: c.id,
             name: c.name,
-            member_count: actualMemberCount,  // ✅ Use calculated count
+            member_count: actualMemberCount,
             description: c.description,
             avatar_url: c.cover_url || c.avatar_url,
             cover_url: c.cover_url,
@@ -733,7 +693,7 @@ export default function Discover() {
         setCommunities(enrichedComms);
       }
       
-      // 3. Events with RSVP status
+      // 6. Events
       const { data: evts } = await supabase
         .from('events')
         .select('*')
@@ -742,7 +702,6 @@ export default function Discover() {
         .limit(20);
       
       if (evts) {
-        // Check RSVP status for each event
         const eventIds = evts.map((e: any) => e.id);
         const { data: rsvps } = await supabase
           .from('event_attendees')
@@ -764,11 +723,9 @@ export default function Discover() {
         });
 
         const mappedEvents: Event[] = evts.map((e: any) => {
-        const attendeeCount = attendeeMap.get(e.id) || e.attendee_count || 0;  // FIXED: Use actual count
-        const isAttending = rsvpSet.has(e.id);
-        
-        console.log(`✅ Event: "${e.title}" - Attendees: ${attendeeCount} - Attending: ${isAttending} - Sponsored: ${e.is_sponsored || false}`);
-  
+          const attendeeCount = attendeeMap.get(e.id) || e.attendee_count || 0;
+          const isAttending = rsvpSet.has(e.id);
+    
           return {
             id: e.id,
             title: e.title,
@@ -778,7 +735,7 @@ export default function Discover() {
             image_url: e.image_url,
             description: e.description,
             price: e.price,
-            attendee_count: attendeeCount,  // Use calculated count
+            attendee_count: attendeeCount,
             is_attending: isAttending,
             is_sponsored: e.is_sponsored || false
           };
@@ -801,30 +758,20 @@ export default function Discover() {
     init();
   }, [user]);
 
-  // ✅ FIXED: Only fetch AI feed when user navigates to "For You" tab
+  // AI Feed Logic
   useEffect(() => {
-    // Don't run if not premium or no active tab selection
     if (!isPremium || smartFeed.length > 0) return;
-    
-    // Only fetch when explicitly on the foryou tab
     const currentTab = new URLSearchParams(window.location.search).get('tab');
     if (currentTab !== 'foryou') return;
     
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-  
         try {
           const { data: ai, error } = await supabase.functions.invoke('generate-smart-feed', {
-            body: {
-              user_id: user?.id,
-              user_lat: latitude,
-              user_long: longitude,
-            },
+            body: { user_id: user?.id, user_lat: latitude, user_long: longitude },
           });
-  
           if (error) throw error;
-  
           if (ai) {
             const formatted = ai.map((item: any) => ({
               id: item.id,
@@ -837,25 +784,22 @@ export default function Discover() {
               attendee_count: item.attendee_count || 0,
               is_attending: item.is_attending || false,
             }));
-            
             setSmartFeed(formatted);
           }
         } catch (err) {
           console.error('AI Feed Error:', err);
         }
       },
-      (err) => {
-        console.warn('Location denied for Smart Feed', err);
-      }
+      (err) => console.warn('Location denied for Smart Feed', err)
     );
-  }, [isPremium, user?.id, window.location.search]); // Watch URL changes
+  }, [isPremium, user?.id, window.location.search]);
 
   const handleUpload = async () => {
     if (!preview || !user) return;
     setUploading(true);
     
     try {
-      // 1. Upload media to storage
+      // 1. Upload media
       const ext = preview.file.name.split('.').pop();
       const path = `${user.id}/${Date.now()}.${ext}`;
       
@@ -865,16 +809,15 @@ export default function Discover() {
       
       if (uploadError) throw uploadError;
       
-      // 2. Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('stories')
         .getPublicUrl(path);
       
-      // 3. Create story record using user.id (Auth ID)
+      // 2. Create story record using user.id (Auth ID)
       const { data: newStory, error: insertError } = await supabase
         .from('stories')
         .insert({ 
-          author_id: user.id, // ✅ Keep using user.id as it passes RLS
+          author_id: user.id, // Using Auth ID
           content: caption || null,
           media_url: publicUrl,
           media_type: preview.file.type.startsWith('video') ? 'video' : 'image'
@@ -888,9 +831,8 @@ export default function Discover() {
       setPreview(null);
       setCaption("");
       
-      // 4. Force a reload of the feed to ensure clean state
-      // (Alternatively, you can keep your optimistic update logic here if preferred)
-      window.location.reload(); 
+      // Reload to ensure fresh state and proper fetching
+      window.location.reload();
       
     } catch (e: any) {
       console.error("Story upload error:", e);
@@ -901,65 +843,33 @@ export default function Discover() {
   };
 
   const handleJoinCommunity = async (communityId: string) => {
-  if (!user) return;
-  try {
-    console.log("👥 Joining community:", communityId);
-    
-    const { error } = await supabase.from('community_members').insert({
-      community_id: communityId,
-      user_id: user.id,
-      role: 'member'
-    });
-    
-    if (error) {
-      console.error("❌ Join error:", error);
-      throw error;
-    }
-    
-    // FIXED: Increment member count in database
-    const { error: incrementError } = await supabase.rpc('increment_community_members', { 
-      community_id: communityId 
-    });
-    
-    if (incrementError) {
-      console.warn("⚠️ Failed to increment count:", incrementError);
-    }
-    
-    toast.success("Joined community!");
+    if (!user) return;
+    try {
+      const { error } = await supabase.from('community_members').insert({
+        community_id: communityId,
+        user_id: user.id,
+        role: 'member'
+      });
+      if (error) throw error;
       
-      // Update local state
+      await supabase.rpc('increment_community_members', { community_id: communityId });
+      toast.success("Joined community!");
+      
       setCommunities(prev => prev.map(c => 
-      c.id === communityId 
-        ? { 
-            ...c, 
-            is_member: true, 
-            my_role: 'member', 
-            member_count: (c.member_count || 0) + 1  // Properly increment
-          }
-        : c
-    ));
-    
-    console.log("✅ Successfully joined community");
-      } catch (e: any) {
-        console.error("❌ Join community error:", e);
-        toast.error(e.message || "Failed to join");
-      }
-    };
-    
-    declare global {
-      interface Window {
-        FlutterwaveCheckout?: (options: any) => void;
-      }
-    } 
+        c.id === communityId 
+          ? { ...c, is_member: true, my_role: 'member', member_count: (c.member_count || 0) + 1 }
+          : c
+      ));
+    } catch (e: any) {
+      toast.error(e.message || "Failed to join");
+    }
+  };
 
+  // Payment Logic
   const FLUTTERWAVE_PUBLIC_KEY = import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY;
-
   const loadFlutterwaveScript = () => {
     return new Promise<void>((resolve, reject) => {
-      if (document.getElementById('flutterwave-script')) {
-        resolve();
-        return;
-      }
+      if (document.getElementById('flutterwave-script')) { resolve(); return; }
       const script = document.createElement('script');
       script.id = 'flutterwave-script';
       script.src = 'https://checkout.flutterwave.com/v3.js';
@@ -971,32 +881,14 @@ export default function Discover() {
   };
   
   useEffect(() => {
-  if (!FLUTTERWAVE_PUBLIC_KEY) return;
+    if (!FLUTTERWAVE_PUBLIC_KEY) return;
+    loadFlutterwaveScript().then(() => setScriptLoaded(true)).catch(() => toast.error('Payment system unavailable'));
+  }, [FLUTTERWAVE_PUBLIC_KEY]);
   
-  loadFlutterwaveScript()
-    .then(() => setScriptLoaded(true))
-    .catch(() => toast.error('Payment system unavailable'));
-}, [FLUTTERWAVE_PUBLIC_KEY]);
-  
-  const initiateFlutterwavePayment = async (paymentData: {
-    amount: number;
-    currency: string;
-    email: string;
-    name: string;
-    phone: string;
-    tx_ref: string;
-    event_id: string;
-    event_title: string;
-    user_id: string;
-  }) => {
+  const initiateFlutterwavePayment = async (paymentData: any) => {
     try {
-      if (!scriptLoaded || !FLUTTERWAVE_PUBLIC_KEY) {
-        throw new Error('Payment system not ready');
-      }
-  
-      console.log("🚀 Initiating Flutterwave payment for event...");
+      if (!scriptLoaded || !FLUTTERWAVE_PUBLIC_KEY) throw new Error('Payment system not ready');
       
-      // Store pending transaction BEFORE payment
       const { error: transactionError } = await supabase.from('transactions').insert({
         user_id: paymentData.user_id,
         amount: paymentData.amount,
@@ -1007,212 +899,78 @@ export default function Discover() {
         related_id: paymentData.event_id
       });
       
-      if (transactionError) {
-        console.error("❌ Transaction creation error:", transactionError);
-        throw transactionError;
-      }
+      if (transactionError) throw transactionError;
   
-      // Configure Flutterwave payment
       const config = {
         public_key: FLUTTERWAVE_PUBLIC_KEY,
         tx_ref: paymentData.tx_ref,
         amount: paymentData.amount,
         currency: paymentData.currency,
         payment_options: "card, banktransfer, ussd",
-        customer: {
-          email: paymentData.email,
-          name: paymentData.name,
-          phone_number: paymentData.phone || '',
-        },
-        customizations: {
-          title: "Event Ticket Purchase",
-          description: paymentData.event_title,
-          logo: "https://try.usecorridor.xyz/ahmia/logo.png",
-        },
+        customer: { email: paymentData.email, name: paymentData.name, phone_number: paymentData.phone || '' },
+        customizations: { title: "Event Ticket Purchase", description: paymentData.event_title, logo: "https://try.usecorridor.xyz/ahmia/logo.png" },
         callback: async function(response: any) {
-          console.log("💳 Payment response:", response);
-          
           if (response.status === "successful" || response.status === "completed") {
             const toastId = toast.loading("Confirming your ticket purchase...");
-            
             try {
-              // Verify the transaction with your backend
-              const { data: verifyData, error: verifyError } = await supabase.functions.invoke('verify-flutterwave-payment', {
-                body: { 
-                  transaction_id: response.transaction_id,
-                  tx_ref: paymentData.tx_ref 
-                }
+              const { error: verifyError } = await supabase.functions.invoke('verify-flutterwave-payment', {
+                body: { transaction_id: response.transaction_id, tx_ref: paymentData.tx_ref }
               });
-              
               if (verifyError) throw verifyError;
               
-              // Create event RSVP after successful payment
-              const { error: rsvpError } = await supabase
-                .from('event_attendees')
-                .insert({
-                  event_id: paymentData.event_id,
-                  user_id: paymentData.user_id,
-                  status: 'confirmed'
-                });
-              
+              const { error: rsvpError } = await supabase.from('event_attendees').insert({
+                event_id: paymentData.event_id, user_id: paymentData.user_id, status: 'confirmed'
+              });
               if (rsvpError) throw rsvpError;
               
-              // Increment attendee count
-              await supabase.rpc('increment_event_attendees', { 
-                event_id: paymentData.event_id 
-              });
+              await supabase.rpc('increment_event_attendees', { event_id: paymentData.event_id });
+              await supabase.from('transactions').update({ status: 'completed', flutterwave_transaction_id: response.transaction_id }).eq('reference', paymentData.tx_ref);
               
-              // Update transaction status to completed
-              await supabase
-                .from('transactions')
-                .update({ 
-                  status: 'completed',
-                  flutterwave_transaction_id: response.transaction_id
-                })
-                .eq('reference', paymentData.tx_ref);
-              
-              // Update local state
-              setEvents(prev => prev.map(e => 
-                e.id === paymentData.event_id 
-                  ? { 
-                      ...e, 
-                      is_attending: true,
-                      attendee_count: (e.attendee_count || 0) + 1
-                    }
-                  : e
-              ));
-              
-              setSmartFeed(prev => prev.map(e => 
-                e.id === paymentData.event_id 
-                  ? { 
-                      ...e, 
-                      is_attending: true,
-                      attendee_count: (e.attendee_count || 0) + 1
-                    }
-                  : e
-              ));
-              
+              setEvents(prev => prev.map(e => e.id === paymentData.event_id ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e));
               toast.success("Ticket purchased successfully! 🎉", { id: toastId });
-              console.log("✅ Event RSVP confirmed after payment");
-              
             } catch (error: any) {
-              console.error("❌ Post-payment error:", error);
               toast.error("Payment received but confirmation failed. Contact support.", { id: toastId });
-              
-              // Update transaction to completed anyway (payment was successful)
-              await supabase
-                .from('transactions')
-                .update({ 
-                  status: 'completed',
-                  flutterwave_transaction_id: response.transaction_id
-                })
-                .eq('reference', paymentData.tx_ref);
+              await supabase.from('transactions').update({ status: 'completed', flutterwave_transaction_id: response.transaction_id }).eq('reference', paymentData.tx_ref);
             }
           } else {
             toast.error("Payment was not successful");
-            
-            // Update transaction status to failed
-            await supabase
-              .from('transactions')
-              .update({ status: 'failed' })
-              .eq('reference', paymentData.tx_ref);
+            await supabase.from('transactions').update({ status: 'failed' }).eq('reference', paymentData.tx_ref);
           }
         },
-        onclose: function() {
-          console.log("Payment modal closed");
-        }
+        onclose: function() {}
       };
   
-      // Launch Flutterwave payment modal
-      if (window.FlutterwaveCheckout) {
-        window.FlutterwaveCheckout(config);
-        console.log("✅ Payment modal opened");
-      } else {
-        throw new Error("Flutterwave checkout not available");
-      }
+      if (window.FlutterwaveCheckout) window.FlutterwaveCheckout(config);
+      else throw new Error("Flutterwave checkout not available");
       
     } catch (error: any) {
-      console.error("❌ Payment initiation error:", error);
       toast.error(error.message || "Failed to initiate payment");
-      
-      // Update transaction to failed
-      await supabase
-        .from('transactions')
-        .update({ status: 'failed' })
-        .eq('reference', paymentData.tx_ref);
-      
+      await supabase.from('transactions').update({ status: 'failed' }).eq('reference', paymentData.tx_ref);
       throw error;
     }
   };
 
   const handleRSVP = async (eventId: string) => {
     if (!user) return;
-    
     try {
       const event = events.find(e => e.id === eventId) || smartFeed.find(e => e.id === eventId);
-      console.log("🎟️ RSVP for event:", eventId, "- Currently attending:", event?.is_attending, "- Price:", event?.price);
       
       if (event?.is_attending) {
-        // Cancel RSVP (no refund for now)
-        const { error } = await supabase.from('event_attendees').delete().match({
-          event_id: eventId,
-          user_id: user.id
-        });
-        
+        const { error } = await supabase.from('event_attendees').delete().match({ event_id: eventId, user_id: user.id });
         if (error) throw error;
-        
-        const { error: decrementError } = await supabase.rpc('decrement_event_attendees', { 
-          event_id: eventId 
-        });
-        
-        if (decrementError) {
-          console.warn("⚠️ Failed to decrement count:", decrementError);
-        }
-        
+        await supabase.rpc('decrement_event_attendees', { event_id: eventId });
         toast.success("RSVP cancelled");
-        console.log("✅ RSVP cancelled");
         
-        // Update local state
-        setEvents(prev => prev.map(e => 
-          e.id === eventId 
-            ? { 
-                ...e, 
-                is_attending: false,
-                attendee_count: (e.attendee_count || 0) - 1
-              }
-            : e
-        ));
-        
-        setSmartFeed(prev => prev.map(e => 
-          e.id === eventId 
-            ? { 
-                ...e, 
-                is_attending: false,
-                attendee_count: (e.attendee_count || 0) - 1
-              }
-            : e
-        ));
+        setEvents(prev => prev.map(e => e.id === eventId ? { ...e, is_attending: false, attendee_count: (e.attendee_count || 0) - 1 } : e));
+        setSmartFeed(prev => prev.map(e => e.id === eventId ? { ...e, is_attending: false, attendee_count: (e.attendee_count || 0) - 1 } : e));
       } else {
-        // FIXED: Check if event requires payment
         if (event?.price && event.price > 0) {
-          console.log("💰 Paid event detected - Price:", event.price);
+          const { data: profile } = await supabase.from('profiles').select('email, display_name, phone').eq('user_id', user.id).single();
+          if (!profile) { toast.error("Unable to load your profile."); return; }
           
-          // Get user profile for payment details
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('email, display_name, phone')
-            .eq('user_id', user.id)
-            .single();
-          
-          if (!profile) {
-            toast.error("Unable to load your profile. Please try again.");
-            return;
-          }
-          
-          // Prepare payment data
           const paymentData = {
             amount: event.price,
-            currency: 'NGN', // Change to your currency
+            currency: 'NGN',
             email: profile.email || user.email || '',
             name: profile.display_name || 'User',
             phone: profile.phone || '',
@@ -1221,63 +979,19 @@ export default function Discover() {
             event_title: event.title,
             user_id: user.id
           };
-          
-          console.log("💳 Initiating payment with data:", { ...paymentData, amount: `₦${paymentData.amount}` });
-          
-          // Call Flutterwave payment function (RSVP happens in callback)
           await initiateFlutterwavePayment(paymentData);
-          
-          // Don't create RSVP here - it's handled in the payment callback
-          return; // Exit early, don't update state until payment succeeds
-          
+          return;
         } else {
-        
-          // Free event - Create RSVP immediately
-          console.log("🎫 Free event - Creating RSVP...");
-          
-          const { error } = await supabase.from('event_attendees').insert({
-            event_id: eventId,
-            user_id: user.id,
-            status: 'confirmed'
-          });
-          
+          const { error } = await supabase.from('event_attendees').insert({ event_id: eventId, user_id: user.id, status: 'confirmed' });
           if (error) throw error;
-          
-          const { error: incrementError } = await supabase.rpc('increment_event_attendees', { 
-            event_id: eventId 
-          });
-          
-          if (incrementError) {
-            console.warn("⚠️ Failed to increment count:", incrementError);
-          }
-          
+          await supabase.rpc('increment_event_attendees', { event_id: eventId });
           toast.success("You're going! 🎉");
-          console.log("✅ Free RSVP confirmed");
           
-          // Update local state
-          setEvents(prev => prev.map(e => 
-            e.id === eventId 
-              ? { 
-                  ...e, 
-                  is_attending: true,
-                  attendee_count: (e.attendee_count || 0) + 1
-                }
-              : e
-          ));
-          
-          setSmartFeed(prev => prev.map(e => 
-            e.id === eventId 
-              ? { 
-                  ...e, 
-                  is_attending: true,
-                  attendee_count: (e.attendee_count || 0) + 1
-                }
-              : e
-          ));
+          setEvents(prev => prev.map(e => e.id === eventId ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e));
+          setSmartFeed(prev => prev.map(e => e.id === eventId ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e));
         }
       }
     } catch (e: any) {
-      console.error("❌ RSVP error:", e);
       toast.error(e.message || "Failed to RSVP");
     }
   };
@@ -1286,152 +1000,118 @@ export default function Discover() {
     <div className="container-mobile py-4 space-y-6 pb-24">
       {/* STORIES TRAY */}
       <div className="w-full overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">
-  {loading ? (
-    <div className="flex gap-4">
-      <div className="w-16 h-16 bg-muted rounded-full animate-pulse" />
-    </div>
-  ) : (
-    <div className="flex gap-4 items-start">
-      {(() => {
-        // Check if current user has stories
-        const myStory = storyUsers.find(u => u.id === user?.id);
-        
-        return (
-          <>
-            {/* Show user's own story OR add button */}
-            {myStory ? (
-              // ✅ User has stories - show their story with gradient ring
-              <div 
-                className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" 
-                onClick={() => setSelectedStory(myStory)}
-              >
-                <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400 group-hover:scale-105 transition-transform shadow-sm">
-                  <img 
-                    src={myStory.avatar_url || '/default-avatar.png'} 
-                    className="w-full h-full rounded-full object-cover border-2 border-background" 
-                    alt="Your story"
-                  />
-                </div>
-                <span className="text-xs font-bold max-w-[70px] truncate">Your Story</span>
-              </div>
-            ) : (
-              // ✅ No stories - show add button
-              <div 
-                className="flex flex-col items-center gap-2 flex-shrink-0 relative cursor-pointer group" 
-                onClick={() => fileRef.current?.click()}
-              >
-                <input 
-                  type="file" 
-                  ref={fileRef} 
-                  className="hidden" 
-                  accept="image/*,video/*" 
-                  onChange={(e) => e.target.files?.[0] && setPreview({ file: e.target.files[0], url: URL.createObjectURL(e.target.files[0]) })} 
-                />
-                <div className="w-16 h-16 rounded-full p-[2px] border-2 border-dashed border-muted-foreground/30 relative group-hover:border-primary transition-colors">
-                  <img 
-                    src={currentUserProfile?.avatar_url || '/default-avatar.png'} 
-                    className="w-full h-full rounded-full object-cover opacity-50" 
-                    alt="Add story"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-background/20 rounded-full">
-                    <Plus className="w-6 h-6 text-primary drop-shadow-sm" />
-                  </div>
-                </div>
-                <span className="text-xs font-medium text-muted-foreground">Add Story</span>
-              </div>
-            )}
-            
-            {/* Other users' stories */}
-            {storyUsers
-              .filter(u => u.id !== user?.id)
-              .map(u => (
-                <div 
-                  key={u.id} 
-                  className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" 
-                  onClick={() => setSelectedStory(u)}
-                >
-                  <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-purple-600 group-hover:scale-105 transition-transform shadow-sm">
-                    <img 
-                      src={u.avatar_url || '/default-avatar.png'} 
-                      className="w-full h-full rounded-full object-cover border-2 border-background" 
-                      alt={u.display_name || 'User'}
-                    />
-                  </div>
-                  <span className="text-xs font-medium max-w-[70px] truncate">
-                    {u.display_name || 'User'}
-                  </span>
-                </div>
-              ))}
-          </>
-        );
-      })()}
-    </div>
-  )}
-</div>
-      
-            <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
-  <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto bg-background/95 backdrop-blur-xl border-0">
-    <DialogHeader>
-      <DialogTitle>Create Story</DialogTitle>
-    </DialogHeader>
-    
-    {/* ✅ FIXED: Reduced height to prevent overflow */}
-    <div className="h-[40vh] max-h-[400px] min-h-[300px] bg-black/10 rounded-xl overflow-hidden flex items-center justify-center relative border">
-      {preview?.file.type.startsWith('video') ? (
-        <video 
-          src={preview.url} 
-          controls 
-          className="max-h-full max-w-full object-contain" 
-        />
-      ) : (
-        <img 
-          src={preview?.url} 
-          className="max-h-full max-w-full object-contain" 
-          alt="Preview"
-        />
-      )}
-    </div>
-    
-    <div className="space-y-4 pt-2">
-      <Input 
-        placeholder="Add a caption..." 
-        value={caption} 
-        onChange={e => setCaption(e.target.value)} 
-        className="bg-muted/50 border-0" 
-        maxLength={150}
-      />
-      <div className="text-xs text-muted-foreground text-right">
-        {caption.length}/150
+        {loading ? (
+          <div className="flex gap-4">
+            <div className="w-16 h-16 bg-muted rounded-full animate-pulse" />
+          </div>
+        ) : (
+          <div className="flex gap-4 items-start">
+            {(() => {
+              // ✅ FIXED: Finding "my story" using the ID (which is now correctly Auth ID)
+              const myStory = storyUsers.find(u => u.id === user?.id);
+              
+              return (
+                <>
+                  {myStory ? (
+                    <div 
+                      className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" 
+                      onClick={() => setSelectedStory(myStory)}
+                    >
+                      <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400 group-hover:scale-105 transition-transform shadow-sm">
+                        <img 
+                          src={myStory.avatar_url || '/default-avatar.png'} 
+                          className="w-full h-full rounded-full object-cover border-2 border-background" 
+                          alt="Your story"
+                        />
+                      </div>
+                      <span className="text-xs font-bold max-w-[70px] truncate">Your Story</span>
+                    </div>
+                  ) : (
+                    <div 
+                      className="flex flex-col items-center gap-2 flex-shrink-0 relative cursor-pointer group" 
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      <input 
+                        type="file" 
+                        ref={fileRef} 
+                        className="hidden" 
+                        accept="image/*,video/*" 
+                        onChange={(e) => e.target.files?.[0] && setPreview({ file: e.target.files[0], url: URL.createObjectURL(e.target.files[0]) })} 
+                      />
+                      <div className="w-16 h-16 rounded-full p-[2px] border-2 border-dashed border-muted-foreground/30 relative group-hover:border-primary transition-colors">
+                        <img 
+                          src={currentUserProfile?.avatar_url || '/default-avatar.png'} 
+                          className="w-full h-full rounded-full object-cover opacity-50" 
+                          alt="Add story"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-background/20 rounded-full">
+                          <Plus className="w-6 h-6 text-primary drop-shadow-sm" />
+                        </div>
+                      </div>
+                      <span className="text-xs font-medium text-muted-foreground">Add Story</span>
+                    </div>
+                  )}
+                  
+                  {storyUsers
+                    .filter(u => u.id !== user?.id) // This filter now works correctly
+                    .map(u => (
+                      <div 
+                        key={u.id} 
+                        className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" 
+                        onClick={() => setSelectedStory(u)}
+                      >
+                        <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-purple-600 group-hover:scale-105 transition-transform shadow-sm">
+                          <img 
+                            src={u.avatar_url || '/default-avatar.png'} 
+                            className="w-full h-full rounded-full object-cover border-2 border-background" 
+                            alt={u.display_name || 'User'}
+                          />
+                        </div>
+                        <span className="text-xs font-medium max-w-[70px] truncate">
+                          {u.display_name || 'User'}
+                        </span>
+                      </div>
+                    ))}
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
       
-      <DialogFooter className="gap-2">
-        <Button 
-          variant="ghost" 
-          onClick={() => setPreview(null)}
-        >
-          Cancel
-        </Button>
-        <Button 
-          onClick={handleUpload} 
-          disabled={uploading} 
-          className="gradient-primary text-white"
-        >
-          {uploading ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Uploading...
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4 mr-2" />
-              Share to Story
-            </>
-          )}
-        </Button>
-      </DialogFooter>
-    </div>
-  </DialogContent>
-</Dialog>
+      <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
+        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto bg-background/95 backdrop-blur-xl border-0">
+          <DialogHeader>
+            <DialogTitle>Create Story</DialogTitle>
+          </DialogHeader>
+          
+          <div className="h-[40vh] max-h-[400px] min-h-[300px] bg-black/10 rounded-xl overflow-hidden flex items-center justify-center relative border">
+            {preview?.file.type.startsWith('video') ? (
+              <video src={preview.url} controls className="max-h-full max-w-full object-contain" />
+            ) : (
+              <img src={preview?.url} className="max-h-full max-w-full object-contain" alt="Preview" />
+            )}
+          </div>
+          
+          <div className="space-y-4 pt-2">
+            <Input 
+              placeholder="Add a caption..." 
+              value={caption} 
+              onChange={e => setCaption(e.target.value)} 
+              className="bg-muted/50 border-0" 
+              maxLength={150}
+            />
+            <div className="text-xs text-muted-foreground text-right">{caption.length}/150</div>
+            
+            <DialogFooter className="gap-2">
+              <Button variant="ghost" onClick={() => setPreview(null)}>Cancel</Button>
+              <Button onClick={handleUpload} disabled={uploading} className="gradient-primary text-white">
+                {uploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading...</> : <><Sparkles className="w-4 h-4 mr-2" /> Share to Story</>}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* TABS */}
       <div className="px-1">
@@ -1443,7 +1123,6 @@ export default function Discover() {
             <TabsTrigger value="foryou" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-blue-600 data-[state=active]:text-white rounded-lg"><Sparkles className="w-3 h-3 mr-1" /> For You</TabsTrigger>
           </TabsList>
 
-          {/* Communities */}
           <TabsContent value="communities" className="mt-6 space-y-3 animate-in fade-in-50">
             {loading ? <FeedSkeleton /> : communities.length === 0 ? (
               <EmptyState 
@@ -1469,11 +1148,7 @@ export default function Discover() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold truncate text-lg">{c.name}</h3>
-                        {c.is_member && (
-                          <Badge variant="secondary" className="text-xs">
-                            {c.my_role === 'admin' ? 'Admin' : 'Joined'}
-                          </Badge>
-                        )}
+                        {c.is_member && <Badge variant="secondary" className="text-xs">{c.my_role === 'admin' ? 'Admin' : 'Joined'}</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-1">{c.description}</p>
                       <div className="flex items-center gap-1 mt-1 text-xs text-primary font-medium">
@@ -1484,10 +1159,7 @@ export default function Discover() {
                       size="sm" 
                       variant={c.is_member ? "outline" : "secondary"}
                       className="rounded-full px-4"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedCommunity(c);
-                      }}
+                      onClick={(e) => { e.stopPropagation(); setSelectedCommunity(c); }}
                     >
                       View
                     </Button>
@@ -1497,7 +1169,6 @@ export default function Discover() {
             )}
           </TabsContent>
 
-          {/* Events */}
           <TabsContent value="events" className="mt-6 space-y-3 animate-in fade-in-50">
             {loading ? <FeedSkeleton /> : events.length === 0 ? (
                <EmptyState icon={Calendar} title="No Upcoming Events" desc="It's quiet... too quiet. Host a party!" action="Create Event" onAction={() => navigate('/create-event')} />
@@ -1520,33 +1191,19 @@ export default function Discover() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="font-bold text-base truncate">{e.title}</h3>
-                        {e.is_attending && (
-                          <Badge className="bg-green-600 text-xs">
-                            <Check className="w-3 h-3 mr-1" />
-                            Going
-                          </Badge>
-                        )}
-                        {e.is_sponsored && (
-                          <Badge variant="outline" className="text-[10px] h-5 border-yellow-500 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/20 px-1.5">
-                            Sponsored
-                          </Badge>
-                        )}
+                        {e.is_attending && <Badge className="bg-green-600 text-xs"><Check className="w-3 h-3 mr-1" /> Going</Badge>}
+                        {e.is_sponsored && <Badge variant="outline" className="text-[10px] h-5 border-yellow-500 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/20 px-1.5">Sponsored</Badge>}
                       </div>
                       <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                        <MapPin className="w-3.5 h-3.5" /> 
-                        <span className="truncate">{e.location}</span>
+                        <MapPin className="w-3.5 h-3.5" /> <span className="truncate">{e.location}</span>
                       </div>
-                      
-                      {/* ✅ ADD THIS: Price Display */}
                       <div className="flex items-center gap-3 mt-1">
                         <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Users className="w-3 h-3" />
-                          {e.attendee_count || 0} attending
+                          <Users className="w-3 h-3" /> {e.attendee_count || 0} attending
                         </div>
                         {e.price !== undefined && (
                           <div className="flex items-center gap-1 text-xs font-semibold text-primary">
-                            <Ticket className="w-3 h-3" />
-                            {e.price === 0 ? 'Free' : `₦${e.price.toLocaleString()}`}
+                            <Ticket className="w-3 h-3" /> {e.price === 0 ? 'Free' : `₦${e.price.toLocaleString()}`}
                           </div>
                         )}
                       </div>
@@ -1555,10 +1212,7 @@ export default function Discover() {
                       size="sm" 
                       variant={e.is_attending ? "default" : "outline"}
                       className="rounded-full"
-                      onClick={(evt) => {
-                        evt.stopPropagation();
-                        setSelectedEvent(e);
-                      }}
+                      onClick={(evt) => { evt.stopPropagation(); setSelectedEvent(e); }}
                     >
                       View
                     </Button>
@@ -1568,7 +1222,6 @@ export default function Discover() {
             )}
           </TabsContent>
 
-          {/* For You (AI) */}
           <TabsContent value="foryou" className="mt-6 space-y-4 animate-in fade-in-50">
             {!isPremium ? (
               <Card className="bg-gradient-to-br from-indigo-900 to-purple-900 border-0 text-white shadow-xl relative overflow-hidden">
@@ -1592,8 +1245,7 @@ export default function Discover() {
                   <div className="h-32 bg-muted relative">
                     {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" />}
                     <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
-                      <Sparkles className="w-3 h-3 text-yellow-400" /> 
-                      {(e.match_score || 95).toFixed(0)}% Match
+                      <Sparkles className="w-3 h-3 text-yellow-400" /> {(e.match_score || 95).toFixed(0)}% Match
                     </div>
                   </div>
                   <CardContent className="p-4">
@@ -1611,20 +1263,8 @@ export default function Discover() {
       
       {selectedStory && <StoryViewer user={selectedStory} onClose={() => setSelectedStory(null)} />}
       
-      <EventDetailModal 
-        event={selectedEvent}
-        isOpen={!!selectedEvent}
-        onClose={() => setSelectedEvent(null)}
-        onRSVP={handleRSVP}
-      /> 
-
-      <CommunityDetailModal 
-  community={selectedCommunity}
-  isOpen={!!selectedCommunity}
-  onClose={() => setSelectedCommunity(null)}
-  onJoin={handleJoinCommunity}
-  onOpen={() => navigate('/app/messages')}
-/>
+      <EventDetailModal event={selectedEvent} isOpen={!!selectedEvent} onClose={() => setSelectedEvent(null)} onRSVP={handleRSVP} /> 
+      <CommunityDetailModal community={selectedCommunity} isOpen={!!selectedCommunity} onClose={() => setSelectedCommunity(null)} onJoin={handleJoinCommunity} onOpen={() => navigate('/app/messages')} />
     </div>
   );
 }
