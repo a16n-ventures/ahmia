@@ -682,84 +682,6 @@ export default function Messages() {
     }
   });
 
-  const sendMessage = useMutation({
-    mutationFn: async (vars: { content: string | null; file: File | null }) => {
-      if ((!vars.content && !vars.file) || !selectedChat || !user) {
-        throw new Error('Missing required data');
-      }
-  
-      // 1. Upload file if exists
-      let imageUrl: string | null = null;
-      if (vars.file) {
-        const fileExt = vars.file.name.split('.').pop();
-        const filePath = `${user.id}/${Date.now()}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('chat-attachments')
-          .upload(filePath, vars.file, {
-            cacheControl: '3600',
-            upsert: false
-          });
-        
-        if (uploadError) {
-          throw new Error(`Upload failed: ${uploadError.message}`);
-        }
-        
-        const { data: urlData } = supabase.storage
-          .from('chat-attachments')
-          .getPublicUrl(filePath);
-        
-        imageUrl = urlData.publicUrl;
-      }
-  
-      // 2. Insert message based on type
-      if (selectedChat.type === 'dm') {
-        const { data, error } = await supabase
-          .from('messages')
-          .insert({
-            sender_id: user.id,
-            receiver_id: selectedChat.partner_id,
-            content: vars.content || null,
-            image_url: imageUrl,
-            is_read: false
-          })
-          .select()
-          .single();
-        
-        if (error) {
-          throw new Error(`DM failed: ${error.message}`);
-        }
-        
-        return data;
-        
-      } else {
-        const { data, error } = await supabase
-          .from('community_messages')
-          .insert({
-            sender_id: user.id,
-            community_id: selectedChat.id,
-            content: vars.content || null,
-            image_url: imageUrl,
-            is_deleted: false,
-            is_pinned: false
-          })
-          .select()
-          .single();
-        
-        if (error) {
-          throw new Error(`Community message failed: ${error.message}`);
-        }
-        
-        return data;
-      }
-    },
-    
-    onMutate: async (vars) => {
-      if (!selectedChat || !user) return;
-      
-      await queryClient.cancelQueries({ 
-        queryKey: ['messages', selectedChat.type, selectedChat.id] 
-      });
 const sendMessage = useMutation({
     mutationFn: async (vars: { content: string | null; file: File | null }) => {
       if ((!vars.content && !vars.file) || !selectedChat || !user) {
@@ -819,7 +741,9 @@ const sendMessage = useMutation({
             sender_id: user.id,
             community_id: selectedChat.id,
             content: vars.content || null,
-            image_url: imageUrl
+            image_url: imageUrl,
+            is_deleted: false,
+            is_pinned: false
           })
           .select()
           .single();
