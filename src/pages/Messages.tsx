@@ -1169,7 +1169,7 @@ const sendMessage = useMutation({
           </div>
         </div>
 
-    {/* Input area */}
+{/* Input area */}
         <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t bg-background/95 backdrop-blur-xl shrink-0">
           {canType ? (
             <div className="flex flex-col gap-3">
