@@ -801,13 +801,14 @@ const { data: storyData, error: storyError } = await supabase
     init();
   }, [user]);
 
-  // ✅ ADD NEW: Separate effect for Smart Feed location
+  // ✅ FIXED: Only fetch AI feed when user navigates to "For You" tab
   useEffect(() => {
-    // Only fetch AI feed when user is on "For You" tab AND is premium
-    const urlParams = new URLSearchParams(window.location.search);
-    const isOnSmartFeedTab = urlParams.get('tab') === 'foryou';
+    // Don't run if not premium or no active tab selection
+    if (!isPremium || smartFeed.length > 0) return;
     
-    if (!isPremium || !isOnSmartFeedTab || smartFeed.length > 0) return;
+    // Only fetch when explicitly on the foryou tab
+    const currentTab = new URLSearchParams(window.location.search).get('tab');
+    if (currentTab !== 'foryou') return;
     
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -845,10 +846,9 @@ const { data: storyData, error: storyError } = await supabase
       },
       (err) => {
         console.warn('Location denied for Smart Feed', err);
-        // Don't show error toast - user can still use other features
       }
     );
-  }, [isPremium, user?.id]); // Only run when premium status changes
+  }, [isPremium, user?.id, window.location.search]); // Watch URL changes
 
   const handleUpload = async () => {
   if (!preview || !user) return;
