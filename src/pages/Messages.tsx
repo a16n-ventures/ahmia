@@ -1452,7 +1452,7 @@ export default function Messages() {
                       member_count: comm.member_count,
                       my_role: comm.my_role,
                       is_joined: comm.is_joined
-                    });
+                    })
                   }
                   >
                   <AvatarImage src={comm.cover || comm.cover_url || comm.avatar} />
@@ -1467,7 +1467,7 @@ export default function Messages() {
                     my_role: comm.my_role,
                     member_count: comm.member_count,
                     is_joined: comm.is_joined
-                  });>
+                  })>
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-bold text-[15px] truncate group-hover:text-primary transition-colors">{comm.name}</h3>
                     {comm.my_role === 'admin' && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-200">Admin</Badge>}
