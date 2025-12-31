@@ -18,6 +18,7 @@ const MainLayout = () => {
   const [userRole, setUserRole] = useState<any>(null); 
   const [notificationCount, setNotificationCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [isPremium, setIsPremium] = useState(false); // ✅ ADDED: Track premium status
 
   // Global real-time notifications with toast alerts
   useRealtimeNotifications();
@@ -36,7 +37,6 @@ const MainLayout = () => {
     if (currentTab) setActiveTab(currentTab.id);
   }, [location.pathname]);
 
-  // ✅ FIX 1: Removed duplicate useEffect, consolidated into one
   useEffect(() => {
     if (!user) return;
 
@@ -55,6 +55,14 @@ const MainLayout = () => {
       .eq('user_id', user.id)
       .single()
       .then(({ data }) => setUserRole(data)); 
+
+    // ✅ ADDED: Get Premium Status
+    supabase
+      .from('subscriptions')
+      .select('status')
+      .eq('user_id', user.id)
+      .single()
+      .then(({ data }) => setIsPremium(data?.status === 'active'));
 
     // Get Initial Unread Count (friend requests + event invitations)
     const fetchNotifications = async () => {
@@ -98,7 +106,6 @@ const MainLayout = () => {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'friendships', filter: `addressee_id=eq.${user.id}` },
         (payload) => {
-          // If request was accepted/declined, decrement count
           if (payload.old.status === 'pending' && payload.new.status !== 'pending') {
             setNotificationCount((prev) => Math.max(0, prev - 1));
           }
@@ -188,8 +195,8 @@ const MainLayout = () => {
          <span className="text-sm font-bold leading-none group-hover:text-primary transition-colors">
            {profile?.display_name || 'Welcome'}
          </span>
-         {/* ✅ ADD VERIFICATION BADGE */}
-         {profile?.is_verified && (
+         {/* ✅ FIXED: Only show verification badge for premium users */}
+         {isPremium && (
            <svg 
              className="w-4 h-4 text-blue-500 flex-shrink-0" 
              viewBox="0 0 22 22" 
