@@ -449,7 +449,8 @@ const friends = useMemo(() => {
   });
 
   // Scroll hook
-  const { scrollRef, scrollToBottom } = useScrollToBottom(messages);
+  const safeMessages = messages ?? [];
+  const { scrollRef, scrollToBottom } = useScrollToBottom(safeMessages);
 
   // Mark as read
   useEffect(() => {
@@ -853,7 +854,6 @@ const sendMessage = useMutation({
   if (selectedChat) {
     const isComm = selectedChat.type === 'community';
 
-    // With this:
     const { data: myMembership } = useQuery({
       queryKey: ['my_membership', selectedChat?.id, user?.id],
       queryFn: async () => {
@@ -870,7 +870,10 @@ const sendMessage = useMutation({
     });
     
     const isMuted = myMembership?.muted_until && new Date(myMembership.muted_until) > new Date();
-    const canType = !isComm || (isComm && selectedChat.my_role !== 'none' && !isMuted);
+    const canType =
+      !isComm ||
+      (isComm && selectedChat.my_role && selectedChat.my_role !== 'none' && !isMuted
+      );
 
     const canModerate = isComm && (selectedChat.my_role === 'admin' || selectedChat.my_role === 'moderator');
     const chatImages = messages.filter(m => m.image_url && !m.is_deleted).map(m => ({ url: m.image_url!, id: m.id }));
@@ -1305,17 +1308,20 @@ const sendMessage = useMutation({
             commList.filter((c) => c.name.toLowerCase().includes(debouncedSearch.toLowerCase())).map((comm) => (
               <div key={comm.id} className="flex items-center gap-4 p-4 hover:bg-muted/50 rounded-2xl transition-all bg-gradient-to-r from-background to-muted/5 group">
                 <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md cursor-pointer group-hover:shadow-lg transition-all" 
-                  onClick={() => setSelectedChat({ 
-                    type: 'community', 
-                    id: comm.id, 
-                    name: comm.name, 
-                    avatar: comm.cover || comm.cover_url || comm.avatar, 
-                    cover: comm.cover || comm.cover_url,
-                    cover_url: comm.cover_url,
-                    description: comm.description, 
-                    my_role: comm.my_role, 
-                    member_count: comm.member_count 
-                  })}>
+                  onClick={() =>
+                    setSelectedChat({
+                      type: 'community',
+                      id: comm.id,
+                      name: comm.name,
+                      avatar: comm.cover || comm.cover_url || comm.avatar,
+                      cover: comm.cover || comm.cover_url,
+                      cover_url: comm.cover_url,
+                      member_count: comm.member_count,
+                      my_role: comm.my_role,
+                      is_joined: comm.is_joined
+                    })
+                  }
+                  >
                   <AvatarImage src={comm.cover || comm.cover_url || comm.avatar} />
                   <AvatarFallback>{comm.name?.[0]?.toUpperCase() || 'C'}</AvatarFallback>
                 </Avatar>
