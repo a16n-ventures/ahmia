@@ -743,14 +743,25 @@ export default function Discover() {
         setEvents(mappedEvents);
       }
 
+      // ✅ FIXED: Check both subscriptions AND premium_features tables
       const { data: sub } = await supabase
         .from('subscriptions')
         .select('status')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      const prem = sub?.status === 'active';
-      setIsPremium(prem);
+      const { data: premiumFeature } = await supabase
+        .from('premium_features')
+        .select('is_active')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle();
+
+      const isSubscribed = sub?.status === 'active';
+      const hasPremiumFeature = !!premiumFeature;
+
+      setIsPremium(isSubscribed || hasPremiumFeature);
       
       setLoading(false);
     };
