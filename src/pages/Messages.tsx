@@ -160,7 +160,7 @@ export default function Messages() {
   // Clear typing when chat changes
   useEffect(() => {
     clearTyping();
-  }, [selectedChat?.id, clearTyping]);
+  }, [selectedChat?.id]); //, clearTyping
 
   // Debounce search query
   useEffect(() => {
@@ -330,22 +330,18 @@ export default function Messages() {
   });
   
         // 4. ADD ERROR DISPLAY FOR DM LIST
-        // In the render section, add error handling:
-        if (dmError) {
-          console.error('DM List Error:', dmError);
-          return (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <p className="text-destructive mb-2">Failed to load conversations</p>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => queryClient.invalidateQueries({ queryKey: ['dm_list'] })}
-              >
-                Retry
-              </Button>
-            </div>
-          );
-        }
+        {dmError && (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <p className="text-destructive mb-2">Failed to load conversations</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['dm_list'] })}
+            >
+              Retry
+            </Button>
+          </div>
+        )}
       
         // FIXED COMMUNITIES QUERY - Properly fetch all community data
         const { data: commList = [], isLoading: loadingComms } = useQuery({
@@ -373,6 +369,25 @@ export default function Messages() {
                 console.log("ℹ️ No communities found");
                 return [];
               }
+              
+              const { data: myMembership } = useQuery({
+                queryKey: ['my_membership', selectedChat?.id, user?.id],
+                queryFn: async () => {
+                  if (!user?.id || !selectedChat || selectedChat.type !== 'community') {
+                    return null;
+                  }
+              
+                  const { data } = await supabase
+                    .from('community_members')
+                    .select('role, muted_until')
+                    .eq('community_id', selectedChat.id)
+                    .eq('user_id', user.id)
+                    .single();
+              
+                  return data;
+                },
+                enabled: selectedChat?.type === 'community' && !!user?.id
+              });
       
               // Fetch user's memberships
               const { data: memberships, error: memError } = await supabase
@@ -643,79 +658,79 @@ export default function Messages() {
     onError: (e: any) => toast.error(e?.message ?? "Failed to join community")
   });
 
-const createCommunity = useMutation({
-  mutationFn: async () => {
-    if (!user) throw new Error("Not authenticated");
-    if (!newCommName.trim()) throw new Error("Community name is required");
-
-    let coverUrl: string | null = null;
-    if (newCommCoverFile) {
-      const fileExt = newCommCoverFile.name.split('.').pop();
-      const filePath = `community-covers/${user.id}-${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError, data: uploadData } = await supabase.storage
-        .from('chat-attachments')
-        .upload(filePath, newCommCoverFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
-      
-      if (uploadError) {
-        console.error("Cover upload error:", uploadError);
-        throw new Error("Failed to upload cover image");
+  const createCommunity = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error("Not authenticated");
+      if (!newCommName.trim()) throw new Error("Community name is required");
+  
+      let coverUrl: string | null = null;
+      if (newCommCoverFile) {
+        const fileExt = newCommCoverFile.name.split('.').pop();
+        const filePath = `community-covers/${user.id}-${Date.now()}.${fileExt}`;
+        
+        const { error: uploadError, data: uploadData } = await supabase.storage
+          .from('chat-attachments')
+          .upload(filePath, newCommCoverFile, {
+            cacheControl: '3600',
+            upsert: false
+          });
+        
+        if (uploadError) {
+          console.error("Cover upload error:", uploadError);
+          throw new Error("Failed to upload cover image");
+        }
+        
+        const { data: urlData } = supabase.storage
+          .from('chat-attachments')
+          .getPublicUrl(filePath);
+        
+        coverUrl = urlData.publicUrl;
+        console.log("✅ Cover uploaded successfully:", coverUrl);
       }
+  
+        const { data: comm, error } = await supabase
+        .from('communities')
+        .insert({ 
+          name: newCommName.trim(), 
+          description: newCommDesc.trim(), 
+          creator_id: user.id, 
+          member_count: 1,
+          cover_url: coverUrl
+        })
+        .select()
+        .single();
       
-      const { data: urlData } = supabase.storage
-        .from('chat-attachments')
-        .getPublicUrl(filePath);
+      if (error) {
+        console.error("Community creation error:", error);
+        throw error;
+      }
+  
+        await supabase.from('community_members').insert({ 
+        community_id: comm.id, 
+        user_id: user.id, 
+        role: 'admin' 
+      });
       
-      coverUrl = urlData.publicUrl;
-      console.log("✅ Cover uploaded successfully:", coverUrl);
+      return comm;
+    },
+    onSuccess: (comm) => {
+      console.log("✅ Community created:", comm);
+      setIsCreateCommunityOpen(false);
+      setNewCommName('');
+      setNewCommDesc('');
+      setNewCommCoverFile(null);
+      if (newCommCoverPreview?.startsWith('blob:')) {
+        try { URL.revokeObjectURL(newCommCoverPreview); } catch {}
+      }
+      setNewCommCoverPreview(null);
+      queryClient.invalidateQueries({ queryKey: ['comm_list'] });
+      toast.success("Community created successfully!");
+    },
+    onError: (e: any) => {
+      console.error("❌ Create community error:", e);
+      toast.error(e?.message ?? "Failed to create community");
     }
-
-      const { data: comm, error } = await supabase
-      .from('communities')
-      .insert({ 
-        name: newCommName.trim(), 
-        description: newCommDesc.trim(), 
-        creator_id: user.id, 
-        member_count: 1,
-        cover_url: coverUrl
-      })
-      .select()
-      .single();
-    
-    if (error) {
-      console.error("Community creation error:", error);
-      throw error;
-    }
-
-      await supabase.from('community_members').insert({ 
-      community_id: comm.id, 
-      user_id: user.id, 
-      role: 'admin' 
-    });
-    
-    return comm;
-  },
-  onSuccess: (comm) => {
-    console.log("✅ Community created:", comm);
-    setIsCreateCommunityOpen(false);
-    setNewCommName('');
-    setNewCommDesc('');
-    setNewCommCoverFile(null);
-    if (newCommCoverPreview?.startsWith('blob:')) {
-      try { URL.revokeObjectURL(newCommCoverPreview); } catch {}
-    }
-    setNewCommCoverPreview(null);
-    queryClient.invalidateQueries({ queryKey: ['comm_list'] });
-    toast.success("Community created successfully!");
-  },
-  onError: (e: any) => {
-    console.error("❌ Create community error:", e);
-    toast.error(e?.message ?? "Failed to create community");
-  }
-});
+  });
 
   const pinMessage = useMutation({
     mutationFn: async ({ messageId, isPinned }: { messageId: string; isPinned: boolean }) => {
@@ -739,146 +754,146 @@ const createCommunity = useMutation({
     }
   });
 
-const sendMessage = useMutation({
-  mutationFn: async (vars: { content: string | null; file: File | null }) => {
-    if ((!vars.content && !vars.file) || !selectedChat || !user) {
-      throw new Error('Missing required data');
-    }
-
-    // 1. Upload file if exists
-    let imageUrl: string | null = null;
-    if (vars.file) {
-      const fileExt = vars.file.name.split('.').pop();
-      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('chat-attachments')
-        .upload(filePath, vars.file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-      
-      if (uploadError) {
-        throw new Error(`Upload failed: ${uploadError.message}`);
+  const sendMessage = useMutation({
+    mutationFn: async (vars: { content: string | null; file: File | null }) => {
+      if ((!vars.content && !vars.file) || !selectedChat || !user) {
+        throw new Error('Missing required data');
       }
-      
-      const { data: urlData } = supabase.storage
-        .from('chat-attachments')
-        .getPublicUrl(filePath);
-      
-      imageUrl = urlData.publicUrl;
-    }
-
-    // 2. Insert message based on type
-    if (selectedChat.type === 'dm') {
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          sender_id: user.id,
-          receiver_id: selectedChat.partner_id,
-          content: vars.content || null,
-          image_url: imageUrl,
-          is_read: false
-        })
-        .select()
-        .single();
-      
-      if (error) {
-        throw new Error(`DM failed: ${error.message}`);
-      }
-      
-      return data;
-      
-    } else {
-      const { data, error } = await supabase
-        .from('community_messages')
-        .insert({
-          sender_id: user.id,
-          community_id: selectedChat.id,
-          content: vars.content || null,
-          image_url: imageUrl,
-          is_deleted: false,
-          is_pinned: false
-        })
-        .select()
-        .single();
-      
-      if (error) {
-        throw new Error(`Community message failed: ${error.message}`);
-      }
-      
-      return data;
-    }
-  },
   
-  onMutate: async (vars) => {
-    if (!selectedChat || !user) return;
-    
-    await queryClient.cancelQueries({ 
-      queryKey: ['messages', selectedChat.type, selectedChat.id] 
-    });
-    
-    const previousMessages = queryClient.getQueryData<Message[]>([
-      'messages', 
-      selectedChat.type, 
-      selectedChat.id
-    ]);
-
-    const optimisticMessage: Message = {
-      id: `temp-${Date.now()}`,
-      content: vars.content ?? null,
-      image_url: vars.file ? URL.createObjectURL(vars.file) : undefined,
-      created_at: new Date().toISOString(),
-      sender_id: user.id,
-      is_me: true,
-      pending: true,
-      sender_name: 'You', 
-      sender_avatar: undefined
-    };
-    
-    queryClient.setQueryData(
-      ['messages', selectedChat.type, selectedChat.id], 
-      (old: Message[] | undefined) => {
-        return old ? [...old, optimisticMessage] : [optimisticMessage];
+      // 1. Upload file if exists
+      let imageUrl: string | null = null;
+      if (vars.file) {
+        const fileExt = vars.file.name.split('.').pop();
+        const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('chat-attachments')
+          .upload(filePath, vars.file, {
+            cacheControl: '3600',
+            upsert: false
+          });
+        
+        if (uploadError) {
+          throw new Error(`Upload failed: ${uploadError.message}`);
+        }
+        
+        const { data: urlData } = supabase.storage
+          .from('chat-attachments')
+          .getPublicUrl(filePath);
+        
+        imageUrl = urlData.publicUrl;
       }
-    );
-
-    setMessageInput('');
-    if (imagePreview?.startsWith('blob:')) {
-      try { URL.revokeObjectURL(imagePreview); } catch {}
-    }
-    setImageFile(null);
-    setImagePreview(null);
-    scrollToBottom();
-
-    return { previousMessages };
-  },
   
-  onError: (err: any, _vars, context: any) => {
-    if (context?.previousMessages) {
+      // 2. Insert message based on type
+      if (selectedChat.type === 'dm') {
+        const { data, error } = await supabase
+          .from('messages')
+          .insert({
+            sender_id: user.id,
+            receiver_id: selectedChat.partner_id,
+            content: vars.content || null,
+            image_url: imageUrl,
+            is_read: false
+          })
+          .select()
+          .single();
+        
+        if (error) {
+          throw new Error(`DM failed: ${error.message}`);
+        }
+        
+        return data;
+        
+      } else {
+        const { data, error } = await supabase
+          .from('community_messages')
+          .insert({
+            sender_id: user.id,
+            community_id: selectedChat.id,
+            content: vars.content || null,
+            image_url: imageUrl,
+            is_deleted: false,
+            is_pinned: false
+          })
+          .select()
+          .single();
+        
+        if (error) {
+          throw new Error(`Community message failed: ${error.message}`);
+        }
+        
+        return data;
+      }
+    },
+    
+    onMutate: async (vars) => {
+      if (!selectedChat || !user) return;
+      
+      await queryClient.cancelQueries({ 
+        queryKey: ['messages', selectedChat.type, selectedChat.id] 
+      });
+      
+      const previousMessages = queryClient.getQueryData<Message[]>([
+        'messages', 
+        selectedChat.type, 
+        selectedChat.id
+      ]);
+  
+      const optimisticMessage: Message = {
+        id: `temp-${Date.now()}`,
+        content: vars.content ?? null,
+        image_url: vars.file ? URL.createObjectURL(vars.file) : undefined,
+        created_at: new Date().toISOString(),
+        sender_id: user.id,
+        is_me: true,
+        pending: true,
+        sender_name: 'You', 
+        sender_avatar: undefined
+      };
+      
       queryClient.setQueryData(
-        ['messages', selectedChat?.type, selectedChat?.id], 
-        context.previousMessages
+        ['messages', selectedChat.type, selectedChat.id], 
+        (old: Message[] | undefined) => {
+          return old ? [...old, optimisticMessage] : [optimisticMessage];
+        }
       );
+  
+      setMessageInput('');
+      if (imagePreview?.startsWith('blob:')) {
+        try { URL.revokeObjectURL(imagePreview); } catch {}
+      }
+      setImageFile(null);
+      setImagePreview(null);
+      scrollToBottom();
+  
+      return { previousMessages };
+    },
+    
+    onError: (err: any, _vars, context: any) => {
+      if (context?.previousMessages) {
+        queryClient.setQueryData(
+          ['messages', selectedChat?.type, selectedChat?.id], 
+          context.previousMessages
+        );
+      }
+      
+      toast.error(err.message || 'Failed to send message');
+    },
+    
+    onSuccess: () => {
+      // Message sent successfully
+    },
+    
+    onSettled: () => {
+      queryClient.invalidateQueries({ 
+        queryKey: ['messages', selectedChat?.type, selectedChat?.id] 
+      });
+      
+      queryClient.invalidateQueries({ 
+        queryKey: ['dm_list'] 
+      });
     }
-    
-    toast.error(err.message || 'Failed to send message');
-  },
-  
-  onSuccess: () => {
-    // Message sent successfully
-  },
-  
-  onSettled: () => {
-    queryClient.invalidateQueries({ 
-      queryKey: ['messages', selectedChat?.type, selectedChat?.id] 
-    });
-    
-    queryClient.invalidateQueries({ 
-      queryKey: ['dm_list'] 
-    });
-  }
-});
+  });
 
   const editMessage = useMutation({
     mutationFn: async ({ msg, newContent }: { msg: Message, newContent: string }) => {
@@ -969,37 +984,9 @@ const sendMessage = useMutation({
     };
   }, [imagePreview]);
 
-  // Check for errors AFTER all hooks are declared
-  if (hasError) {
-    return <div>Error boundary UI</div>;
-  }
-  
-  if (!user) {
-    return <div>Loading...</div>;
-  }
-  
-  if (dmError) {
-    return <div>Failed to load conversations</div>;
-  }
-
   // Chat view
   if (selectedChat) {
     const isComm = selectedChat.type === 'community';
-
-    const { data: myMembership } = useQuery({
-      queryKey: ['my_membership', selectedChat?.id, user?.id],
-      queryFn: async () => {
-        if (!user?.id || !selectedChat || selectedChat.type !== 'community') return null;
-        const { data } = await supabase
-          .from('community_members')
-          .select('role, muted_until')
-          .eq('community_id', selectedChat.id)
-          .eq('user_id', user.id)
-          .single();
-        return data;
-      },
-      enabled: !!selectedChat && selectedChat.type === 'community' && !!user?.id
-    });
     
     const isMuted = myMembership?.muted_until && new Date(myMembership.muted_until) > new Date();
     const canType =
@@ -1404,7 +1391,8 @@ const sendMessage = useMutation({
               <Button onClick={() => setIsNewChatOpen(true)} className="rounded-full mt-4">Start a Chat</Button>
             </div>
           ) : (
-            dmList.filter((d) => d.name.toLowerCase().includes(debouncedSearch.toLowerCase())).map((dm) => (
+            dmList.filter((d) =>
+                d.name?.toLowerCase()?.includes(debouncedSearch.toLowerCase())).map((dm) => (
               <div 
                 key={dm.id} 
                 className="flex items-center gap-4 p-4 hover:bg-muted/50 rounded-2xl transition-all cursor-pointer bg-gradient-to-r from-background to-muted/5 group"
@@ -1457,19 +1445,29 @@ const sendMessage = useMutation({
                       type: 'community',
                       id: comm.id,
                       name: comm.name,
-                      avatar: comm.cover || comm.cover_url || comm.avatar,
+                      avatar: comm.cover || comm.cover_url,
                       cover: comm.cover || comm.cover_url,
                       cover_url: comm.cover_url,
+                      description: comm.description,
                       member_count: comm.member_count,
                       my_role: comm.my_role,
                       is_joined: comm.is_joined
-                    })
+                    });
                   }
                   >
                   <AvatarImage src={comm.cover || comm.cover_url || comm.avatar} />
                   <AvatarFallback>{comm.name?.[0]?.toUpperCase() || 'C'}</AvatarFallback>
                 </Avatar>
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedChat({ type: 'community', id: comm.id, name: comm.name, cover: comm.cover_url, description: comm.description, my_role: comm.my_role, member_count: comm.member_count })}>
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedChat({
+                    type: 'community',
+                    id: comm.id,
+                    name: comm.name,
+                    cover: comm.cover_url,
+                    description: comm.description,
+                    my_role: comm.my_role,
+                    member_count: comm.member_count,
+                    is_joined: comm.is_joined
+                  });>
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-bold text-[15px] truncate group-hover:text-primary transition-colors">{comm.name}</h3>
                     {comm.my_role === 'admin' && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-200">Admin</Badge>}
@@ -1558,7 +1556,7 @@ const sendMessage = useMutation({
                           <div 
                             key={f.id} 
                             onClick={() => { 
-                              setSelectedChat({ type: 'dm', id: f.id, partner_id: f.id, name: f.name, avatar: f.avatar, is_online: f.is_online }); 
+                            setSelectedChat({ type: 'dm', id: f.id, partner_id: f.id, name: f.name, avatar: f.avatar, is_online: f.is_online }); 
                               setIsNewChatOpen(false); 
                             }} 
                             className="flex items-center gap-3 p-3 hover:bg-muted/60 rounded-xl cursor-pointer transition-all group"
