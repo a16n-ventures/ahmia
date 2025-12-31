@@ -40,17 +40,33 @@ import { CommunitySettingsDialog } from '@/components/messages/CommunitySettings
 
 // Helper function to extract display name from profile
 const getDisplayName = (profile: any): string => {
-  if (!profile) return 'Unknown User';
-  
-  // Priority order: display_name > username > full_name > email
-  if (profile.display_name?.trim()) return profile.display_name.trim();
-  if (profile.username?.trim()) return profile.username.trim();
-  if (profile.email) return profile.email.split('@')[0];
-  
-  return 'Unknown User';
+  try {
+    if (!profile) return 'Unknown User';
+    
+    // Handle array wrapping (from Supabase joins)
+    const p = Array.isArray(profile) ? profile[0] : profile;
+    if (!p) return 'Unknown User';
+    
+    // Priority order: display_name > username > email
+    if (p.display_name && typeof p.display_name === 'string' && p.display_name.trim()) {
+      return p.display_name.trim();
+    }
+    if (p.username && typeof p.username === 'string' && p.username.trim()) {
+      return p.username.trim();
+    }
+    if (p.email && typeof p.email === 'string') {
+      return p.email.split('@')[0] || 'Unknown User';
+    }
+    
+    return 'Unknown User';
+  } catch (error) {
+    console.error('Error in getDisplayName:', error);
+    return 'Unknown User';
+  }
 };
 
 export default function Messages() {
+  const [hasError, setHasError] = useState(false);
   const { user } = useAuth() || {};
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -120,6 +136,26 @@ export default function Messages() {
     handleTypingUpdate,
     () => { /* On new message received */ }
   );
+  
+  useEffect(() => {
+    const handleError = (error: ErrorEvent) => {
+      console.error('Caught error:', error);
+      setHasError(true);
+    };
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
+  
+  if (hasError) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-background">
+        <div className="text-center space-y-3">
+          <p className="text-lg font-semibold text-destructive">Something went wrong</p>
+          <Button onClick={() => window.location.reload()}>Reload Page</Button>
+        </div>
+      </div>
+    );
+  }
 
   // Clear typing when chat changes
   useEffect(() => {
@@ -133,14 +169,15 @@ export default function Messages() {
   }, [searchQuery]);
 
   // FIXED DM LIST QUERY - Properly fetch and display user names
-  const { data: dmList = [], isLoading: loadingDMs } = useQuery({
-    queryKey: ['dm_list', user?.id],
-    queryFn: async (): Promise<DMListItem[]> => {
+  const { data: dmList = [], isLoading: loadingDMs, error: dmError } = useQuery({
+  queryKey: ['dm_list', user?.id],
+  queryFn: async (): Promise<DMListItem[]> => {
+    try {
       if (!user?.id) return [];
 
       console.log("🔍 Fetching DM list for user:", user.id);
 
-      // Step 1: Get all messages involving this user
+      // Step 1: Get all messages with error handling
       const { data: rawMessages, error: msgError } = await supabase
         .from('messages')
         .select('*')
@@ -149,24 +186,40 @@ export default function Messages() {
 
       if (msgError) {
         console.error("❌ Error fetching messages:", msgError);
+        throw new Error(`Failed to fetch messages: ${msgError.message}`);
+      }
+
+      if (!rawMessages || rawMessages.length === 0) {
+        console.log("ℹ️ No messages found");
         return [];
       }
 
-      console.log("📧 Raw messages fetched:", rawMessages?.length);
+      console.log("📧 Raw messages fetched:", rawMessages.length);
 
-      // Step 2: Build partner map with latest message details
+      // Step 2: Build partner map with null checks
       const partnerMap = new Map<string, { last_msg: string; time: string }>();
       const partnerIds = new Set<string>();
 
-      rawMessages?.forEach((msg: any) => {
-        const partnerId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
-        
-        if (!partnerMap.has(partnerId)) {
-          partnerMap.set(partnerId, {
-            last_msg: msg.content ?? (msg.image_url ? '📷 Photo' : 'Message'),
-            time: msg.created_at
-          });
-          partnerIds.add(partnerId);
+      rawMessages.forEach((msg: any) => {
+        try {
+          if (!msg) return;
+          
+          const partnerId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
+          
+          if (!partnerId || typeof partnerId !== 'string') {
+            console.warn('Invalid partner ID:', partnerId);
+            return;
+          }
+          
+          if (!partnerMap.has(partnerId)) {
+            partnerMap.set(partnerId, {
+              last_msg: msg.content ?? (msg.image_url ? '📷 Photo' : 'Message'),
+              time: msg.created_at || new Date().toISOString()
+            });
+            partnerIds.add(partnerId);
+          }
+        } catch (err) {
+          console.error('Error processing message:', err);
         }
       });
 
@@ -175,30 +228,35 @@ export default function Messages() {
 
       if (idsList.length === 0) return [];
 
-      // Step 3: Fetch ALL profiles for partners with comprehensive field selection
+      // Step 3: Fetch profiles with error handling
       const { data: profiles, error: profileError } = await supabase
-  .from('profiles')
-  .select('id, user_id, display_name, username, email, avatar_url')
-  .in('user_id', idsList);
+        .from('profiles')
+        .select('id, user_id, display_name, username, email, avatar_url')
+        .in('user_id', idsList);
 
       if (profileError) {
         console.error("❌ Profile fetch error:", profileError);
+        // Don't throw - continue with what we have
       }
 
       console.log("👤 Profiles fetched:", profiles?.length, "/ Expected:", idsList.length);
 
-      // Step 4: Create profile lookup map
+      // Step 4: Create profile lookup with safety
       const profileLookup = new Map<string, any>();
-profiles?.forEach((p: any) => {
-  // Map by user_id (primary key for lookups)
-  if (p.user_id) {
-    profileLookup.set(p.user_id, p);
-  }
-  // Also map by id if different
-  if (p.id && p.id !== p.user_id) {
-    profileLookup.set(p.id, p);
-  }
-});
+      if (profiles && Array.isArray(profiles)) {
+        profiles.forEach((p: any) => {
+          try {
+            if (p && p.user_id) {
+              profileLookup.set(p.user_id, p);
+            }
+            if (p && p.id && p.id !== p.user_id) {
+              profileLookup.set(p.id, p);
+            }
+          } catch (err) {
+            console.error('Error processing profile:', err);
+          }
+        });
+      }
 
       // Step 5: Fetch unread counts
       const { data: unreadData } = await supabase
@@ -208,106 +266,152 @@ profiles?.forEach((p: any) => {
         .eq('is_read', false);
 
       const unreadCounts = new Map<string, number>();
-      unreadData?.forEach((m: any) => {
-        unreadCounts.set(m.sender_id, (unreadCounts.get(m.sender_id) || 0) + 1);
-      });
+      if (unreadData && Array.isArray(unreadData)) {
+        unreadData.forEach((m: any) => {
+          if (m && m.sender_id) {
+            unreadCounts.set(m.sender_id, (unreadCounts.get(m.sender_id) || 0) + 1);
+          }
+        });
+      }
 
       // Step 6: Map to DMListItem with proper name resolution
-      return idsList.map(pid => {
-        const details = partnerMap.get(pid)!;
-        const profile = profileLookup.get(pid);
+      const dmListItems = idsList
+        .map(pid => {
+          try {
+            const details = partnerMap.get(pid);
+            if (!details) {
+              console.warn(`⚠️ No details for partner ID: ${pid}`);
+              return null;
+            }
 
-        if (!profile) {
-          console.warn(`⚠️ No profile found for partner ID: ${pid}`);
-        }
+            const profile = profileLookup.get(pid);
+            const displayName = getDisplayName(profile);
 
-        const displayName = getDisplayName(profile);
+            console.log(`✅ DM mapped: ${displayName} (${pid})`);
 
-        console.log(`✅ DM mapped: ${displayName} (${pid})`);
+            return {
+              type: 'dm' as const,
+              id: pid,
+              partner_id: pid,
+              name: displayName,
+              avatar: profile?.avatar_url || undefined,
+              last_msg: details.last_msg,
+              time: details.time,
+              is_online: false,
+              unread_count: unreadCounts.get(pid) || 0
+            };
+          } catch (err) {
+            console.error(`Error mapping DM for partner ${pid}:`, err);
+            return null;
+          }
+        })
+        .filter((item): item is DMListItem => item !== null)
+        .sort((a, b) => {
+          try {
+            return new Date(b.time).getTime() - new Date(a.time).getTime();
+          } catch {
+            return 0;
+          }
+        });
 
-        return {
-          type: 'dm' as const,
-          id: pid,
-          partner_id: pid,
-          name: displayName,
-          avatar: profile?.avatar_url,
-          last_msg: details.last_msg,
-          time: details.time,
-          is_online: false,
-          unread_count: unreadCounts.get(pid) || 0
-        };
-      }).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        console.log(`✅ Successfully mapped ${dmListItems.length} DMs`);
+        return dmListItems;
+        
+      } catch (error) {
+        console.error("💥 Fatal error in DM list query:", error);
+        throw error;
+      }
     },
     enabled: !!user?.id,
     staleTime: 30000,
-    refetchInterval: 60000 // Refetch every minute to keep names updated
+    refetchInterval: 60000,
+    retry: 2,
+    retryDelay: 1000
   });
-
-  // FIXED COMMUNITIES QUERY - Properly fetch all community data
-  const { data: commList = [], isLoading: loadingComms } = useQuery({
-    queryKey: ['comm_list', user?.id],
-    queryFn: async (): Promise<CommunityListItem[]> => {
-      if (!user?.id) return [];
+  
+        // 4. ADD ERROR DISPLAY FOR DM LIST
+        // In the render section, add error handling:
+        if (dmError) {
+          console.error('DM List Error:', dmError);
+          return (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <p className="text-destructive mb-2">Failed to load conversations</p>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['dm_list'] })}
+              >
+                Retry
+              </Button>
+            </div>
+          );
+        }
       
-      try {
-        console.log("🏘️ Fetching communities for user:", user.id);
-
-        // Fetch ALL communities with complete field selection
-        const { data: communities, error: commError } = await supabase
-          .from('communities')
-          .select('id, name, description, cover_url, member_count, creator_id, created_at')
-          .order('created_at', { ascending: false });
-
-        if (commError) {
-          console.error("❌ Communities fetch error:", commError);
-          throw commError;
-        }
-        
-        console.log("🏘️ Communities fetched:", communities?.length);
-
-        if (!communities || communities.length === 0) {
-          console.log("ℹ️ No communities found");
-          return [];
-        }
-
-        // Fetch user's memberships
-        const { data: memberships, error: memError } = await supabase
-          .from('community_members')
-          .select('community_id, role')
-          .eq('user_id', user.id);
-
-        if (memError) {
-          console.error("❌ Memberships fetch error:", memError);
-        }
-
-        console.log("👥 User memberships:", memberships?.length);
-
-        const membershipMap = new Map<string, string>();
-        memberships?.forEach((m: any) => {
-          membershipMap.set(m.community_id, m.role);
-        });
-
+        // FIXED COMMUNITIES QUERY - Properly fetch all community data
+        const { data: commList = [], isLoading: loadingComms } = useQuery({
+          queryKey: ['comm_list', user?.id],
+          queryFn: async (): Promise<CommunityListItem[]> => {
+            if (!user?.id) return [];
+            
+            try {
+              console.log("🏘️ Fetching communities for user:", user.id);
+      
+              // Fetch ALL communities with complete field selection
+              const { data: communities, error: commError } = await supabase
+                .from('communities')
+                .select('id, name, description, cover_url, member_count, creator_id, created_at')
+                .order('created_at', { ascending: false });
+      
+              if (commError) {
+                console.error("❌ Communities fetch error:", commError);
+                throw commError;
+              }
+              
+              console.log("🏘️ Communities fetched:", communities?.length);
+      
+              if (!communities || communities.length === 0) {
+                console.log("ℹ️ No communities found");
+                return [];
+              }
+      
+              // Fetch user's memberships
+              const { data: memberships, error: memError } = await supabase
+                .from('community_members')
+                .select('community_id, role')
+                .eq('user_id', user.id);
+      
+              if (memError) {
+                console.error("❌ Memberships fetch error:", memError);
+              }
+      
+              console.log("👥 User memberships:", memberships?.length);
+      
+              const membershipMap = new Map<string, string>();
+              memberships?.forEach((m: any) => {
+                membershipMap.set(m.community_id, m.role);
+              });
+      
         // Map communities with proper data validation
         return communities.map((c: any) => {
-  const myRole = membershipMap.get(c.id);
-  
-  const communityName = c.name?.trim() || 'Unnamed Community';
-  
-  console.log(`✅ Community: "${communityName}" - Role: ${myRole || 'none'} - Cover: ${c.cover_url ? 'Yes' : 'No'}`);
-
-  return {
-    type: 'community' as const,
-    id: c.id,
-    name: communityName,
-    description: c.description?.trim() || '',
-    cover: c.cover_url || undefined,
-    cover_url: c.cover_url || undefined,  // Add this field
-    avatar: c.cover_url || undefined,      // Add this field for consistency
-    member_count: c.member_count || 0,
-    my_role: (myRole || 'none') as 'admin' | 'moderator' | 'member' | 'none',
-    is_joined: !!myRole,
-  };
-});
+        const myRole = membershipMap.get(c.id);
+        
+        const communityName = c.name?.trim() || 'Unnamed Community';
+        
+        console.log(`✅ Community: "${communityName}" - Role: ${myRole || 'none'} - Cover: ${c.cover_url ? 'Yes' : 'No'}`);
+      
+        return {
+          type: 'community' as const,
+          id: c.id,
+          name: communityName,
+          description: c.description?.trim() || '',
+          cover: c.cover_url || undefined,
+          cover_url: c.cover_url || undefined,  // Add this field
+          avatar: c.cover_url || undefined,      // Add this field for consistency
+          member_count: c.member_count || 0,
+          my_role: (myRole || 'none') as 'admin' | 'moderator' | 'member' | 'none',
+          is_joined: !!myRole,
+        };
+      });
       } catch (e) {
         console.error("💥 Community fetch error:", e);
         return [];
@@ -321,131 +425,146 @@ profiles?.forEach((p: any) => {
   // FIXED FRIENDS HOOK - Robust name resolution
   const { friends: rawFriends = [] } = useFriends(user?.id);
 
-// Debug: Log raw friends structure
-useEffect(() => {
-  if (rawFriends && rawFriends.length > 0) {
-    console.log("🔍 Raw friends structure:", JSON.stringify(rawFriends[0], null, 2));
-  }
-}, [rawFriends]);
-
-const friends = useMemo(() => {
-  if (!rawFriends || !user?.id) {
-    console.log("❌ No friends data available");
-    return [];
-  }
+  // Debug: Log raw friends structure
+  useEffect(() => {
+    if (rawFriends && rawFriends.length > 0) {
+      console.log("🔍 Raw friends structure:", JSON.stringify(rawFriends[0], null, 2));
+    }
+  }, [rawFriends]);
   
-  console.log("👫 Processing", rawFriends.length, "friend relationships");
+  const friends = useMemo(() => {
+    try {
+      if (!rawFriends || !Array.isArray(rawFriends) || !user?.id) {
+        console.log("❌ No friends data available");
+        return [];
+      }
+      
+      console.log("👫 Processing", rawFriends.length, "friend relationships");
+      
+      const processed = rawFriends
+        .map((friendship: any, index: number) => {
+          try {
+            if (!friendship) return null;
+            
+            console.log(`\n--- Processing friendship ${index + 1} ---`);
+            
+            let profile = null;
+            let friendId = null;
   
-  const processed = rawFriends
-    .map((friendship: any, index: number) => {
-      console.log(`\n--- Processing friendship ${index + 1} ---`);
-      console.log("Friendship data:", friendship);
-      
-      let profile = null;
-      let friendId = null;
-
-      // Case 1: Current user is requester (they sent the request)
-      if (friendship.requester_id === user.id) {
-        console.log("→ User is requester, friend is addressee");
-        profile = Array.isArray(friendship.addressee) 
-          ? friendship.addressee[0] 
-          : friendship.addressee;
-        friendId = friendship.addressee_id;
-      } 
-      // Case 2: Current user is addressee (they received the request)
-      else if (friendship.addressee_id === user.id) {
-        console.log("→ User is addressee, friend is requester");
-        profile = Array.isArray(friendship.requester) 
-          ? friendship.requester[0] 
-          : friendship.requester;
-        friendId = friendship.requester_id;
-      }
-      // Case 3: Fallback - shouldn't happen but handle gracefully
-      else {
-        console.warn("⚠️ User ID doesn't match requester or addressee!");
-        return null;
-      }
-
-      // Validate we have the data we need
-      if (!profile) {
-        console.error("❌ Profile is null/undefined");
-        console.error("Friendship object:", friendship);
-        return null;
-      }
-
-      if (!friendId) {
-        console.error("❌ Friend ID could not be determined");
-        return null;
-      }
-
-      const displayName = getDisplayName(profile);
-      console.log(`✅ Resolved: ${displayName} (ID: ${friendId})`);
-      
-      return {
-        id: friendId,
-        name: displayName,
-        avatar: profile.avatar_url || null,
-        is_online: profile.is_online || false,
-        last_seen: profile.last_seen || null
-      };
-    })
-    .filter((f): f is NonNullable<typeof f> => f !== null);
-
-  console.log(`\n✅ Successfully processed ${processed.length} out of ${rawFriends.length} friends\n`);
-  return processed;
-}, [rawFriends, user?.id]);
-  // FIXED: Messages query with proper sender name resolution
-  const { data: messages = [] } = useQuery({
+            // Case 1: Current user is requester
+            if (friendship.requester_id === user.id) {
+              console.log("→ User is requester, friend is addressee");
+              const addressee = friendship.addressee;
+              profile = Array.isArray(addressee) ? addressee[0] : addressee;
+              friendId = friendship.addressee_id;
+            } 
+            // Case 2: Current user is addressee
+            else if (friendship.addressee_id === user.id) {
+              console.log("→ User is addressee, friend is requester");
+              const requester = friendship.requester;
+              profile = Array.isArray(requester) ? requester[0] : requester;
+              friendId = friendship.requester_id;
+            }
+  
+            // Validate data
+            if (!profile || !friendId) {
+              console.warn(`⚠️ Invalid friendship data at index ${index}`);
+              return null;
+            }
+  
+            const displayName = getDisplayName(profile);
+            console.log(`✅ Resolved: ${displayName} (ID: ${friendId})`);
+            
+            return {
+              id: friendId,
+              name: displayName,
+              avatar: profile.avatar_url || null,
+              is_online: profile.is_online || false,
+              last_seen: profile.last_seen || null
+            };
+          } catch (err) {
+            console.error(`Error processing friendship at index ${index}:`, err);
+            return null;
+          }
+        })
+        .filter((f): f is NonNullable<typeof f> => f !== null);
+  
+      console.log(`\n✅ Successfully processed ${processed.length} out of ${rawFriends.length} friends\n`);
+      return processed;
+    } catch (error) {
+      console.error('Fatal error in friends processing:', error);
+      return [];
+    }
+  }, [rawFriends, user?.id]);
+  
+    // FIXED: Messages query with proper sender name resolution
+    const { data: messages = [], isLoading: loadingMessages, error: messagesError } = useQuery({
     queryKey: ['messages', selectedChat?.type, selectedChat?.id, user?.id],
     queryFn: async (): Promise<Message[]> => {
-      if (!user?.id || !selectedChat) return [];
-      
-      if (selectedChat.type === 'dm') {
-        const { data, error } = await supabase
-          .from('messages')
-          .select('*')
-          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${selectedChat.partner_id}),and(sender_id.eq.${selectedChat.partner_id},receiver_id.eq.${user.id})`)
-          .order('created_at', { ascending: true });
+      try {
+        if (!user?.id || !selectedChat) return [];
         
-        if (error) throw error;
-        
-        return (data || []).map((m: any) => ({
-          ...m,
-          is_me: m.sender_id === user.id,
-          sender_name: m.sender_id === user.id ? 'You' : selectedChat.name,
-          sender_avatar: m.sender_id === user.id ? userProfile?.avatar_url : selectedChat.avatar,
-          is_deleted: m.is_deleted || false,
-          read: m.is_read
-        }));
-      } else {
-        // Community messages - fetch with full sender profile
-        const { data, error } = await supabase
-          .from('community_messages')
-          .select(`
-            *,
-            sender:profiles!sender_id(id, user_id, display_name, username, email, avatar_url)
-          `)
-          .eq('community_id', selectedChat.id)
-          .order('created_at', { ascending: true });
-        
-        if (error) throw error;
-        
-        return (data || []).map((m: any) => {
-          const sender = Array.isArray(m.sender) ? m.sender[0] : m.sender;
-          const senderName = m.sender_id === user.id ? 'You' : getDisplayName(sender);
+        if (selectedChat.type === 'dm') {
+          const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .or(`and(sender_id.eq.${user.id},receiver_id.eq.${selectedChat.partner_id}),and(sender_id.eq.${selectedChat.partner_id},receiver_id.eq.${user.id})`)
+            .order('created_at', { ascending: true });
           
-          return {
+          if (error) throw error;
+          
+          return (data || []).map((m: any) => ({
             ...m,
             is_me: m.sender_id === user.id,
-            sender_name: senderName,
-            sender_avatar: sender?.avatar_url,
-            is_deleted: m.is_deleted || false
-          };
-        });
+            sender_name: m.sender_id === user.id ? 'You' : (selectedChat.name || 'Unknown'),
+            sender_avatar: m.sender_id === user.id ? userProfile?.avatar_url : selectedChat.avatar,
+            is_deleted: m.is_deleted || false,
+            read: m.is_read
+          }));
+        } else {
+          const { data, error } = await supabase
+            .from('community_messages')
+            .select(`
+              *,
+              sender:profiles!sender_id(id, user_id, display_name, username, email, avatar_url)
+            `)
+            .eq('community_id', selectedChat.id)
+            .order('created_at', { ascending: true });
+          
+          if (error) throw error;
+          
+          return (data || []).map((m: any) => {
+            try {
+              const sender = Array.isArray(m.sender) ? m.sender[0] : m.sender;
+              const senderName = m.sender_id === user.id ? 'You' : getDisplayName(sender);
+              
+              return {
+                ...m,
+                is_me: m.sender_id === user.id,
+                sender_name: senderName,
+                sender_avatar: sender?.avatar_url,
+                is_deleted: m.is_deleted || false
+              };
+            } catch (err) {
+              console.error('Error mapping message:', err);
+              return {
+                ...m,
+                is_me: m.sender_id === user.id,
+                sender_name: 'Unknown',
+                sender_avatar: undefined,
+                is_deleted: m.is_deleted || false
+              };
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+        throw error;
       }
     },
     enabled: !!selectedChat && !!user?.id,
-    refetchOnWindowFocus: false
+    refetchOnWindowFocus: false,
+    retry: 2
   });
 
   // Scroll hook
@@ -471,6 +590,18 @@ const friends = useMemo(() => {
       }
     }
   }, [messages, selectedChat, user?.id, queryClient]);
+  
+  useEffect(() => {
+  console.log('Messages Component State:', {
+    hasUser: !!user,
+    userId: user?.id,
+    selectedChat: selectedChat?.type,
+    dmListLength: dmList?.length,
+    commListLength: commList?.length,
+    friendsLength: friends?.length,
+    messagesLength: messages?.length
+  });
+}, [user, selectedChat, dmList, commList, friends, messages]);
 
   // Scroll to message
   const scrollToId = useCallback((id: string) => {
@@ -838,16 +969,17 @@ const sendMessage = useMutation({
     };
   }, [imagePreview]);
 
-  // Not authenticated
+  // Check for errors AFTER all hooks are declared
+  if (hasError) {
+    return <div>Error boundary UI</div>;
+  }
+  
   if (!user) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-background">
-        <div className="text-center space-y-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-          <p className="text-sm text-muted-foreground">Loading messages...</p>
-        </div>
-      </div>
-    );
+    return <div>Loading...</div>;
+  }
+  
+  if (dmError) {
+    return <div>Failed to load conversations</div>;
   }
 
   // Chat view
@@ -879,6 +1011,18 @@ const sendMessage = useMutation({
     const chatImages = messages.filter(m => m.image_url && !m.is_deleted).map(m => ({ url: m.image_url!, id: m.id }));
     const pinnedMessages = isComm ? messages.filter(m => m.is_pinned && !m.is_deleted) : [];
 
+      // 6. ADD LOADING STATE CHECK AT THE TOP OF RENDER
+    if (!user) {
+      return (
+        <div className="min-h-screen w-full flex items-center justify-center bg-background">
+          <div className="text-center space-y-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+            <p className="text-sm text-muted-foreground">Loading messages...</p>
+          </div>
+        </div>
+      );
+    }
+    
     return (
       <div className="fixed inset-0 z-[100] bg-background flex flex-col h-[100dvh]">
         {/* Header */}
