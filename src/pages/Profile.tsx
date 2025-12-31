@@ -12,7 +12,7 @@ import {
   Edit3, MapPin, Users, Camera, Bell, LogOut, Crown, Trash2,
   Loader2, Gift, Copy, Radar, BarChart3, Eye, Share2, ChevronRight,
   Shield, Check, X, Calendar, MessageSquare, Heart, Star, Zap,
-  AlertCircle, RefreshCw, Settings, AtSign, Mail, User
+  AlertCircle, RefreshCw, Settings, AtSign, Mail, User, Phone
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -41,6 +41,7 @@ interface ProfileData {
   display_name: string;
   username: string;
   email: string;
+  phone?: string; // Added phone field
   bio: string;
   avatar_url: string;
   created_at: string;
@@ -152,7 +153,8 @@ const Profile = () => {
   const [settingsForm, setSettingsForm] = useState({
     fullName: '',
     username: '',
-    email: ''
+    email: '',
+    phone: '' // Added phone state
   });
 
   // Query with optimized settings
@@ -208,18 +210,19 @@ const Profile = () => {
       const radius = profile.preferences?.discovery_radius ?? 5000;
       setDiscoveryRadius([radius]);
       
-      // Sync settings form
+      // Sync settings form including phone
       setSettingsForm({
         fullName: profile.display_name || '',
         username: profile.username || '',
-        email: profile.email || user?.email || ''
+        email: profile.email || user?.email || '',
+        phone: profile.phone || ''
       });
     }
   }, [profile, user?.email]);
 
   // Profile Settings Update Mutation
   const updateProfileSettingsMutation = useMutation({
-    mutationFn: async (updates: { fullName?: string; username?: string; email?: string }) => {
+    mutationFn: async (updates: { fullName?: string; username?: string; email?: string; phone?: string }) => {
       const dbUpdates: any = {
         updated_at: new Date().toISOString(),
       };
@@ -255,19 +258,34 @@ const Profile = () => {
         dbUpdates.username = trimmedUsername;
       }
 
+      // Updated Email Logic: Only attempt Auth update if email has actually changed
       if (updates.email !== undefined) {
         const trimmedEmail = updates.email.trim().toLowerCase();
         if (!trimmedEmail) throw new Error('Email cannot be empty');
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(trimmedEmail)) throw new Error('Please enter a valid email address');
         
-        // Update auth email
-        const { error: authError } = await supabase.auth.updateUser({ 
-          email: trimmedEmail 
-        });
-        if (authError) throw authError;
-        
-        dbUpdates.email = trimmedEmail;
+        // Check if email is different from current
+        if (trimmedEmail !== user?.email?.toLowerCase()) {
+          const { error: authError } = await supabase.auth.updateUser({ 
+            email: trimmedEmail 
+          });
+          if (authError) throw authError;
+          dbUpdates.email = trimmedEmail;
+        }
+      }
+
+      // New Phone Logic
+      if (updates.phone !== undefined) {
+        const trimmedPhone = updates.phone.trim();
+        // Allow empty phone number to clear it, otherwise validate
+        if (trimmedPhone) {
+          const phoneRegex = /^\+?[0-9]{10,15}$/;
+          if (!phoneRegex.test(trimmedPhone)) {
+            throw new Error('Please enter a valid phone number (10-15 digits)');
+          }
+        }
+        dbUpdates.phone = trimmedPhone;
       }
 
       const { error } = await supabase
@@ -613,7 +631,8 @@ const Profile = () => {
     updateProfileSettingsMutation.mutate({
       fullName: settingsForm.fullName,
       username: settingsForm.username,
-      email: settingsForm.email
+      email: settingsForm.email,
+      phone: settingsForm.phone // Added phone to submit
     });
   }, [settingsForm, updateProfileSettingsMutation]);
 
@@ -1211,6 +1230,25 @@ const Profile = () => {
               <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" />
                 Changing your email will require verification
+              </p>
+            </div>
+
+            {/* Phone Number - ADDED */}
+            <div className="space-y-2">
+              <Label htmlFor="settings-phone" className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-muted-foreground" />
+                Phone Number
+              </Label>
+              <Input
+                id="settings-phone"
+                type="tel"
+                placeholder="+1234567890"
+                value={settingsForm.phone}
+                onChange={(e) => setSettingsForm(prev => ({ ...prev, phone: e.target.value }))}
+                className="h-11"
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter a valid phone number (10-15 digits). Optional.
               </p>
             </div>
           </div>
