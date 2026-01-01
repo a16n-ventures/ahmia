@@ -427,7 +427,7 @@ export default function Messages() {
   
       const { data } = await supabase
         .from('community_members')
-        .select('role')
+        .select('role, muted_until')
         .eq('community_id', selectedChat.id)
         .eq('user_id', user.id)
         .single();
@@ -555,14 +555,15 @@ export default function Messages() {
             read: m.is_read
           }));
         } else {
-          const { data, error } = await supabase
-            .from('community_messages')
-            .select(`
-              *,
-              sender:profiles!sender_id(id, user_id, display_name, username, email, avatar_url)
-            `)
-            .eq('community_id', selectedChat.id)
-            .order('created_at', { ascending: true });
+  const { data, error } = await supabase
+    .from('community_messages')
+    .select(`
+      *,
+      sender:profiles!sender_id(id, user_id, display_name, username, email, avatar_url),
+      reply_to:community_messages!reply_to_id(id, content, sender_id, image_url)
+    `)
+    .eq('community_id', selectedChat.id)
+    .order('created_at', { ascending: true });
           
           if (error) throw error;
           
@@ -991,7 +992,10 @@ const sendMessage = useMutation({
     const isComm = selectedChat.type === 'community';
     
     // Note: muted_until feature not yet implemented in the database
-    const isMuted = false; // Will be enabled when muted_until column is added
+    const isMuted = useMemo(() => {
+  if (!isComm || !myMembership) return false;
+  return myMembership.muted_until && new Date(myMembership.muted_until) > new Date();
+}, [isComm, myMembership]);
     
     // ✅ FIXED: Use LIVE membership data for role checks if available
     const myRole = myMembership?.role || selectedChat.my_role || 'none';
