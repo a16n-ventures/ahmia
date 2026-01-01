@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { 
   Search, Send, ArrowLeft, Plus, Settings, Users, 
   MessageSquare, X, Loader2, 
-  MoreVertical, Info, Image as ImageIcon, Grid, Pin, ChevronDown, ChevronUp, Upload
+  MoreVertical, Info, Image as ImageIcon, Grid, Pin, ChevronDown, ChevronUp, Upload, Shield
 } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,7 +21,8 @@ import {
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import { formatDistanceToNow } from "date-fns";
 import { useFriends } from "@/hooks/useFriends";
@@ -37,6 +38,7 @@ import { MessageBubble } from '@/components/messages/MessageBubble';
 import { MediaGallery } from '@/components/messages/MediaGallery';
 import { CommunityInfoDialog } from '@/components/messages/CommunityInfoDialog';
 import { CommunitySettingsDialog } from '@/components/messages/CommunitySettingsDialog';
+import { CommunityModerationDialog } from '@/components/messages/CommunityModerationDialog';
 
 // Helper function to extract display name from profile
 const getDisplayName = (profile: any): string => {
@@ -99,6 +101,7 @@ export default function Messages() {
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [isCreateCommunityOpen, setIsCreateCommunityOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isModerationOpen, setIsModerationOpen] = useState(false); // New State for Moderation
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -806,7 +809,7 @@ const sendMessage = useMutation({
         return data;
         
       } else {
-        // ✅ FIXED: reply_to_id now properly references the message ID being replied to (or null)
+        // ✅ ENHANCED: Ensure robust reply handling and community context
         const { data, error } = await supabase
           .from('community_messages')
           .insert({
@@ -830,7 +833,7 @@ const sendMessage = useMutation({
       }
     },
     
-    // ... keep the rest of onMutate, onError, onSettled exactly as they are ...
+    // Optimistic update
     onMutate: async (vars) => {
       if (!selectedChat || !user) return;
       
@@ -1083,6 +1086,7 @@ const sendMessage = useMutation({
                   <Info className="w-4 h-4 mr-2" />
                   {isComm ? 'Community Info' : 'View Profile'}
                 </DropdownMenuItem>
+                
                 {/* ✅ FIXED: Use computed isAdmin check based on live data */}
                 {isComm && isAdmin && (
                   <DropdownMenuItem 
@@ -1094,6 +1098,23 @@ const sendMessage = useMutation({
                     <Settings className="w-4 h-4 mr-2" />
                     Community Settings
                   </DropdownMenuItem>
+                )}
+
+                {/* ✅ NEW: Moderation Menu Item */}
+                {isComm && canModerate && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsModerationOpen(true);
+                      }}
+                      className="text-amber-600 dark:text-amber-500 focus:text-amber-700 focus:bg-amber-50 dark:focus:bg-amber-900/20"
+                    >
+                      <Shield className="w-4 h-4 mr-2" />
+                      Moderation
+                    </DropdownMenuItem>
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1157,6 +1178,16 @@ const sendMessage = useMutation({
                 currentName={selectedChat.name} 
                 currentDesc={selectedChat.description || ''} 
                 currentCoverUrl={selectedChat.cover || selectedChat.cover_url || selectedChat.avatar}
+              />
+            )}
+            {/* ✅ NEW: Moderation Dialog */}
+            {canModerate && (
+              <CommunityModerationDialog 
+                isOpen={isModerationOpen}
+                onClose={() => setIsModerationOpen(false)}
+                communityId={selectedChat.id}
+                communityName={selectedChat.name}
+                myRole={myRole}
               />
             )}
           </>
