@@ -32,7 +32,7 @@ export function ContactCard({
       <div className="flex-1 min-w-0 text-left">
         <div className="font-semibold truncate">{contact.name}</div>
         <div className="text-xs text-muted-foreground truncate">
-          {contact.email || contact.phone || 'No contact info'}
+          {contact.username || contact.phone || 'No contact info'}
         </div>
       </div>
       
@@ -43,7 +43,7 @@ export function ContactCard({
             variant="outline"
             className={`text-xs h-8 ${invitedRecently ? 'text-green-600 border-green-300' : ''}`}
             onClick={() => onInvite(contact)}
-            disabled={isInviting || (!contact.email && !contact.phone)}
+            disabled={isInviting || (!contact.username && !contact.phone)}
           >
             {isInviting ? (
               <Loader2 className="w-3 h-3 mr-1 animate-spin" />
