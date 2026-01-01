@@ -25,7 +25,7 @@ export function ContactCard({
     <div className="flex items-center gap-3 p-3 bg-card rounded-xl border border-border/40">
       <Avatar className="w-12 h-12 border border-border/50">
         <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white">
-          {contact.name[0]?.toUpperCase() || 'C'}
+          {contact.name[0]?.toUpperCase() || contact.username[0]?.toUpperCase() || 'C'}
         </AvatarFallback>
       </Avatar>
       
