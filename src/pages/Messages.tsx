@@ -806,14 +806,16 @@ const sendMessage = useMutation({
         return data;
         
       } else {
-        // ✅ FIXED: Removed explicit 'is_deleted' and 'is_pinned' to allow DB defaults
         const { data, error } = await supabase
           .from('community_messages')
           .insert({
             sender_id: user.id,
             community_id: selectedChat.id,
             content: vars.content || null,
-            image_url: imageUrl
+            image_url: imageUrl,
+            is_pinned: false,
+            is_deleted: false,
+            reply_to_id: user.id
           })
           .select()
           .single();

@@ -734,7 +734,7 @@ export default function Friends() {
                       </div>
 
                       <div className="flex items-center gap-1">
-                        <Button size="icon" variant="ghost" className="rounded-full h-8 w-8 text-primary" onClick={() => navigate(`/messages?userId=${friendId}`)}>
+                        <Button size="icon" variant="ghost" className="rounded-full h-8 w-8 text-primary" onClick={() => navigate(`/app/messages?tab=dm?userId=${friendId}`)}>
                           <MessageSquare className="w-4 h-4" />
                         </Button>
                         
@@ -748,7 +748,7 @@ export default function Friends() {
                             <DropdownMenuItem onClick={() => friend && handleViewProfile(friend, f.id)}>
                               <User className="w-4 h-4 mr-2" /> View Profile
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => navigate(`/messages?userId=${friendId}`)}>
+                            <DropdownMenuItem onClick={() => navigate(`/app/messages?tab=dm?userId=${friendId}`)}>
                               <MessageSquare className="w-4 h-4 mr-2" /> Message
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
