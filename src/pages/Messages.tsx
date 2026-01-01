@@ -806,23 +806,20 @@ const sendMessage = useMutation({
         return data;
         
       } else {
-        // ✅ FIXED: Removed 'is_deleted' and 'is_pinned' to allow DB defaults
-        // ✅ FIXED: Ensuring we send the minimal required data
+        // ✅ FIXED: Removed explicit 'is_deleted' and 'is_pinned' to allow DB defaults
         const { data, error } = await supabase
           .from('community_messages')
           .insert({
             sender_id: user.id,
             community_id: selectedChat.id,
             content: vars.content || null,
-            image_url: imageUrl,
-            is_deleted: false,
-            is_pinned: false
+            image_url: imageUrl
           })
           .select()
           .single();
         
         if (error) {
-          console.error("Community Insert Error:", error); // Added logging
+          console.error("Community Insert Error:", error); 
           throw new Error(`Community message failed: ${error.message}`);
         }
         
@@ -989,12 +986,13 @@ const sendMessage = useMutation({
     
     // Note: muted_until feature not yet implemented in the database
     const isMuted = false; // Will be enabled when muted_until column is added
-    const canType =
-      !isComm ||
-      (isComm && selectedChat.my_role && selectedChat.my_role !== 'none' && !isMuted
-      );
+    
+    // ✅ FIXED: Use LIVE membership data for role checks if available
+    const myRole = myMembership?.role || selectedChat.my_role || 'none';
+    const canType = !isComm || (isComm && myRole !== 'none' && !isMuted);
+    const isAdmin = myRole === 'admin';
+    const canModerate = isComm && (isAdmin || myRole === 'moderator');
 
-    const canModerate = isComm && (selectedChat.my_role === 'admin' || selectedChat.my_role === 'moderator');
     const chatImages = messages.filter(m => m.image_url && !m.is_deleted).map(m => ({ url: m.image_url!, id: m.id }));
     const pinnedMessages = isComm ? messages.filter(m => m.is_pinned && !m.is_deleted) : [];
 
@@ -1032,7 +1030,7 @@ const sendMessage = useMutation({
               {isComm ? (
                 <>
                   <Users className="w-3 h-3" /> {selectedChat.member_count} members
-                  {selectedChat.my_role === 'admin' && <Badge variant="secondary" className="ml-1 text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Admin</Badge>}
+                  {isAdmin && <Badge variant="secondary" className="ml-1 text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Admin</Badge>}
                 </>
               ) : (
                 selectedChat.is_online ? (
@@ -1082,7 +1080,8 @@ const sendMessage = useMutation({
                   <Info className="w-4 h-4 mr-2" />
                   {isComm ? 'Community Info' : 'View Profile'}
                 </DropdownMenuItem>
-                {isComm && selectedChat.my_role === 'admin' && (
+                {/* ✅ FIXED: Use computed isAdmin check based on live data */}
+                {isComm && isAdmin && (
                   <DropdownMenuItem 
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1146,7 +1145,8 @@ const sendMessage = useMutation({
               community={selectedChat}
               coverUrl={selectedChat.cover || selectedChat.cover_url || selectedChat.avatar}
             />
-            {selectedChat.my_role === 'admin' && (
+            {/* ✅ FIXED: Render dialog if isAdmin is true */}
+            {isAdmin && (
               <CommunitySettingsDialog 
                 isOpen={isSettingsOpen} 
                 onClose={() => setIsSettingsOpen(false)} 
