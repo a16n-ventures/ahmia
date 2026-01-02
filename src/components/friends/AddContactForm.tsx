@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { X, User, Loader2 } from "lucide-react";
 
 interface AddContactFormProps {
-  onSubmit: (data: { name: string; email?: string; phone?: string }) => void;
+  onSubmit: (data: { name: string; username?: string; phone?: string }) => void;
   onCancel: () => void;
   isPending?: boolean;
 }
