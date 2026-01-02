@@ -8,7 +8,7 @@ import {
   Users, Calendar, MapPin, X, Loader2, Plus, 
   Heart, Share2, Sparkles, Lock, RefreshCw, Check,
   Ticket, Megaphone, MessageSquare,
-  MoreVertical, Trash2, Copy
+  MoreVertical, Trash2, Copy, Eye
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns"; 
 import React, { useState, useEffect, useRef } from "react";
@@ -26,6 +26,7 @@ interface Story {
   author_id: string | null;
   media_url?: string | null; 
   media_type?: 'image' | 'video' | null; 
+  view_count?: number;
 }
 interface Community { 
   id: string; 
@@ -54,7 +55,7 @@ interface Event {
   is_sponsored?: boolean;
 }
 
-type ProfileWithStoryInner = { id: string; display_name: string | null; avatar_url: string | null; stories: { id: string; created_at: string }[]; };
+type ProfileWithStoryInner = { id: string; display_name: string | null; avatar_url: string | null; stories: Story[]; };
 
 // --- EVENT DETAIL MODAL ---
 function EventDetailModal({ event, isOpen, onClose, onRSVP }: { 
@@ -334,10 +335,11 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
   const [stories, setStories] = useState<Story[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [liked, setLiked] = useState(false);
   const [msg, setMsg] = useState("");
   const [showActions, setShowActions] = useState(false); 
-  const navigate = useNavigate();
+  const [viewCount, setViewCount] = useState(0);
+  const [liked, setLiked] = useState(false);
+  const [incomingHearts, setIncomingHearts] = useState<{ id: number, left: number }[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -345,12 +347,18 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
       const yesterday = new Date(Date.now() - 864e5).toISOString();
       const { data } = await supabase
         .from('stories')
-        .select('id, content, created_at, author_id, media_url, media_type')
+        .select('id, content, created_at, author_id, media_url, media_type, view_count') // Ensure view_count is selected
         .eq('author_id', user.id) 
         .gte('created_at', yesterday)
         .order('created_at', { ascending: true });
       
-      if (data) setStories(data);
+      if (data) {
+        setStories(data);
+        if (data.length > 0) {
+          // Initialize view count for first story
+          setViewCount(data[0].view_count || 0);
+        }
+      }
       setLoading(false);
     };
     load();
@@ -359,7 +367,75 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
   const current = stories[index];
   const isMyStory = currentUser?.id === user.id; 
   
-  const next = () => index < stories.length - 1 ? (setIndex(i => i + 1), setLiked(false)) : onClose();
+  // Realtime Logic: Record View & Subscribe
+  useEffect(() => {
+    if (!current || !currentUser) return;
+
+    // 1. Record View (Only if not my own story)
+    if (!isMyStory) {
+      const recordView = async () => {
+        // Optimistic update locally not needed for views usually, but good to know
+        await supabase.rpc('increment_story_view', { story_id: current.id, viewer_id: currentUser.id });
+      };
+      recordView();
+    }
+
+    // 2. Subscribe to Realtime Updates (Views & Likes)
+    const channel = supabase
+      .channel(`story-${current.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'stories', filter: `id=eq.${current.id}` },
+        (payload: any) => {
+          if (payload.new.view_count !== undefined) {
+            setViewCount(payload.new.view_count);
+          }
+        }
+      )
+      .on(
+        'postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'story_likes', filter: `story_id=eq.${current.id}` },
+        (payload) => {
+          // Trigger floating heart animation
+          if (payload.new.user_id !== currentUser.id) {
+             const id = Date.now();
+             setIncomingHearts(prev => [...prev, { id, left: Math.random() * 80 + 10 }]);
+             setTimeout(() => setIncomingHearts(prev => prev.filter(h => h.id !== id)), 2000);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [current?.id, isMyStory, currentUser]);
+
+  const next = () => {
+    if (index < stories.length - 1) {
+      setIndex(i => i + 1);
+      setLiked(false);
+      // Update local view count state immediately for next story from loaded data
+      setViewCount(stories[index + 1].view_count || 0); 
+    } else {
+      onClose();
+    }
+  };
+
+  const handleLike = async () => {
+    if (!current || !currentUser) return;
+    setLiked(true);
+    setIncomingHearts(prev => [...prev, { id: Date.now(), left: 50 }]); // Show my own heart
+    
+    // Insert like into DB
+    const { error } = await supabase.from('story_likes').insert({
+      story_id: current.id,
+      user_id: currentUser.id
+    });
+    
+    if (error) console.error("Error liking story:", error);
+    toast.success("Reaction sent ❤️");
+  };
 
   const handleDeleteStory = async () => {
     if (!current || !currentUser) return;
@@ -426,6 +502,19 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
           <MoreVertical className="w-7 h-7" />
         </button>
       )}
+      
+      {/* Floating Hearts Container */}
+      <div className="absolute inset-0 z-40 pointer-events-none overflow-hidden">
+        {incomingHearts.map((h) => (
+          <div 
+            key={h.id}
+            className="absolute bottom-20 text-4xl animate-float-up opacity-0"
+            style={{ left: `${h.left}%` }}
+          >
+            ❤️
+          </div>
+        ))}
+      </div>
       
       {/* Reduced Height for Story Viewer - Fixed to ~70vh or max 650px */}
       <div className="relative w-full h-full sm:max-w-md sm:h-[70vh] max-h-[650px] bg-black sm:rounded-2xl overflow-hidden flex flex-col border border-white/10 shadow-2xl">
@@ -532,8 +621,7 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
               className="text-white rounded-full hover:bg-white/10" 
               onClick={(e) => { 
                 e.stopPropagation(); 
-                setLiked(!liked); 
-                toast.success("Reaction sent ❤️"); 
+                handleLike();
               }}
             >
               <Heart className={`w-7 h-7 transition-transform active:scale-125 ${liked ? 'fill-red-500 text-red-500' : ''}`} />
@@ -555,8 +643,8 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
         {isMyStory && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
             <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full flex items-center gap-2">
-              <Users className="w-4 h-4 text-white" />
-              <span className="text-white text-sm font-medium">0 views</span>
+              <Eye className="w-4 h-4 text-white" />
+              <span className="text-white text-sm font-medium">{viewCount} views</span>
             </div>
           </div>
         )}
@@ -575,6 +663,7 @@ export default function Discover() {
   // Smart Feed States
   const [smartEvents, setSmartEvents] = useState<Event[]>([]);
   const [smartCommunities, setSmartCommunities] = useState<Community[]>([]);
+  const [smartFeedLoading, setSmartFeedLoading] = useState(false);
   
   const [selectedStory, setSelectedStory] = useState<Profile | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -646,7 +735,8 @@ export default function Discover() {
             created_at: story.created_at,
             content: story.content,
             media_url: story.media_url,
-            media_type: story.media_type
+            media_type: story.media_type,
+            view_count: story.view_count || 0
           });
         });
       
@@ -784,6 +874,7 @@ export default function Discover() {
     const currentTab = new URLSearchParams(window.location.search).get('tab');
     if (currentTab !== 'foryou') return;
     
+    setSmartFeedLoading(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
@@ -828,9 +919,14 @@ export default function Discover() {
           }
         } catch (err) {
           console.error('AI Feed Error:', err);
+        } finally {
+          setSmartFeedLoading(false);
         }
       },
-      (err) => console.warn('Location denied for Smart Feed', err)
+      (err) => {
+        console.warn('Location denied for Smart Feed', err);
+        setSmartFeedLoading(false);
+      }
     );
   }, [isPremium, user?.id, window.location.search]);
 
@@ -868,7 +964,8 @@ export default function Discover() {
           author_id: user.id, 
           content: caption || null,
           media_url: publicUrl,
-          media_type: preview.file.type.startsWith('video') ? 'video' : 'image'
+          media_type: preview.file.type.startsWith('video') ? 'video' : 'image',
+          view_count: 0 // Initialize view count
         });
       
       if (insertError) throw insertError;
@@ -1297,8 +1394,6 @@ export default function Discover() {
                   <Button variant="secondary" className="font-bold shadow-lg" onClick={() => navigate('/premium')}>Upgrade to Premium</Button>
                 </CardContent>
               </Card>
-            ) : smartEvents.length === 0 && smartCommunities.length === 0 ? (
-               <EmptyState icon={RefreshCw} title="Analyzing..." desc="AI is learning your preferences." action="Refresh" onAction={() => window.location.reload()} />
             ) : (
               <Tabs defaultValue="smart_events" className="w-full">
                 <TabsList className="grid w-full grid-cols-2 bg-muted/30 p-1 mb-4 rounded-lg">
@@ -1307,65 +1402,71 @@ export default function Discover() {
                 </TabsList>
 
                 <TabsContent value="smart_events" className="space-y-4">
-                  {smartEvents.map(e => (
-                    <Card 
-                      key={e.id} 
-                      className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                      onClick={() => setSelectedEvent(e)}
-                    >
-                      <div className="h-32 bg-muted relative">
-                        {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" />}
-                        <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
-                          <Sparkles className="w-3 h-3 text-yellow-400" /> {(e.match_score || 95).toFixed(0)}% Match
-                        </div>
-                      </div>
-                      <CardContent className="p-4">
-                        <h3 className="font-bold truncate text-lg">{e.title}</h3>
-                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                          <MapPin className="w-3 h-3" /> {e.location}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  ))}
-                  {smartEvents.length === 0 && (
+                  {smartFeedLoading && smartEvents.length === 0 ? (
+                    <FeedSkeleton />
+                  ) : smartEvents.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      No event matches found yet.
+                      AI is looking for the best events for you...
                     </div>
+                  ) : (
+                    smartEvents.map(e => (
+                      <Card 
+                        key={e.id} 
+                        className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
+                        onClick={() => setSelectedEvent(e)}
+                      >
+                        <div className="h-32 bg-muted relative">
+                          {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" />}
+                          <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
+                            <Sparkles className="w-3 h-3 text-yellow-400" /> {(e.match_score || 95).toFixed(0)}% Match
+                          </div>
+                        </div>
+                        <CardContent className="p-4">
+                          <h3 className="font-bold truncate text-lg">{e.title}</h3>
+                          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                            <MapPin className="w-3 h-3" /> {e.location}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))
                   )}
                 </TabsContent>
 
                 <TabsContent value="smart_communities" className="space-y-4">
-                  {smartCommunities.map(c => (
-                    <Card 
-                      key={c.id} 
-                      className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                      onClick={() => setSelectedCommunity(c)}
-                    >
-                      <div className="h-24 bg-muted relative">
-                        {c.cover_url && <img src={c.cover_url} className="w-full h-full object-cover opacity-80" />}
-                        <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
-                          <Sparkles className="w-3 h-3 text-yellow-400" /> {(c.match_score || 90).toFixed(0)}% Match
-                        </div>
-                        <div className="absolute -bottom-6 left-4">
-                          <img 
-                            src={c.avatar_url || '/default-avatar.png'} 
-                            className="w-12 h-12 rounded-xl bg-background border-2 border-background object-cover shadow-md"
-                          />
-                        </div>
-                      </div>
-                      <CardContent className="p-4 pt-8">
-                        <h3 className="font-bold truncate text-base">{c.name}</h3>
-                        <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{c.description}</p>
-                        <div className="flex items-center gap-1 mt-2 text-xs text-primary font-medium">
-                          <Users className="w-3 h-3" /> {c.member_count} members
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                  {smartCommunities.length === 0 && (
+                  {smartFeedLoading && smartCommunities.length === 0 ? (
+                    <FeedSkeleton />
+                  ) : smartCommunities.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      No community matches found yet.
+                      AI is looking for the best communities for you...
                     </div>
+                  ) : (
+                    smartCommunities.map(c => (
+                      <Card 
+                        key={c.id} 
+                        className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
+                        onClick={() => setSelectedCommunity(c)}
+                      >
+                        <div className="h-24 bg-muted relative">
+                          {c.cover_url && <img src={c.cover_url} className="w-full h-full object-cover opacity-80" />}
+                          <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
+                            <Sparkles className="w-3 h-3 text-yellow-400" /> {(c.match_score || 90).toFixed(0)}% Match
+                          </div>
+                          <div className="absolute -bottom-6 left-4">
+                            <img 
+                              src={c.avatar_url || '/default-avatar.png'} 
+                              className="w-12 h-12 rounded-xl bg-background border-2 border-background object-cover shadow-md"
+                            />
+                          </div>
+                        </div>
+                        <CardContent className="p-4 pt-8">
+                          <h3 className="font-bold truncate text-base">{c.name}</h3>
+                          <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{c.description}</p>
+                          <div className="flex items-center gap-1 mt-2 text-xs text-primary font-medium">
+                            <Users className="w-3 h-3" /> {c.member_count} members
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
                   )}
                 </TabsContent>
               </Tabs>
