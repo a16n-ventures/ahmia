@@ -8,7 +8,7 @@ import {
   Users, Calendar, MapPin, X, Loader2, Plus, 
   Heart, Share2, Sparkles, Lock, RefreshCw, Check,
   Ticket, Megaphone, MessageSquare,
-  MoreVertical, Trash2, Copy 
+  MoreVertical, Trash2, Copy
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns"; 
 import React, { useState, useEffect, useRef } from "react";
@@ -36,6 +36,7 @@ interface Community {
   cover_url?: string | null;
   is_member?: boolean;
   my_role?: 'admin' | 'member' | null;
+  match_score?: number; 
 } 
 
 interface Event { 
@@ -212,6 +213,12 @@ function CommunityDetailModal({
                 {community.my_role === 'admin' ? 'Admin' : 'Joined'}
               </Badge>
             )}
+            {community.match_score && (
+              <Badge className="absolute top-4 left-4 bg-black/60 backdrop-blur-md">
+                <Sparkles className="w-3 h-3 mr-1 text-yellow-400" />
+                {community.match_score.toFixed(0)}% Match
+              </Badge>
+            )}
           </div>
         )}
         
@@ -339,7 +346,7 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
       const { data } = await supabase
         .from('stories')
         .select('id, content, created_at, author_id, media_url, media_type')
-        .eq('author_id', user.id) // This matches user.id from the storyUsers list
+        .eq('author_id', user.id) 
         .gte('created_at', yesterday)
         .order('created_at', { ascending: true });
       
@@ -378,7 +385,7 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
       
       if (stories.length === 1) {
         onClose();
-        window.location.reload(); // Reload to refresh the tray
+        window.location.reload(); 
       } else {
         setStories(prev => prev.filter(s => s.id !== current.id));
         if (index >= stories.length - 1) setIndex(Math.max(0, index - 1));
@@ -420,7 +427,8 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
         </button>
       )}
       
-      <div className="relative w-full h-full sm:max-w-md sm:h-[85vh] bg-black sm:rounded-2xl overflow-hidden flex flex-col border border-white/10 shadow-2xl">
+      {/* Reduced Height for Story Viewer - Fixed to ~70vh or max 650px */}
+      <div className="relative w-full h-full sm:max-w-md sm:h-[70vh] max-h-[650px] bg-black sm:rounded-2xl overflow-hidden flex flex-col border border-white/10 shadow-2xl">
         <div className="absolute top-0 w-full z-20 flex gap-1 p-2">
           {stories.map((_, i) => (
             <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm">
@@ -563,7 +571,11 @@ export default function Discover() {
   const [storyUsers, setStoryUsers] = useState<ProfileWithStoryInner[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
-  const [smartFeed, setSmartFeed] = useState<Event[]>([]);
+  
+  // Smart Feed States
+  const [smartEvents, setSmartEvents] = useState<Event[]>([]);
+  const [smartCommunities, setSmartCommunities] = useState<Community[]>([]);
+  
   const [selectedStory, setSelectedStory] = useState<Profile | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
@@ -572,6 +584,7 @@ export default function Discover() {
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
   
+  // Upload State
   const [preview, setPreview] = useState<{ file: File, url: string } | null>(null);
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -586,7 +599,7 @@ export default function Discover() {
         setCurrentUserProfile({ id: me.id, display_name: me.display_name, avatar_url: me.avatar_url });
       }
       
-      // 2. Fetch Stories (Fetching RAW stories first)
+      // 2. Fetch Stories
       const yesterday = new Date();
       yesterday.setHours(yesterday.getHours() - 24);
 
@@ -600,7 +613,6 @@ export default function Discover() {
         console.error('❌ Stories fetch error:', storyError);
       } else if (storyData && storyData.length > 0) {
         
-        // 3. Manual Join: Extract Author IDs and Fetch Profiles
         const authorIds = Array.from(new Set(storyData.map((s: any) => s.author_id)));
         
         const { data: profiles } = await supabase
@@ -613,16 +625,13 @@ export default function Discover() {
           profileMap.set(p.user_id, p);
         });
 
-        // 4. Group stories by author using AUTH ID (user_id) as key
         const storyMap = new Map<string, any>();
         
         storyData.forEach((story: any) => {
-          // Look up profile using the author_id (which is Auth ID)
           const profile = profileMap.get(story.author_id);
           
           if (!profile) return;
           
-          // Use profile.user_id as the key so it matches user.id
           if (!storyMap.has(profile.user_id)) {
             storyMap.set(profile.user_id, {
               id: profile.user_id, 
@@ -648,7 +657,7 @@ export default function Discover() {
       }
 
       // 5. Communities
-      const { data: comms, error: commsError } = await supabase
+      const { data: comms } = await supabase
         .from('communities')
         .select('*')
         .order('created_at', { ascending: false })
@@ -743,7 +752,7 @@ export default function Discover() {
         setEvents(mappedEvents);
       }
 
-      // ✅ FIXED: Check both subscriptions AND premium_features tables
+      // Check premium status
       const { data: sub } = await supabase
         .from('subscriptions')
         .select('status')
@@ -769,9 +778,9 @@ export default function Discover() {
     init();
   }, [user]);
 
-  // AI Feed Logic
+  // AI Feed Logic (Smart Events & Communities)
   useEffect(() => {
-    if (!isPremium || smartFeed.length > 0) return;
+    if (!isPremium || smartEvents.length > 0) return;
     const currentTab = new URLSearchParams(window.location.search).get('tab');
     if (currentTab !== 'foryou') return;
     
@@ -783,19 +792,39 @@ export default function Discover() {
             body: { user_id: user?.id, user_lat: latitude, user_long: longitude },
           });
           if (error) throw error;
+          
           if (ai) {
-            const formatted = ai.map((item: any) => ({
-              id: item.id,
-              title: item.title,
-              start_date: item.start_date || new Date().toISOString(),
-              location: item.location || 'Online',
-              image_url: item.image_url,
-              match_score: (item.final_score || item.similarity || 0) * 100,
-              is_sponsored: item.is_sponsored,
-              attendee_count: item.attendee_count || 0,
-              is_attending: item.is_attending || false,
-            }));
-            setSmartFeed(formatted);
+            // Process Events
+            if (ai.events) {
+              const formattedEvents = ai.events.map((item: any) => ({
+                id: item.id,
+                title: item.title,
+                start_date: item.start_date || new Date().toISOString(),
+                location: item.location || 'Online',
+                image_url: item.image_url,
+                match_score: (item.final_score || item.similarity || 0) * 100,
+                is_sponsored: item.is_sponsored,
+                attendee_count: item.attendee_count || 0,
+                is_attending: item.is_attending || false,
+              }));
+              setSmartEvents(formattedEvents);
+            }
+
+            // Process Communities
+            if (ai.communities) {
+              const formattedCommunities = ai.communities.map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                description: c.description,
+                member_count: c.member_count,
+                avatar_url: c.cover_url || c.avatar_url,
+                cover_url: c.cover_url,
+                match_score: (c.similarity || 0) * 100,
+                is_member: false, 
+                my_role: null
+              }));
+              setSmartCommunities(formattedCommunities);
+            }
           }
         } catch (err) {
           console.error('AI Feed Error:', err);
@@ -805,12 +834,21 @@ export default function Discover() {
     );
   }, [isPremium, user?.id, window.location.search]);
 
+  // Handle file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setPreview({
+        file: e.target.files[0],
+        url: URL.createObjectURL(e.target.files[0])
+      });
+    }
+  };
+
   const handleUpload = async () => {
     if (!preview || !user) return;
     setUploading(true);
     
     try {
-      // 1. Upload media
       const ext = preview.file.name.split('.').pop();
       const path = `${user.id}/${Date.now()}.${ext}`;
       
@@ -824,17 +862,14 @@ export default function Discover() {
         .from('stories')
         .getPublicUrl(path);
       
-      // 2. Create story record using user.id (Auth ID)
-      const { data: newStory, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('stories')
         .insert({ 
-          author_id: user.id, // Using Auth ID
+          author_id: user.id, 
           content: caption || null,
           media_url: publicUrl,
           media_type: preview.file.type.startsWith('video') ? 'video' : 'image'
-        })
-        .select()
-        .single();
+        });
       
       if (insertError) throw insertError;
       
@@ -842,7 +877,7 @@ export default function Discover() {
       setPreview(null);
       setCaption("");
       
-      // Reload to ensure fresh state and proper fetching
+      // Simple reload to refresh data
       window.location.reload();
       
     } catch (e: any) {
@@ -866,11 +901,16 @@ export default function Discover() {
       await supabase.rpc('increment_community_members', { community_id: communityId });
       toast.success("Joined community!");
       
-      setCommunities(prev => prev.map(c => 
+      // Update both normal and smart lists
+      const updateList = (list: Community[]) => list.map(c => 
         c.id === communityId 
           ? { ...c, is_member: true, my_role: 'member', member_count: (c.member_count || 0) + 1 }
           : c
-      ));
+      );
+      
+      setCommunities(prev => updateList(prev));
+      setSmartCommunities(prev => updateList(prev));
+
     } catch (e: any) {
       toast.error(e.message || "Failed to join");
     }
@@ -937,7 +977,10 @@ export default function Discover() {
               await supabase.rpc('increment_event_attendees', { event_id: paymentData.event_id });
               await supabase.from('transactions').update({ status: 'completed', flutterwave_transaction_id: response.transaction_id }).eq('reference', paymentData.tx_ref);
               
-              setEvents(prev => prev.map(e => e.id === paymentData.event_id ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e));
+              const updateEvents = (list: Event[]) => list.map(e => e.id === paymentData.event_id ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e);
+              setEvents(prev => updateEvents(prev));
+              setSmartEvents(prev => updateEvents(prev));
+
               toast.success("Ticket purchased successfully! 🎉", { id: toastId });
             } catch (error: any) {
               toast.error("Payment received but confirmation failed. Contact support.", { id: toastId });
@@ -964,7 +1007,7 @@ export default function Discover() {
   const handleRSVP = async (eventId: string) => {
     if (!user) return;
     try {
-      const event = events.find(e => e.id === eventId) || smartFeed.find(e => e.id === eventId);
+      const event = events.find(e => e.id === eventId) || smartEvents.find(e => e.id === eventId);
       
       if (event?.is_attending) {
         const { error } = await supabase.from('event_attendees').delete().match({ event_id: eventId, user_id: user.id });
@@ -972,8 +1015,9 @@ export default function Discover() {
         await supabase.rpc('decrement_event_attendees', { event_id: eventId });
         toast.success("RSVP cancelled");
         
-        setEvents(prev => prev.map(e => e.id === eventId ? { ...e, is_attending: false, attendee_count: (e.attendee_count || 0) - 1 } : e));
-        setSmartFeed(prev => prev.map(e => e.id === eventId ? { ...e, is_attending: false, attendee_count: (e.attendee_count || 0) - 1 } : e));
+        const updateEvents = (list: Event[]) => list.map(e => e.id === eventId ? { ...e, is_attending: false, attendee_count: (e.attendee_count || 0) - 1 } : e);
+        setEvents(prev => updateEvents(prev));
+        setSmartEvents(prev => updateEvents(prev));
       } else {
         if (event?.price && event.price > 0) {
           const { data: profile } = await supabase.from('profiles').select('email, display_name, phone').eq('user_id', user.id).single();
@@ -998,8 +1042,9 @@ export default function Discover() {
           await supabase.rpc('increment_event_attendees', { event_id: eventId });
           toast.success("You're going! 🎉");
           
-          setEvents(prev => prev.map(e => e.id === eventId ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e));
-          setSmartFeed(prev => prev.map(e => e.id === eventId ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e));
+          const updateEvents = (list: Event[]) => list.map(e => e.id === eventId ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e);
+          setEvents(prev => updateEvents(prev));
+          setSmartEvents(prev => updateEvents(prev));
         }
       }
     } catch (e: any) {
@@ -1017,90 +1062,98 @@ export default function Discover() {
           </div>
         ) : (
           <div className="flex gap-4 items-start">
+            {/* Unified Story Bubble Logic */}
             {(() => {
-              // ✅ FIXED: Finding "my story" using the ID (which is now correctly Auth ID)
               const myStory = storyUsers.find(u => u.id === user?.id);
               
+              const handleLongPress = (e: React.SyntheticEvent) => {
+                e.preventDefault();
+                // Long press always opens file uploader
+                fileRef.current?.click();
+              };
+
               return (
-                <>
-                  {myStory ? (
-                    <div 
-                      className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" 
-                      onClick={() => setSelectedStory(myStory)}
-                    >
-                      <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400 group-hover:scale-105 transition-transform shadow-sm">
-                        <img 
-                          src={myStory.avatar_url || '/default-avatar.png'} 
-                          className="w-full h-full rounded-full object-cover border-2 border-background" 
-                          alt="Your story"
-                        />
-                      </div>
-                      <span className="text-xs font-bold max-w-[70px] truncate">Your Story</span>
-                    </div>
-                  ) : (
-                    <div 
-                      className="flex flex-col items-center gap-2 flex-shrink-0 relative cursor-pointer group" 
-                      onClick={() => fileRef.current?.click()}
-                    >
-                      <input 
-                        type="file" 
-                        ref={fileRef} 
-                        className="hidden" 
-                        accept="image/*,video/*" 
-                        onChange={(e) => e.target.files?.[0] && setPreview({ file: e.target.files[0], url: URL.createObjectURL(e.target.files[0]) })} 
-                      />
-                      <div className="w-16 h-16 rounded-full p-[2px] border-2 border-dashed border-muted-foreground/30 relative group-hover:border-primary transition-colors">
-                        <img 
-                          src={currentUserProfile?.avatar_url || '/default-avatar.png'} 
-                          className="w-full h-full rounded-full object-cover opacity-50" 
-                          alt="Add story"
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center bg-background/20 rounded-full">
-                          <Plus className="w-6 h-6 text-primary drop-shadow-sm" />
+                <div 
+                  className="flex flex-col items-center gap-2 flex-shrink-0 relative cursor-pointer group"
+                  // If story exists -> View Story. If no story -> Open Uploader.
+                  onClick={() => myStory ? setSelectedStory(myStory) : fileRef.current?.click()}
+                  onContextMenu={handleLongPress} // Handles Long Press (Right Click on Desktop)
+                >
+                  {/* Hidden File Input */}
+                  <input 
+                    type="file" 
+                    ref={fileRef} 
+                    className="hidden" 
+                    accept="image/*,video/*" 
+                    onChange={handleFileSelect} 
+                  />
+
+                  {/* Bubble Visuals */}
+                  <div className={`w-16 h-16 rounded-full p-[3px] ${
+                    myStory 
+                      ? 'bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400' // Active Story Gradient
+                      : 'border-2 border-dashed border-muted-foreground/30' // No Story (Add Mode)
+                  } relative group-hover:scale-105 transition-transform shadow-sm`}>
+                    
+                    <img 
+                      src={currentUserProfile?.avatar_url || '/default-avatar.png'} 
+                      className={`w-full h-full rounded-full object-cover ${myStory ? 'border-2 border-background' : 'opacity-50'}`} 
+                      alt="Your story"
+                    />
+
+                    {/* Plus Badge (Only if no story) */}
+                    {!myStory && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/20 rounded-full">
+                        <div className="absolute bottom-0 right-0 bg-primary text-white rounded-full p-1 border-2 border-background">
+                           <Plus className="w-3 h-3" />
                         </div>
                       </div>
-                      <span className="text-xs font-medium text-muted-foreground">Add Story</span>
-                    </div>
-                  )}
-                  
-                  {storyUsers
-                    .filter(u => u.id !== user?.id) // This filter now works correctly
-                    .map(u => (
-                      <div 
-                        key={u.id} 
-                        className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" 
-                        onClick={() => setSelectedStory(u)}
-                      >
-                        <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-purple-600 group-hover:scale-105 transition-transform shadow-sm">
-                          <img 
-                            src={u.avatar_url || '/default-avatar.png'} 
-                            className="w-full h-full rounded-full object-cover border-2 border-background" 
-                            alt={u.display_name || 'User'}
-                          />
-                        </div>
-                        <span className="text-xs font-medium max-w-[70px] truncate">
-                          {u.display_name || 'User'}
-                        </span>
-                      </div>
-                    ))}
-                </>
+                    )}
+                  </div>
+                  <span className="text-xs font-bold max-w-[70px] truncate">Your Story</span>
+                </div>
               );
             })()}
+            
+            {/* Friends Stories */}
+            {storyUsers
+              .filter(u => u.id !== user?.id)
+              .map(u => (
+                <div 
+                  key={u.id} 
+                  className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" 
+                  onClick={() => setSelectedStory(u)}
+                >
+                  <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-purple-600 group-hover:scale-105 transition-transform shadow-sm">
+                    <img 
+                      src={u.avatar_url || '/default-avatar.png'} 
+                      className="w-full h-full rounded-full object-cover border-2 border-background" 
+                      alt={u.display_name || 'User'}
+                    />
+                  </div>
+                  <span className="text-xs font-medium max-w-[70px] truncate">
+                    {u.display_name || 'User'}
+                  </span>
+                </div>
+              ))}
           </div>
         )}
       </div>
       
+      {/* Upload Preview Dialog */}
       <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
         <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto bg-background/95 backdrop-blur-xl border-0">
           <DialogHeader>
             <DialogTitle>Create Story</DialogTitle>
           </DialogHeader>
           
-          <div className="h-[40vh] max-h-[400px] min-h-[300px] bg-black/10 rounded-xl overflow-hidden flex items-center justify-center relative border">
-            {preview?.file.type.startsWith('video') ? (
-              <video src={preview.url} controls className="max-h-full max-w-full object-contain" />
-            ) : (
-              <img src={preview?.url} className="max-h-full max-w-full object-contain" alt="Preview" />
+          <div className="h-[40vh] max-h-[400px] min-h-[300px] bg-black/10 rounded-xl overflow-hidden flex items-center justify-center relative border group">
+            {preview && (
+              preview.file.type.startsWith('video') ? (
+                <video src={preview.url} controls className="max-h-full max-w-full object-contain" />
+              ) : (
+                <img src={preview.url} className="max-h-full max-w-full object-contain" alt="Preview" />
+              )
             )}
           </div>
           
@@ -1117,7 +1170,7 @@ export default function Discover() {
             <DialogFooter className="gap-2">
               <Button variant="ghost" onClick={() => setPreview(null)}>Cancel</Button>
               <Button onClick={handleUpload} disabled={uploading} className="gradient-primary text-white">
-                {uploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading...</> : <><Sparkles className="w-4 h-4 mr-2" /> Share to Story</>}
+                {uploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading...</> : <><Sparkles className="w-4 h-4 mr-2" /> Share</>}
               </Button>
             </DialogFooter>
           </div>
@@ -1244,29 +1297,78 @@ export default function Discover() {
                   <Button variant="secondary" className="font-bold shadow-lg" onClick={() => navigate('/premium')}>Upgrade to Premium</Button>
                 </CardContent>
               </Card>
-            ) : smartFeed.length === 0 ? (
+            ) : smartEvents.length === 0 && smartCommunities.length === 0 ? (
                <EmptyState icon={RefreshCw} title="Analyzing..." desc="AI is learning your preferences." action="Refresh" onAction={() => window.location.reload()} />
             ) : (
-              smartFeed.map(e => (
-                <Card 
-                  key={e.id} 
-                  className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                  onClick={() => setSelectedEvent(e)}
-                >
-                  <div className="h-32 bg-muted relative">
-                    {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" />}
-                    <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
-                      <Sparkles className="w-3 h-3 text-yellow-400" /> {(e.match_score || 95).toFixed(0)}% Match
+              <Tabs defaultValue="smart_events" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 bg-muted/30 p-1 mb-4 rounded-lg">
+                  <TabsTrigger value="smart_events" className="text-xs">Smart Events</TabsTrigger>
+                  <TabsTrigger value="smart_communities" className="text-xs">Smart Communities</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="smart_events" className="space-y-4">
+                  {smartEvents.map(e => (
+                    <Card 
+                      key={e.id} 
+                      className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => setSelectedEvent(e)}
+                    >
+                      <div className="h-32 bg-muted relative">
+                        {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" />}
+                        <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
+                          <Sparkles className="w-3 h-3 text-yellow-400" /> {(e.match_score || 95).toFixed(0)}% Match
+                        </div>
+                      </div>
+                      <CardContent className="p-4">
+                        <h3 className="font-bold truncate text-lg">{e.title}</h3>
+                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                          <MapPin className="w-3 h-3" /> {e.location}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {smartEvents.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      No event matches found yet.
                     </div>
-                  </div>
-                  <CardContent className="p-4">
-                    <h3 className="font-bold truncate text-lg">{e.title}</h3>
-                    <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                      <MapPin className="w-3 h-3" /> {e.location}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))
+                  )}
+                </TabsContent>
+
+                <TabsContent value="smart_communities" className="space-y-4">
+                  {smartCommunities.map(c => (
+                    <Card 
+                      key={c.id} 
+                      className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => setSelectedCommunity(c)}
+                    >
+                      <div className="h-24 bg-muted relative">
+                        {c.cover_url && <img src={c.cover_url} className="w-full h-full object-cover opacity-80" />}
+                        <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
+                          <Sparkles className="w-3 h-3 text-yellow-400" /> {(c.match_score || 90).toFixed(0)}% Match
+                        </div>
+                        <div className="absolute -bottom-6 left-4">
+                          <img 
+                            src={c.avatar_url || '/default-avatar.png'} 
+                            className="w-12 h-12 rounded-xl bg-background border-2 border-background object-cover shadow-md"
+                          />
+                        </div>
+                      </div>
+                      <CardContent className="p-4 pt-8">
+                        <h3 className="font-bold truncate text-base">{c.name}</h3>
+                        <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{c.description}</p>
+                        <div className="flex items-center gap-1 mt-2 text-xs text-primary font-medium">
+                          <Users className="w-3 h-3" /> {c.member_count} members
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {smartCommunities.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      No community matches found yet.
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             )}
           </TabsContent>
         </Tabs>
