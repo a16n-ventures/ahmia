@@ -27,7 +27,8 @@ import {
   AlertCircle, 
   Building2,
   CreditCard,
-  Zap
+  Zap,
+  Hourglass
 } from "lucide-react"; 
 import { 
   Dialog, 
@@ -39,7 +40,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label"; 
 import { useNavigate } from "react-router-dom";
-import { format, isPast, isFuture, isToday, addHours } from "date-fns";
+import { format, isPast, isFuture, isToday, addHours, differenceInMinutes } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; 
@@ -172,13 +173,14 @@ export default function Events() {
   const [isPayoutLoading, setIsPayoutLoading] = useState(false);
   const [bankForm, setBankForm] = useState<BankDetails>({ bank_name: '', account_number: '', account_name: '' }); 
 
-  // --- HELPER: Check if event is active (Future OR < 1 hour old) ---
+  // --- HELPER: Logic to check if an event is still "Active" ---
+  // ✅ CHANGED: Allow events to remain active for 3 hours after start time
   const isEventActive = (dateString: string) => {
     const eventDate = new Date(dateString);
     const now = new Date();
-    // Grace period: Event is considered active for 1 hour after start time
-    const eventEndTime = addHours(eventDate, 1); 
-    return eventEndTime > now;
+    // Event is active until 3 hours after start time
+    const expirationTime = addHours(eventDate, 3);
+    return expirationTime > now;
   };
 
   // --- HELPER: Check premium boost ---
@@ -207,7 +209,6 @@ export default function Events() {
     queryFn: async (): Promise<EventWithStats[]> => {
       if (!userId) return [];
       
-      // 1. Fetch Events (Simple query to avoid relation errors)
       const { data: events, error } = await supabase
         .from("events")
         .select("*")
@@ -217,7 +218,6 @@ export default function Events() {
       if (error) throw error;
       if (!events || events.length === 0) return [];
 
-      // 2. Fetch Creator Premium Data & Attendees
       const creatorIds = [...new Set(events.map(e => e.creator_id))];
       const eventIds = events.map(e => e.id);
 
@@ -231,7 +231,6 @@ export default function Events() {
       const subs = subRes.data || [];
       const attendees = attendeesRes.data || [];
 
-      // 3. Map Data
       const countMap: Record<string, number> = {};
       attendees.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
 
@@ -239,7 +238,6 @@ export default function Events() {
         ...event,
         event_type: (event.event_type as 'physical' | 'virtual') || 'physical',
         attendee_count: countMap[event.id] || 0,
-        // Calculate boosted status here
         is_boosted: checkBoostPermission(event.creator_id, premiums, subs)
       }));
     },
@@ -253,7 +251,6 @@ export default function Events() {
     queryFn: async (): Promise<EventWithStats[]> => {
       if (!userId) return [];
       
-      // Fetch attendees with event data
       const { data: rawData, error } = await supabase
         .from("event_attendees")
         .select(`
@@ -273,7 +270,6 @@ export default function Events() {
         my_status: item.status
       }));
 
-      // Fetch Premium & Global Counts
       const creatorIds = [...new Set(events.map((e: any) => e.creator_id))];
       const eventIds = events.map((e: any) => e.id);
 
@@ -390,14 +386,24 @@ export default function Events() {
     }
   };
 
+  // ✅ CHANGED: Logic to determine display status
   const getEventStatus = (startDate: string) => {
-    const active = isEventActive(startDate);
     const date = new Date(startDate);
-    
-    if (active) {
-       if (isToday(date)) return { label: 'Today', color: 'bg-green-500' };
-       return { label: 'Upcoming', color: 'bg-blue-500' };
+    const now = new Date();
+    const expirationTime = addHours(date, 3); // 3-hour duration assumption
+
+    // If start date is past but still within active window
+    if (isPast(date) && now < expirationTime) {
+      // Check if nearing expiration (e.g., last 30 mins)
+      if (differenceInMinutes(expirationTime, now) < 30) {
+        return { label: 'Expiring Soon', color: 'bg-orange-500 animate-pulse' };
+      }
+      return { label: 'Happening Now', color: 'bg-green-600 animate-pulse' };
     }
+
+    if (isToday(date)) return { label: 'Today', color: 'bg-blue-500' };
+    if (isFuture(date)) return { label: 'Upcoming', color: 'bg-primary' };
+    
     return { label: 'Past', color: 'bg-gray-500' };
   };
 
@@ -423,7 +429,6 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
     const eventDate = new Date(event.start_date);
     const isFull = event.max_attendees && event.attendee_count ? event.attendee_count >= event.max_attendees : false;
     
-    // Check if event is active (including grace period)
     const isStillActive = isEventActive(event.start_date);
     const isEventPast = !isStillActive;
     
@@ -467,7 +472,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                 </Badge>
               </div>
 
-               {/* ✅ Boosted Zap Icon check using computed is_boosted prop */}
+               {/* Boosted Zap Icon */}
                {event.is_boosted && !isEventPast && (
                 <div className="absolute top-0 right-0 bg-yellow-400 text-white rounded-bl-lg p-1.5 shadow-sm z-10 animate-pulse">
                   <Zap className="w-3 h-3 fill-white" />
@@ -499,6 +504,13 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                         {isPending && (
                             <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-yellow-700 border-yellow-300 bg-yellow-100">
                                 Awaiting Approval
+                            </Badge>
+                        )}
+                        {/* ✅ Display 'Happening Now' or 'Expiring' badges if active but started */}
+                        {isStillActive && isPast(eventDate) && (
+                            <Badge className={`text-[10px] px-1.5 py-0 border-0 text-white ${status.color}`}>
+                                {status.label === 'Expiring Soon' && <Hourglass className="w-3 h-3 mr-1" />}
+                                {status.label}
                             </Badge>
                         )}
                     </div>
@@ -602,7 +614,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
 
   const filteredMyEvents = filterEvents(myEvents);
   
-  // ✅ Fixed Time Logic: Active = (Future) OR (Past < 1 hour ago)
+  // Active Filter with Grace Period
   const myActiveEvents = filteredMyEvents.filter(e => isEventActive(e.start_date));
   const myPastEvents = filteredMyEvents.filter(e => !isEventActive(e.start_date));
   
