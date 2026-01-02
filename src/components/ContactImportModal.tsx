@@ -14,11 +14,7 @@ interface ContactImportModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-// Enhancement 2: Phone Normalization Logic
 const normalizePhone = (phone: string): string => {
-  // Removes all characters except digits and the plus sign
-  // e.g. "(555) 123-4567" -> "5551234567"
-  // e.g. "+234 80 123" -> "+23480123"
   if (!phone) return '';
   return phone.replace(/[^\d+]/g, '');
 };
@@ -29,7 +25,6 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Enhancement 3: Replaced Email with Username
   const [contacts, setContacts] = useState<Array<{ name: string; phone: string; username: string }>>([
     { name: '', phone: '', username: '' }
   ]);
@@ -50,7 +45,6 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
     setContacts(newContacts);
   };
 
-  // Enhancement 1: CSV File Upload Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -59,20 +53,15 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
     reader.onload = (event) => {
       try {
         const text = event.target?.result as string;
-        // Split by new line
         const lines = text.split(/\r\n|\n/);
         
         const newContacts: Array<{ name: string; phone: string; username: string }> = [];
-        
-        // Simple heuristic to skip header if "name" is in the first row
         const startRow = lines[0].toLowerCase().includes('name') ? 1 : 0;
 
         for (let i = startRow; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue;
           
-          // Basic CSV parsing (Split by comma)
-          // Expected format: Name, Username, Phone
           const cols = line.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
           
           if (cols.length > 0 && cols[0]) {
@@ -85,7 +74,6 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
         }
 
         if (newContacts.length > 0) {
-          // Append to existing contacts (excluding empty first row if it exists)
           setContacts(prev => {
             const filteredPrev = prev.filter(c => c.name.trim() !== '');
             return [...filteredPrev, ...newContacts];
@@ -99,7 +87,6 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
         toast.error("Failed to parse CSV file");
       }
       
-      // Reset input
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsText(file);
@@ -117,26 +104,31 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
     let requestsSent = 0;
     let contactsSaved = 0;
     let alreadyConnected = 0;
+    let errors = 0;
 
     try {
       await Promise.all(validContacts.map(async (contact) => {
-        // Search by display_name or USERNAME (Updated from email)
         const conditions: string[] = [];
         
-        // Fuzzy search name
+        // 1. Check Name (Fuzzy)
         if (contact.name) conditions.push(`display_name.ilike.%${contact.name.trim()}%`);
         
-        // Exact search username (Higher priority usually, but 'or' logic checks both)
+        // 2. Check Username (Exact)
         if (contact.username) conditions.push(`username.eq.${contact.username.trim()}`);
+        
+        // 3. ✅ FIXED: Check Phone (Exact)
+        const cleanPhone = normalizePhone(contact.phone);
+        if (cleanPhone) conditions.push(`phone.eq.${cleanPhone}`);
 
         let existingUser = null;
         
+        // Only run query if we have at least one condition
         if (conditions.length > 0) {
           const { data, error } = await supabase
             .from('profiles')
-            .select('user_id, display_name, username, avatar_url')
+            .select('user_id, display_name, username, phone, avatar_url')
             .neq('user_id', user?.id)
-            .or(conditions.join(','))
+            .or(conditions.join(',')) // Checks Name OR Username OR Phone
             .limit(1)
             .maybeSingle();
 
@@ -146,7 +138,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
         }
 
         if (existingUser) {
-          // USER FOUND - Check for existing friendship
+          // --- SCENARIO A: USER FOUND (Send Friend Request) ---
           const { data: existingFriendship } = await supabase
             .from('friendships')
             .select('status')
@@ -166,39 +158,53 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
 
             if (!reqError) {
               requestsSent++;
+            } else {
+              console.error("Friend Request Error:", reqError);
+              errors++;
             }
           }
         } else {
-          // USER NOT FOUND - Save as contact
-          // Enhancement 2: Normalize Phone before saving
-          const cleanPhone = normalizePhone(contact.phone);
-
+          // --- SCENARIO B: USER NOT FOUND (Save to Contacts) ---
           const { error: saveError } = await supabase
             .from('contacts')
             .insert({
               user_id: user?.id,
               name: contact.name,
               phone: cleanPhone || null,
-              username: contact.username || null // Updated field
+              username: contact.username || null
             });
 
-          if (!saveError) contactsSaved++;
+          if (!saveError) {
+            contactsSaved++;
+          } else {
+            console.error("Save Contact Error:", saveError);
+            errors++;
+          }
         }
       }));
 
-      // Invalidate queries to refresh data
       await queryClient.invalidateQueries({ queryKey: ['friendRequests'] });
       await queryClient.invalidateQueries({ queryKey: ['suggestions'] });
       await queryClient.invalidateQueries({ queryKey: ['contacts'] });
 
-      let msg = "Import complete.";
-      if (requestsSent > 0) msg += ` Sent ${requestsSent} friend request${requestsSent > 1 ? 's' : ''}.`;
-      if (contactsSaved > 0) msg += ` Saved ${contactsSaved} contact${contactsSaved > 1 ? 's' : ''}.`;
-      if (alreadyConnected > 0) msg += ` ${alreadyConnected} already connected.`;
-      
-      toast.success(msg);
-      onOpenChange(false);
-      setContacts([{ name: '', phone: '', username: '' }]); 
+      if (requestsSent === 0 && contactsSaved === 0 && alreadyConnected === 0 && errors > 0) {
+        toast.error(`Import failed. ${errors} errors occurred.`);
+      } else {
+        const parts = [];
+        if (requestsSent > 0) parts.push(`${requestsSent} friend request(s)`);
+        if (contactsSaved > 0) parts.push(`${contactsSaved} contact(s) saved`);
+        if (alreadyConnected > 0) parts.push(`${alreadyConnected} already connected`);
+        
+        if (parts.length > 0) {
+          toast.success(`Import complete: ${parts.join(', ')}`);
+          onOpenChange(false);
+          setContacts([{ name: '', phone: '', username: '' }]); 
+        } else if (errors === 0) {
+          toast.info("Import complete. No valid actions taken.");
+        } else {
+          toast.warning(`Partial import: ${errors} failed.`);
+        }
+      }
 
     } catch (error) {
       console.error(error);
@@ -217,12 +223,11 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
             Import Contacts
           </DialogTitle>
           <DialogDescription>
-            Enter details or upload CSV. If they use the app (username match), we'll send a friend request. If not, we'll save them as a contact.
+            Enter details or upload CSV. If they use the app (username/phone match), we'll send a friend request. If not, we'll save them as a contact.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Enhancement 1: CSV Upload Button */}
           <div className="flex gap-2">
              <Input 
                type="file" 
