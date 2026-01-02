@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,9 @@ import {
   ArrowUpRight,
   Info,
   Check,
+  AlertCircle, 
   Building2,
+  CreditCard,
   Zap
 } from "lucide-react"; 
 import { 
@@ -68,7 +70,7 @@ type Event = {
   image_url?: string;
   creator_id: string;
   is_public: boolean;
-  is_boosted?: boolean;
+  is_boosted?: boolean; // Calculated field
   max_attendees?: number | null;
   event_type: 'physical' | 'virtual';
   meeting_link?: string | null;
@@ -76,9 +78,6 @@ type Event = {
     user_id: string;
     display_name: string;
     avatar_url?: string;
-    // Premium info merged manually
-    premium_features?: PremiumFeature[];
-    subscriptions?: Subscription[];
   };
 };
 
@@ -92,6 +91,23 @@ type BankDetails = {
   account_number: string;
   account_name: string;
 }; 
+
+const bankDetailsSchema = z.object({
+  bank_name: z.string()
+    .trim()
+    .min(3, 'Bank name too short')
+    .max(50, 'Bank name too long')
+    .regex(/^[a-zA-Z\s]+$/, 'Bank name can only contain letters and spaces'),
+  account_number: z.string()
+    .trim()
+    .length(10, 'Nigerian account numbers must be exactly 10 digits')
+    .regex(/^\d{10}$/, 'Account number must contain only digits'),
+  account_name: z.string()
+    .trim()
+    .min(3, 'Account name too short')
+    .max(100, 'Account name too long')
+    .regex(/^[a-zA-Z\s'-]+$/, 'Account name contains invalid characters')
+});
 
 // --- COMPONENTS ---
 const EventSkeleton = () => (
@@ -156,8 +172,7 @@ export default function Events() {
   const [isPayoutLoading, setIsPayoutLoading] = useState(false);
   const [bankForm, setBankForm] = useState<BankDetails>({ bank_name: '', account_number: '', account_name: '' }); 
 
-  // --- HELPER: Logic to check if an event is still "Active" ---
-  // Returns TRUE if event is in future OR if it started less than 1 hour ago
+  // --- HELPER: Check if event is active (Future OR < 1 hour old) ---
   const isEventActive = (dateString: string) => {
     const eventDate = new Date(dateString);
     const now = new Date();
@@ -166,71 +181,84 @@ export default function Events() {
     return eventEndTime > now;
   };
 
-  // 1. Fetch My Events (Fixed Query + Manual Join)
+  // --- HELPER: Check premium boost ---
+  const checkBoostPermission = (creatorId: string, premiums: PremiumFeature[], subs: Subscription[]) => {
+    // Check Premium Features
+    const hasActiveFeature = premiums.some(f => 
+      f.user_id === creatorId &&
+      f.is_active && 
+      new Date(f.expires_at) > new Date() && 
+      (f.feature_type === 'event_boost' || f.feature_type === 'full_package')
+    );
+
+    // Check Subscriptions
+    const hasActiveSub = subs.some(s => 
+      s.user_id === creatorId &&
+      s.status === 'active' && 
+      (s.plan_type === 'event_boost' || s.plan_type === 'full_package')
+    );
+
+    return hasActiveFeature || hasActiveSub;
+  };
+
+  // 1. Fetch My Events
   const { data: myEvents = [], isLoading: loadingMy } = useQuery({
     queryKey: ["events", "my", userId],
     queryFn: async (): Promise<EventWithStats[]> => {
       if (!userId) return [];
       
-      // 1. Fetch Events & Basic Profile (Safe Query)
+      // 1. Fetch Events (Simple query to avoid relation errors)
       const { data: events, error } = await supabase
         .from("events")
-        .select(`
-          *,
-          creator:profiles!creator_id (
-             user_id, display_name, avatar_url
-          )
-        `)
+        .select("*")
         .eq("creator_id", userId)
         .order("start_date", { ascending: false }); 
       
       if (error) throw error;
       if (!events || events.length === 0) return [];
 
-      // 2. Fetch Premium Data for Creators manually (avoids Join errors)
+      // 2. Fetch Creator Premium Data & Attendees
       const creatorIds = [...new Set(events.map(e => e.creator_id))];
-      
+      const eventIds = events.map(e => e.id);
+
       const [premiumRes, subRes, attendeesRes] = await Promise.all([
         supabase.from("premium_features").select("*").in("user_id", creatorIds),
         supabase.from("subscriptions").select("*").in("user_id", creatorIds),
-        supabase.from("event_attendees").select("event_id").in("event_id", events.map(e => e.id)).eq("status", "confirmed")
+        supabase.from("event_attendees").select("event_id").in("event_id", eventIds).eq("status", "confirmed")
       ]);
+
+      const premiums = premiumRes.data || [];
+      const subs = subRes.data || [];
+      const attendees = attendeesRes.data || [];
 
       // 3. Map Data
       const countMap: Record<string, number> = {};
-      attendeesRes.data?.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
+      attendees.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
 
       return events.map((event: any) => ({
         ...event,
         event_type: (event.event_type as 'physical' | 'virtual') || 'physical',
         attendee_count: countMap[event.id] || 0,
-        creator: {
-          ...event.creator,
-          premium_features: premiumRes.data?.filter(p => p.user_id === event.creator_id) || [],
-          subscriptions: subRes.data?.filter(s => s.user_id === event.creator_id) || []
-        }
+        // Calculate boosted status here
+        is_boosted: checkBoostPermission(event.creator_id, premiums, subs)
       }));
     },
     enabled: !!userId,
     staleTime: 30000,
   });
 
-  // 2. Fetch Attending Events (Fixed Query + Manual Join)
+  // 2. Fetch Attending Events
   const { data: attendingEvents = [], isLoading: loadingAttending } = useQuery({
     queryKey: ["events", "attending", userId],
     queryFn: async (): Promise<EventWithStats[]> => {
       if (!userId) return [];
       
+      // Fetch attendees with event data
       const { data: rawData, error } = await supabase
         .from("event_attendees")
         .select(`
           status,
-          event:events (
-            *,
-            creator:profiles!creator_id (
-               user_id, display_name, avatar_url
-            )
-          )
+          event:events (*)
         `)
         .eq("user_id", userId)
         .in("status", ["confirmed", "pending"])
@@ -239,13 +267,13 @@ export default function Events() {
       if (error) throw error;
       if (!rawData || rawData.length === 0) return [];
 
-      // Extract events
       const events = rawData.map((item: any) => ({
         ...item.event,
+        event_type: (item.event?.event_type as 'physical' | 'virtual') || 'physical',
         my_status: item.status
       }));
 
-      // Fetch Premium & Counts
+      // Fetch Premium & Global Counts
       const creatorIds = [...new Set(events.map((e: any) => e.creator_id))];
       const eventIds = events.map((e: any) => e.id);
 
@@ -255,18 +283,17 @@ export default function Events() {
         supabase.from("event_attendees").select("event_id").in("event_id", eventIds).eq("status", "confirmed")
       ]);
 
+      const premiums = premiumRes.data || [];
+      const subs = subRes.data || [];
+      const attendees = attendeesRes.data || [];
+
       const countMap: Record<string, number> = {};
-      attendeesRes.data?.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
+      attendees.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
 
       return events.map((event: any) => ({
         ...event,
-        event_type: (event.event_type as 'physical' | 'virtual') || 'physical',
         attendee_count: countMap[event.id] || 0,
-        creator: {
-          ...event.creator,
-          premium_features: premiumRes.data?.filter(p => p.user_id === event.creator_id) || [],
-          subscriptions: subRes.data?.filter(s => s.user_id === event.creator_id) || []
-        }
+        is_boosted: checkBoostPermission(event.creator_id, premiums, subs)
       })).sort((a: any, b: any) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
     },
     enabled: !!userId,
@@ -391,41 +418,17 @@ export default function Events() {
     }
   };
 
-  // ✅ Helper to check if event has valid premium boost
-  const hasBoostPermission = (event: EventWithStats) => {
-    const features = event.creator?.premium_features || [];
-    const subs = event.creator?.subscriptions || [];
-
-    // Check Premium Features
-    const hasActiveFeature = features.some(f => 
-      f.is_active && 
-      new Date(f.expires_at) > new Date() && 
-      (f.feature_type === 'event_boost' || f.feature_type === 'full_package')
-    );
-
-    // Check Subscriptions
-    const hasActiveSub = subs.some(s => 
-      s.status === 'active' && 
-      (s.plan_type === 'event_boost' || s.plan_type === 'full_package')
-    );
-
-    return hasActiveFeature || hasActiveSub;
-  };
-
 const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
     const status = getEventStatus(event.start_date);
     const eventDate = new Date(event.start_date);
     const isFull = event.max_attendees && event.attendee_count ? event.attendee_count >= event.max_attendees : false;
     
-    // ✅ Logic: Event is past if strict time + 1 hour grace period has passed
+    // Check if event is active (including grace period)
     const isStillActive = isEventActive(event.start_date);
     const isEventPast = !isStillActive;
     
     // Explicitly check for pending status
     const isPending = event.my_status === 'pending';
-    
-    // Check for Boost Permission
-    const isBoosted = hasBoostPermission(event);
 
     return (
       <Card 
@@ -464,8 +467,8 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                 </Badge>
               </div>
 
-               {/* ✅ Boosted Zap Icon check */}
-               {isBoosted && !isEventPast && (
+               {/* ✅ Boosted Zap Icon check using computed is_boosted prop */}
+               {event.is_boosted && !isEventPast && (
                 <div className="absolute top-0 right-0 bg-yellow-400 text-white rounded-bl-lg p-1.5 shadow-sm z-10 animate-pulse">
                   <Zap className="w-3 h-3 fill-white" />
                 </div>
