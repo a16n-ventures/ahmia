@@ -13,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGeolocation } from '@/contexts/LocationContext';
 import { useFriends } from '@/hooks/useFriends';
-import { ContactImportModal } from '@/components/map/ContactImportModal';
+import { ContactImportModal } from '@/components/ContactImportModal';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import LeafletMap from '@/components/map/LeafletMap';
