@@ -216,6 +216,7 @@ export type Database = {
           community_id: string | null
           id: string
           joined_at: string | null
+          muted_until: string | null
           role: string | null
           user_id: string | null
         }
@@ -223,6 +224,7 @@ export type Database = {
           community_id?: string | null
           id?: string
           joined_at?: string | null
+          muted_until?: string | null
           role?: string | null
           user_id?: string | null
         }
@@ -230,6 +232,7 @@ export type Database = {
           community_id?: string | null
           id?: string
           joined_at?: string | null
+          muted_until?: string | null
           role?: string | null
           user_id?: string | null
         }
@@ -308,6 +311,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "community_messages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "community_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["user_id"]
           },
         ]
       }
