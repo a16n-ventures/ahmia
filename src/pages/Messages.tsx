@@ -561,7 +561,7 @@ export default function Messages() {
     .from('community_messages')
     .select(`
       *,
-      sender:profiles(id, user_id, display_name, username, email, avatar_url),
+      sender:profiles!sender_id(id, user_id, display_name, username, email, avatar_url),
       reply_to:community_messages(id, content, sender_id, image_url)
     `)
     .eq('community_id', selectedChat.id)
@@ -1018,8 +1018,7 @@ const sendMessage = useMutation({
     }
     
     return (
-      // ✅ NUCLEAR FIX: Changed z-[100] to z-40 so modals (z-50) can appear on top
-      <div className="fixed inset-0 z-40 bg-background flex flex-col h-[100dvh]">
+      <div className="fixed inset-0 z-[100] bg-background flex flex-col h-[100dvh]">
         {/* Header */}
         <div className="px-4 py-3 border-b flex items-center gap-3 bg-gradient-to-r from-background to-muted/20 backdrop-blur-xl shadow-sm shrink-0 z-10">
           <Button variant="ghost" size="icon" className="-ml-2 rounded-full hover:bg-muted" onClick={() => setSelectedChat(null)}>
@@ -1073,19 +1072,19 @@ const sendMessage = useMutation({
           </div>
           
           <div className="flex items-center gap-1">
-            {/* ✅ FIX: Wiring the Gallery Button Explicitly */}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="rounded-full h-9 w-9" 
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsGalleryOpen(true);
-              }}
-              title="Media Gallery"
-            >
-              <Grid className="w-4 h-4" />
-            </Button>
+            {chatImages.length > 0 && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="rounded-full h-9 w-9" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsGalleryOpen(true);
+                }}
+              >
+                <Grid className="w-4 h-4" />
+              </Button>
+            )}
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1191,7 +1190,7 @@ const sendMessage = useMutation({
               community={selectedChat}
               coverUrl={selectedChat.cover || selectedChat.cover_url || selectedChat.avatar}
             />
-            {/* ✅ FIXED: Removed '&& isAdmin' check here - trust the menu logic and keep it open */}
+            {/* ✅ FIXED: Render dialog if isAdmin is true */}
               <CommunitySettingsDialog 
                 isOpen={isSettingsOpen} 
                 onClose={() => setIsSettingsOpen(false)} 
