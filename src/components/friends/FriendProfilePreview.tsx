@@ -32,39 +32,37 @@ export function FriendProfilePreview({
   const navigate = useNavigate();
   const [confirmAction, setConfirmAction] = useState<'remove' | 'block' | null>(null);
 
-  // ✅ FIXED: Improved premium status check with better error handling
   const { data: fullProfile, isLoading } = useQuery({
     queryKey: ['friendProfile', profile?.user_id],
     queryFn: async () => {
       if (!profile?.user_id) return null;
       
       try {
-        const [profileRes, locationRes, premiumRes, subRes] = await Promise.all([
+        // Fetch basic profile and location data
+        const [profileRes, locationRes] = await Promise.all([
           supabase.from('profiles').select('*').eq('user_id', profile.user_id).single(),
           supabase.from('user_locations').select('*').eq('user_id', profile.user_id).single(),
-          // Check premium_features table
-          supabase
-            .from('premium_features')
-            .select('is_active, expires_at')
-            .eq('user_id', profile.user_id)
-            .eq('is_active', true)
-            .gt('expires_at', new Date().toISOString())
-            .maybeSingle(),
-          // Check subscriptions table
-          supabase
-            .from('subscriptions')
-            .select('status')
-            .eq('user_id', profile.user_id)
-            .maybeSingle()
         ]);
 
-        // Debug logging (remove in production)
-        console.log('Premium feature:', premiumRes.data);
-        console.log('Subscription:', subRes.data);
-        
-        // Calculate premium status
-        const isPremium = !!premiumRes.data || subRes.data?.status === 'active';
-        console.log('Is Premium:', isPremium);
+        // ✅ Premium Logic synced with MainLayout.tsx
+        // 1. Check for active manual premium feature with valid expiry
+        const { data: premiumFeature } = await supabase
+          .from('premium_features')
+          .select('is_active, expires_at')
+          .eq('user_id', profile.user_id)
+          .eq('is_active', true)
+          .gt('expires_at', new Date().toISOString()) // Ensure not expired
+          .maybeSingle();
+
+        // 2. Check for active subscription
+        const { data: sub } = await supabase
+          .from('subscriptions')
+          .select('status')
+          .eq('user_id', profile.user_id)
+          .maybeSingle();
+
+        // User is premium if they have an active manual feature OR an active subscription
+        const isPremium = !!premiumFeature || sub?.status === 'active';
         
         return {
           ...profileRes.data,
@@ -133,8 +131,8 @@ export function FriendProfilePreview({
             <div className="text-center">
               <div className="flex items-center justify-center gap-2">
                 <h3 className="text-xl font-semibold">{fullProfile.display_name || 'Unknown User'}</h3>
-                {/* ✅ FIXED: Added optional chaining and proper check */}
-                {fullProfile?.isPremium && (
+                {/* ✅ Display Verified Badge if Premium */}
+                {fullProfile.isPremium && (
                   <svg 
                     className="w-5 h-5 text-blue-500 flex-shrink-0" 
                     viewBox="0 0 22 22" 
