@@ -203,7 +203,7 @@ const MainLayout = () => {
       <Avatar className="w-9 h-9 border border-border group-hover:border-primary transition-colors">
         <AvatarImage src={profile?.avatar_url || undefined} className="object-cover" />
         <AvatarFallback className="bg-muted text-muted-foreground">
-          {profile?.display_name?.[0] || user?.email?.[0] || 'U'}
+          {profile?.display_name?.[0] || profile?.username?.[0] || 'U'}
         </AvatarFallback>
       </Avatar>
       <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full"></span>
