@@ -46,6 +46,17 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { z } from 'zod';
 
 // --- TYPES ---
+type PremiumFeature = {
+  feature_type: string;
+  is_active: boolean;
+  expires_at: string;
+};
+
+type Subscription = {
+  plan_type: string;
+  status: string;
+};
+
 type Event = {
   id: string;
   title: string;
@@ -65,6 +76,9 @@ type Event = {
     user_id: string;
     display_name: string;
     avatar_url?: string;
+    // Added premium info to creator type
+    premium_features?: PremiumFeature[];
+    subscriptions?: Subscription[];
   };
 };
 
@@ -165,9 +179,17 @@ export default function Events() {
     queryFn: async (): Promise<EventWithStats[]> => {
       if (!userId) return [];
       
+      // Select event + creator info + premium status
       const { data: events, error } = await supabase
         .from("events")
-        .select("*")
+        .select(`
+          *,
+          creator:profiles!creator_id (
+             user_id, display_name, avatar_url,
+             premium_features (feature_type, is_active, expires_at),
+             subscriptions (plan_type, status)
+          )
+        `)
         .eq("creator_id", userId)
         .order("start_date", { ascending: false }); 
       
@@ -188,7 +210,7 @@ export default function Events() {
         countMap[a.event_id] = (countMap[a.event_id] || 0) + 1;
       });
 
-      return events.map(event => ({
+      return events.map((event: any) => ({
         ...event,
         event_type: (event.event_type as 'physical' | 'virtual') || 'physical',
         attendee_count: countMap[event.id] || 0
@@ -204,12 +226,19 @@ export default function Events() {
     queryFn: async (): Promise<EventWithStats[]> => {
       if (!userId) return [];
       
-      // Perform a relational join: Get attendee record AND the linked event details
+      // Perform a relational join: Get attendee record AND the linked event details AND creator details
       const { data: rawData, error } = await supabase
         .from("event_attendees")
         .select(`
           status,
-          event:events (*)
+          event:events (
+            *,
+            creator:profiles!creator_id (
+               user_id, display_name, avatar_url,
+               premium_features (feature_type, is_active, expires_at),
+               subscriptions (plan_type, status)
+            )
+          )
         `)
         .eq("user_id", userId)
         .in("status", ["confirmed", "pending"])
@@ -435,15 +464,40 @@ export default function Events() {
       console.error('Share failed:', err);
     }
   };
+
+  // ✅ Helper to check if event has valid premium boost
+  const hasBoostPermission = (event: EventWithStats) => {
+    const features = event.creator?.premium_features || [];
+    const subs = event.creator?.subscriptions || [];
+
+    // Check Premium Features
+    const hasActiveFeature = features.some(f => 
+      f.is_active && 
+      new Date(f.expires_at) > new Date() && 
+      (f.feature_type === 'event_boost' || f.feature_type === 'full_package')
+    );
+
+    // Check Subscriptions
+    const hasActiveSub = subs.some(s => 
+      s.status === 'active' && 
+      (s.plan_type === 'event_boost' || s.plan_type === 'full_package')
+    );
+
+    return hasActiveFeature || hasActiveSub;
+  };
+
 const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
     const status = getEventStatus(event.start_date);
     const eventDate = new Date(event.start_date);
     const isFull = event.max_attendees && event.attendee_count ? event.attendee_count >= event.max_attendees : false;
-    // ✅ CHANGED: Logic to strictly check time (removes !isToday check)
+    // Strictly check time for past events
     const isEventPast = isPast(eventDate); 
     
     // Explicitly check for pending status
     const isPending = event.my_status === 'pending';
+    
+    // Check for Boost Permission
+    const isBoosted = hasBoostPermission(event);
 
     return (
       <Card 
@@ -482,8 +536,8 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                 </Badge>
               </div>
 
-               {/* ✅ CHANGED: Boosted Zap Icon moved to absolute corner */}
-               {event.is_boosted && !isEventPast && (
+               {/* ✅ CHANGED: Boosted Zap Icon check */}
+               {isBoosted && !isEventPast && (
                 <div className="absolute top-0 right-0 bg-yellow-400 text-white rounded-bl-lg p-1.5 shadow-sm z-10 animate-pulse">
                   <Zap className="w-3 h-3 fill-white" />
                 </div>
@@ -617,7 +671,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
 
   const filteredMyEvents = filterEvents(myEvents);
   
-  // ✅ CHANGED: Filter logic to strictly check time (Active = NOT past, Past = IS past)
+  // Filter logic to strictly check time
   const myActiveEvents = filteredMyEvents.filter(e => !isPast(new Date(e.start_date)));
   const myPastEvents = filteredMyEvents.filter(e => isPast(new Date(e.start_date)));
   
@@ -655,7 +709,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
 
         <TabsContent value="my" className="space-y-3 mt-6 animate-in fade-in-50">
           
-           {/* ✅ CHANGED: Added mx-auto to center the toggle */}
+           {/* Center Toggle */}
           <div className="flex items-center gap-2 mb-4 bg-muted/30 p-1 rounded-lg w-fit mx-auto">
             <button
               onClick={() => setHostedFilter('active')}
