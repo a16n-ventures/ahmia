@@ -25,7 +25,7 @@ import { useContacts } from "@/hooks/useContacts";
 import { FriendSkeleton } from "@/components/friends/FriendSkeleton";
 import { FriendProfilePreview } from "@/components/friends/FriendProfilePreview";
 import { BlockReportDialog } from "@/components/friends/BlockReportDialog";
-import { AddContactForm } from "@/components/friends/AddContactForm";
+import { ContactImportModal } from "@/components/ContactImportModal";
 
 // Utilities
 const DEBOUNCE_DELAY = 500;
