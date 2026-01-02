@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
@@ -87,8 +88,9 @@ export default function Messages() {
   const [hasError, setHasError] = useState(false);
   const { user } = useAuth() || {};
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const typingTimeoutRef = useRef<number | null>(null); 
+  const typingTimeoutRef = useRef<number | null>(null);
 
   // UI state
   const [activeTab, setActiveTab] = useState<ChatMode>('dm');
@@ -322,7 +324,7 @@ export default function Messages() {
               return null;
             }
           })
-          .filter((item): item is ExtendedDMListItem => item !== null)
+          .filter((item): item is NonNullable<typeof item> => item !== null)
           .sort((a, b) => {
             try {
               return new Date(b.time).getTime() - new Date(a.time).getTime();
@@ -427,7 +429,7 @@ export default function Messages() {
   
       const { data } = await supabase
         .from('community_members')
-        .select('role, muted_until')
+        .select('role')
         .eq('community_id', selectedChat.id)
         .eq('user_id', user.id)
         .single();
@@ -987,15 +989,13 @@ const sendMessage = useMutation({
     };
   }, [imagePreview]);
   const isComm = selectedChat?.type === 'community';
-    const isMuted = useMemo(() => {
-  if (!isComm || !myMembership) return false;
-  return myMembership.muted_until && new Date(myMembership.muted_until) > new Date();
-}, [isComm, myMembership]);
+  // Mute feature requires database migration - disabled for now
+  const isMuted = false;
 
   // Chat view
   if (selectedChat) {
     // ✅ FIXED: Use LIVE membership data for role checks if available
-    const myRole = myMembership?.role || selectedChat.my_role || 'none';
+    const myRole = myMembership?.role || (selectedChat.type === 'community' ? selectedChat.my_role : 'none') || 'none';
     const canType = !isComm || (isComm && myRole !== 'none' && !isMuted);
     const isAdmin = myRole === 'admin';
     const canModerate = isComm && (isAdmin || myRole === 'moderator');
@@ -1023,12 +1023,30 @@ const sendMessage = useMutation({
             <ArrowLeft className="h-5 w-5" />
           </Button>
           
-          <Avatar className="h-11 w-11 border-2 border-background ring-2 ring-primary/10 cursor-pointer" onClick={() => setIsInfoOpen(true)}>
+          <Avatar 
+            className="h-11 w-11 border-2 border-background ring-2 ring-primary/10 cursor-pointer" 
+            onClick={() => {
+              if (!isComm && selectedChat.type === 'dm') {
+                navigate(`/profile?id=${selectedChat.partner_id}`);
+              } else {
+                setIsInfoOpen(true);
+              }
+            }}
+          >
             <AvatarImage src={selectedChat.avatar} />
             <AvatarFallback>{selectedChat.name?.[0]?.toUpperCase() ?? 'C'}</AvatarFallback>
           </Avatar>
           
-          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setIsInfoOpen(true)}>
+          <div 
+            className="flex-1 min-w-0 cursor-pointer" 
+            onClick={() => {
+              if (!isComm && selectedChat.type === 'dm') {
+                navigate(`/profile?id=${selectedChat.partner_id}`);
+              } else {
+                setIsInfoOpen(true);
+              }
+            }}
+          >
             <div className="flex items-center gap-1">
               <h3 className="font-bold text-base truncate">{selectedChat.name}</h3>
               {selectedChat.is_premium && <PremiumBadge />}
