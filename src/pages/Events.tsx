@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -24,9 +24,7 @@ import {
   ArrowUpRight,
   Info,
   Check,
-  AlertCircle, 
   Building2,
-  CreditCard,
   Zap
 } from "lucide-react"; 
 import { 
@@ -39,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label"; 
 import { useNavigate } from "react-router-dom";
-import { format, isPast, isFuture, isToday } from "date-fns";
+import { format, isPast, isFuture, isToday, addHours } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; 
@@ -47,12 +45,14 @@ import { z } from 'zod';
 
 // --- TYPES ---
 type PremiumFeature = {
+  user_id: string;
   feature_type: string;
   is_active: boolean;
   expires_at: string;
 };
 
 type Subscription = {
+  user_id: string;
   plan_type: string;
   status: string;
 };
@@ -76,7 +76,7 @@ type Event = {
     user_id: string;
     display_name: string;
     avatar_url?: string;
-    // Added premium info to creator type
+    // Premium info merged manually
     premium_features?: PremiumFeature[];
     subscriptions?: Subscription[];
   };
@@ -92,23 +92,6 @@ type BankDetails = {
   account_number: string;
   account_name: string;
 }; 
-
-const bankDetailsSchema = z.object({
-  bank_name: z.string()
-    .trim()
-    .min(3, 'Bank name too short')
-    .max(50, 'Bank name too long')
-    .regex(/^[a-zA-Z\s]+$/, 'Bank name can only contain letters and spaces'),
-  account_number: z.string()
-    .trim()
-    .length(10, 'Nigerian account numbers must be exactly 10 digits')
-    .regex(/^\d{10}$/, 'Account number must contain only digits'),
-  account_name: z.string()
-    .trim()
-    .min(3, 'Account name too short')
-    .max(100, 'Account name too long')
-    .regex(/^[a-zA-Z\s'-]+$/, 'Account name contains invalid characters')
-});
 
 // --- COMPONENTS ---
 const EventSkeleton = () => (
@@ -173,21 +156,29 @@ export default function Events() {
   const [isPayoutLoading, setIsPayoutLoading] = useState(false);
   const [bankForm, setBankForm] = useState<BankDetails>({ bank_name: '', account_number: '', account_name: '' }); 
 
-  // 1. Fetch My Events
+  // --- HELPER: Logic to check if an event is still "Active" ---
+  // Returns TRUE if event is in future OR if it started less than 1 hour ago
+  const isEventActive = (dateString: string) => {
+    const eventDate = new Date(dateString);
+    const now = new Date();
+    // Grace period: Event is considered active for 1 hour after start time
+    const eventEndTime = addHours(eventDate, 1); 
+    return eventEndTime > now;
+  };
+
+  // 1. Fetch My Events (Fixed Query + Manual Join)
   const { data: myEvents = [], isLoading: loadingMy } = useQuery({
     queryKey: ["events", "my", userId],
     queryFn: async (): Promise<EventWithStats[]> => {
       if (!userId) return [];
       
-      // Select event + creator info + premium status
+      // 1. Fetch Events & Basic Profile (Safe Query)
       const { data: events, error } = await supabase
         .from("events")
         .select(`
           *,
           creator:profiles!creator_id (
-             user_id, display_name, avatar_url,
-             premium_features (feature_type, is_active, expires_at),
-             subscriptions (plan_type, status)
+             user_id, display_name, avatar_url
           )
         `)
         .eq("creator_id", userId)
@@ -196,37 +187,40 @@ export default function Events() {
       if (error) throw error;
       if (!events || events.length === 0) return [];
 
-      const eventIds = events.map(e => e.id);
-      const { data: allAttendees, error: countError } = await supabase
-        .from("event_attendees")
-        .select("event_id")
-        .in("event_id", eventIds)
-        .eq("status", "confirmed");
+      // 2. Fetch Premium Data for Creators manually (avoids Join errors)
+      const creatorIds = [...new Set(events.map(e => e.creator_id))];
       
-      if (countError) throw countError;
+      const [premiumRes, subRes, attendeesRes] = await Promise.all([
+        supabase.from("premium_features").select("*").in("user_id", creatorIds),
+        supabase.from("subscriptions").select("*").in("user_id", creatorIds),
+        supabase.from("event_attendees").select("event_id").in("event_id", events.map(e => e.id)).eq("status", "confirmed")
+      ]);
 
+      // 3. Map Data
       const countMap: Record<string, number> = {};
-      allAttendees?.forEach(a => {
-        countMap[a.event_id] = (countMap[a.event_id] || 0) + 1;
-      });
+      attendeesRes.data?.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
 
       return events.map((event: any) => ({
         ...event,
         event_type: (event.event_type as 'physical' | 'virtual') || 'physical',
-        attendee_count: countMap[event.id] || 0
+        attendee_count: countMap[event.id] || 0,
+        creator: {
+          ...event.creator,
+          premium_features: premiumRes.data?.filter(p => p.user_id === event.creator_id) || [],
+          subscriptions: subRes.data?.filter(s => s.user_id === event.creator_id) || []
+        }
       }));
     },
     enabled: !!userId,
     staleTime: 30000,
   });
 
-// 2. Fetch Attending Events (Optimized with Relational Join)
+  // 2. Fetch Attending Events (Fixed Query + Manual Join)
   const { data: attendingEvents = [], isLoading: loadingAttending } = useQuery({
     queryKey: ["events", "attending", userId],
     queryFn: async (): Promise<EventWithStats[]> => {
       if (!userId) return [];
       
-      // Perform a relational join: Get attendee record AND the linked event details AND creator details
       const { data: rawData, error } = await supabase
         .from("event_attendees")
         .select(`
@@ -234,45 +228,45 @@ export default function Events() {
           event:events (
             *,
             creator:profiles!creator_id (
-               user_id, display_name, avatar_url,
-               premium_features (feature_type, is_active, expires_at),
-               subscriptions (plan_type, status)
+               user_id, display_name, avatar_url
             )
           )
         `)
         .eq("user_id", userId)
         .in("status", ["confirmed", "pending"])
-        .not("event", "is", null); // Safety check: ensure event hasn't been deleted
+        .not("event", "is", null);
       
       if (error) throw error;
       if (!rawData || rawData.length === 0) return [];
 
-      // Normalize structure and map status
+      // Extract events
       const events = rawData.map((item: any) => ({
         ...item.event,
-        event_type: (item.event?.event_type as 'physical' | 'virtual') || 'physical',
-        my_status: item.status as 'confirmed' | 'pending'
+        my_status: item.status
       }));
 
-      // Fetch global attendee counts for these events
+      // Fetch Premium & Counts
+      const creatorIds = [...new Set(events.map((e: any) => e.creator_id))];
       const eventIds = events.map((e: any) => e.id);
-      const { data: allAttendees, error: countError } = await supabase
-        .from("event_attendees")
-        .select("event_id")
-        .in("event_id", eventIds)
-        .eq("status", "confirmed");
 
-      if (countError) throw countError;
+      const [premiumRes, subRes, attendeesRes] = await Promise.all([
+        supabase.from("premium_features").select("*").in("user_id", creatorIds),
+        supabase.from("subscriptions").select("*").in("user_id", creatorIds),
+        supabase.from("event_attendees").select("event_id").in("event_id", eventIds).eq("status", "confirmed")
+      ]);
 
       const countMap: Record<string, number> = {};
-      allAttendees?.forEach(a => {
-        countMap[a.event_id] = (countMap[a.event_id] || 0) + 1;
-      });
+      attendeesRes.data?.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
 
-      // Merge counts and Sort by Start Date
       return events.map((event: any) => ({
         ...event,
-        attendee_count: countMap[event.id] || 0
+        event_type: (event.event_type as 'physical' | 'virtual') || 'physical',
+        attendee_count: countMap[event.id] || 0,
+        creator: {
+          ...event.creator,
+          premium_features: premiumRes.data?.filter(p => p.user_id === event.creator_id) || [],
+          subscriptions: subRes.data?.filter(s => s.user_id === event.creator_id) || []
+        }
       })).sort((a: any, b: any) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
     },
     enabled: !!userId,
@@ -284,82 +278,38 @@ export default function Events() {
     queryKey: ["events", "stats", userId],
     queryFn: async () => {
       if (!userId) return { 
-        totalHosted: 0, 
-        totalAttendees: 0, 
-        upcomingEvents: 0,
-        pastEvents: 0,
-        netRevenue: 0,
-        walletBalance: 0
+        totalHosted: 0, totalAttendees: 0, upcomingEvents: 0, pastEvents: 0, netRevenue: 0, walletBalance: 0
       };
       
-      const { data: myEventsList } = await supabase
-        .from('events')
-        .select('id, start_date, ticket_price')
-        .eq('creator_id', userId);
+      const { data: myEventsList } = await supabase.from('events').select('id, start_date, ticket_price').eq('creator_id', userId);
       
-      if (!myEventsList?.length) {
-        const { data: wallet } = await supabase
-          .from('wallets')
-          .select('balance')
-          .eq('user_id', userId)
-          .maybeSingle();
+      let walletBalance = 0;
+      const { data: wallet } = await supabase.from('wallets').select('balance').eq('user_id', userId).maybeSingle();
+      if (wallet) walletBalance = wallet.balance;
 
-        return { 
-          totalHosted: 0, 
-          totalAttendees: 0, 
-          upcomingEvents: 0,
-          pastEvents: 0,
-          netRevenue: 0,
-          walletBalance: wallet?.balance || 0
-        };
-      }
+      if (!myEventsList?.length) return { totalHosted: 0, totalAttendees: 0, upcomingEvents: 0, pastEvents: 0, netRevenue: 0, walletBalance };
       
       const ids = myEventsList.map(e => e.id);
-
-      const { data: allAttendees } = await supabase
-        .from('event_attendees')
-        .select('event_id')
-        .in('event_id', ids)
-        .eq('status', 'confirmed');
+      const { data: allAttendees } = await supabase.from('event_attendees').select('event_id').in('event_id', ids).eq('status', 'confirmed');
 
       const totalAttendees = allAttendees?.length || 0;
-
       const countMap: Record<string, number> = {};
-      allAttendees?.forEach(a => {
-        countMap[a.event_id] = (countMap[a.event_id] || 0) + 1;
-      });
+      allAttendees?.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
 
       let grossRevenue = 0;
       for (const event of myEventsList) {
-        if (event.ticket_price > 0) {
-          const count = countMap[event.id] || 0;
-          grossRevenue += count * event.ticket_price;
-        }
+        if (event.ticket_price > 0) grossRevenue += (countMap[event.id] || 0) * event.ticket_price;
       }
-      const netRevenue = grossRevenue * 0.98;
 
       const upcomingEvents = myEventsList.filter(e => isFuture(new Date(e.start_date))).length;
       const pastEvents = myEventsList.filter(e => isPast(new Date(e.start_date))).length;
       
-      let walletBalance = 0;
-      try {
-        const { data: wallet } = await supabase
-          .from('wallets')
-          .select('balance')
-          .eq('user_id', userId)
-          .maybeSingle();
-        
-        walletBalance = wallet?.balance || 0;
-      } catch (e) {
-        console.log("Wallet fetch warning:", e);
-      }
-
       return { 
         totalHosted: myEventsList.length,
         totalAttendees,
         upcomingEvents,
         pastEvents,
-        netRevenue, 
+        netRevenue: grossRevenue * 0.98, 
         walletBalance 
       };
     },
@@ -371,11 +321,7 @@ export default function Events() {
   const { data: savedBankDetails, refetch: refetchBank } = useQuery({
     queryKey: ["bank-details", userId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('user_bank_details')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
+      const { data, error } = await supabase.from('user_bank_details').select('*').eq('user_id', userId).maybeSingle();
       if (error) return null;
       return data;
     },
@@ -388,25 +334,13 @@ export default function Events() {
       toast.error("Please fill in all bank details");
       return;
     }
-
     try {
-      const { error } = await supabase
-        .from('user_bank_details')
-        .upsert({ 
-          user_id: userId,
-          ...bankForm,
-          updated_at: new Date().toISOString()
-        });
-
+      const { error } = await supabase.from('user_bank_details').upsert({ user_id: userId, ...bankForm, updated_at: new Date().toISOString() });
       if (error) throw error;
       await refetchBank();
       toast.success("Bank details saved!");
     } catch (e: any) {
-      if (e instanceof z.ZodError) {
-      toast.error(e.errors[0].message);
-      return;
-    }
-    toast.error('Failed to save bank details');
+      toast.error('Failed to save bank details');
     }
   };
 
@@ -416,23 +350,13 @@ export default function Events() {
       toast.error("Minimum withdrawal amount is ₦1,000");
       return;
     }
-
     setIsPayoutLoading(true);
     try {
-      const { error } = await supabase.functions.invoke('request-payout', {
-        body: { amount: stats.walletBalance }
-      });
-
-      if (error) {
-        const body = await error.context?.json().catch(() => ({}));
-        throw new Error(body.error || error.message || "Failed to process payout");
-      }
-      
+      const { error } = await supabase.functions.invoke('request-payout', { body: { amount: stats.walletBalance } });
+      if (error) throw error;
       toast.success("Payout request submitted successfully!");
       queryClient.invalidateQueries({ queryKey: ["events", "stats", userId] });
-      
     } catch (error: any) {
-      console.error("Payout error:", error);
       toast.error(error.message || "Failed to request payout");
     } finally {
       setIsPayoutLoading(false);
@@ -440,9 +364,13 @@ export default function Events() {
   };
 
   const getEventStatus = (startDate: string) => {
+    const active = isEventActive(startDate);
     const date = new Date(startDate);
-    if (isToday(date)) return { label: 'Today', color: 'bg-green-500' };
-    if (isFuture(date)) return { label: 'Upcoming', color: 'bg-blue-500' };
+    
+    if (active) {
+       if (isToday(date)) return { label: 'Today', color: 'bg-green-500' };
+       return { label: 'Upcoming', color: 'bg-blue-500' };
+    }
     return { label: 'Past', color: 'bg-gray-500' };
   };
 
@@ -452,11 +380,9 @@ export default function Events() {
       text: `Check out this event: ${event.title}`,
       url: `${window.location.origin}/app/events/${event.id}`
     };
-
     try {
-      if (navigator.share) {
-        await navigator.share(shareData);
-      } else {
+      if (navigator.share) await navigator.share(shareData);
+      else {
         await navigator.clipboard.writeText(shareData.url);
         toast.success('Event link copied!');
       }
@@ -490,8 +416,10 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
     const status = getEventStatus(event.start_date);
     const eventDate = new Date(event.start_date);
     const isFull = event.max_attendees && event.attendee_count ? event.attendee_count >= event.max_attendees : false;
-    // Strictly check time for past events
-    const isEventPast = isPast(eventDate); 
+    
+    // ✅ Logic: Event is past if strict time + 1 hour grace period has passed
+    const isStillActive = isEventActive(event.start_date);
+    const isEventPast = !isStillActive;
     
     // Explicitly check for pending status
     const isPending = event.my_status === 'pending';
@@ -536,7 +464,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                 </Badge>
               </div>
 
-               {/* ✅ CHANGED: Boosted Zap Icon check */}
+               {/* ✅ Boosted Zap Icon check */}
                {isBoosted && !isEventPast && (
                 <div className="absolute top-0 right-0 bg-yellow-400 text-white rounded-bl-lg p-1.5 shadow-sm z-10 animate-pulse">
                   <Zap className="w-3 h-3 fill-white" />
@@ -624,7 +552,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                       isPending 
                         ? 'bg-yellow-500 hover:bg-yellow-600 text-white' 
                         : isEventPast 
-                        ? 'bg-muted text-muted-foreground' // Disabled style for past events
+                        ? 'bg-muted text-muted-foreground' 
                         : 'gradient-primary text-white'
                     }`}
                     disabled={isEventPast}
@@ -671,9 +599,9 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
 
   const filteredMyEvents = filterEvents(myEvents);
   
-  // Filter logic to strictly check time
-  const myActiveEvents = filteredMyEvents.filter(e => !isPast(new Date(e.start_date)));
-  const myPastEvents = filteredMyEvents.filter(e => isPast(new Date(e.start_date)));
+  // ✅ Fixed Time Logic: Active = (Future) OR (Past < 1 hour ago)
+  const myActiveEvents = filteredMyEvents.filter(e => isEventActive(e.start_date));
+  const myPastEvents = filteredMyEvents.filter(e => !isEventActive(e.start_date));
   
   const filteredAttendingEvents = filterEvents(attendingEvents);
 
