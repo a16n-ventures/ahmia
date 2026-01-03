@@ -1374,7 +1374,7 @@ export default function Discover() {
               <Button
                 size="sm"
                 variant={eventsFilter === 'active' ? 'default' : 'outline'}
-                className="rounded-full"
+                className="text-xs font-medium px-3 py-1.5 rounded-md"
                 onClick={() => setEventsFilter('active')}
               >
                 Active ({events.length})
@@ -1382,7 +1382,7 @@ export default function Discover() {
               <Button
                 size="sm"
                 variant={eventsFilter === 'past' ? 'default' : 'outline'}
-                className="rounded-full"
+                className="text-xs font-medium px-3 py-1.5 rounded-md"
                 onClick={() => setEventsFilter('past')}
               >
                 Past ({pastEvents.length})
