@@ -219,7 +219,7 @@ export const CommunityInfoDialog: React.FC<CommunityInfoDialogProps> = ({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[600px] h-[80vh] flex flex-col p-0 gap-0 overflow-hidden bg-background">
+        <DialogContent className="sm:max-w-[600px] h-[80vh] flex flex-col p-0 gap-0 overflow-hidden bg-background z-[9999]">
           {/* Header with cover image */}
           <div className="relative h-40 w-full flex-shrink-0 bg-muted overflow-hidden group">
             {displayCover ? (
