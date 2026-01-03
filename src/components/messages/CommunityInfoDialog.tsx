@@ -437,7 +437,7 @@ export const CommunityInfoDialog: React.FC<CommunityInfoDialogProps> = ({
 
             {/* Moderation Tab */}
             {canModerate && (
-              <TabsContent value="moderation" className="flex-1 p-6 overflow-y-auto m-0">
+              <TabsContent value="moderation" className="flex-1 p-6 overflow-y-auto my-0">
                 <div className="space-y-6">
                   <div>
                     <h3 className="font-semibold mb-2 text-sm uppercase tracking-wider text-muted-foreground">
