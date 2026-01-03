@@ -71,6 +71,7 @@ export const AdvertBanner = () => {
         <a
           href={advert.link_url}
           rel="noopener noreferrer"
+          target="_blank"
           className="flex items-center gap-3 group"
         >
           {advert.image_url && (
