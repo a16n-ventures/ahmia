@@ -1617,6 +1617,8 @@ export default function Discover() {
               </>
             )}
           </TabsContent>
+        </tabs>
+      </div>
       
       {selectedStory && <StoryViewer user={selectedStory} onClose={() => setSelectedStory(null)} />}
       
