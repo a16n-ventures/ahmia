@@ -9,7 +9,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { 
   Search, Filter, ArrowUpDown, Loader2, MapPin, User, Mail, Radar,
-  MessageSquare, MoreVertical, UserMinus, Ban, ShieldAlert, Check, X, UserPlus
+  MessageSquare, MoreVertical, UserMinus, Ban, ShieldAlert, Check, X, UserPlus,
+  Users
 } from "lucide-react"; 
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -193,6 +194,78 @@ export default function Friends() {
     enabled: allRelevantUserIds.length > 0,
     staleTime: 60000
   });
+
+  // --- Mutual Connections Logic ---
+  const myFriendIds = useMemo(() => {
+    const ids = new Set<string>();
+    friends.forEach(f => {
+      ids.add(f.requester_id === userId ? f.addressee_id : f.requester_id);
+    });
+    return ids;
+  }, [friends, userId]);
+
+  const contactUsernames = useMemo(() => 
+    contacts
+      .map(c => c.username)
+      .filter((u): u is string => !!u), 
+    [contacts]
+  );
+
+  const { data: contactProfiles } = useQuery({
+    queryKey: ['contact-profiles', contactUsernames],
+    queryFn: async () => {
+      if (contactUsernames.length === 0) return [];
+      const { data } = await supabase
+        .from('profiles')
+        .select('user_id, username')
+        .in('username', contactUsernames);
+      return data || [];
+    },
+    enabled: contactUsernames.length > 0,
+    staleTime: 300000 // 5 minutes
+  });
+
+  const contactUserIds = useMemo(() => contactProfiles?.map(p => p.user_id) || [], [contactProfiles]);
+
+  const { data: contactFriendships } = useQuery({
+    queryKey: ['contact-friendships', contactUserIds],
+    queryFn: async () => {
+      if (contactUserIds.length === 0) return [];
+      // Fetch public friendships for contacts to calculate mutuals
+      const { data } = await supabase
+        .from('friendships')
+        .select('requester_id, addressee_id')
+        .or(`requester_id.in.(${contactUserIds.join(',')}),addressee_id.in.(${contactUserIds.join(',')})`)
+        .eq('status', 'accepted'); 
+      return data || [];
+    },
+    enabled: contactUserIds.length > 0 && contactUserIds.length < 50, // Safety cap to avoid huge query
+    staleTime: 300000
+  });
+
+  const mutualCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (!contactProfiles || !contactFriendships) return counts;
+
+    contactProfiles.forEach(p => {
+      if (!p.username) return;
+      
+      const theirFriendIds = new Set<string>();
+      contactFriendships.forEach(f => {
+        if (f.requester_id === p.user_id) theirFriendIds.add(f.addressee_id);
+        if (f.addressee_id === p.user_id) theirFriendIds.add(f.requester_id);
+      });
+
+      let mutual = 0;
+      theirFriendIds.forEach(id => {
+        if (myFriendIds.has(id)) mutual++;
+      });
+      
+      counts[p.username] = mutual;
+    });
+    return counts;
+  }, [contactProfiles, contactFriendships, myFriendIds]);
+
 
   const hasLocationChangedSignificantly = useCallback((newLat: number, newLon: number): boolean => {
     if (!lastFetchLocationRef.current) return true;
@@ -569,6 +642,7 @@ export default function Friends() {
                   {filteredContacts.map(contact => {
                      const isInviting = inviteContact.isPending && inviteContact.variables?.id === contact.id;
                      const isDeleting = deleteContact.isPending;
+                     const mutualCount = contact.username ? mutualCounts[contact.username] : 0;
                      
                      return (
                       <Card key={contact.id}>
@@ -579,7 +653,13 @@ export default function Friends() {
                             </div>
                             <div className="min-w-0">
                               <h4 className="font-medium text-sm truncate">{contact.name || 'Unknown'}</h4>
-                              <p className="text-xs text-muted-foreground truncate">{contact.username || contact.phone}</p>
+                              <p className="text-xs text-muted-foreground truncate mb-0.5">{contact.username || contact.phone}</p>
+                              {mutualCount > 0 && (
+                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                  <Users className="w-3 h-3" />
+                                  <span>{mutualCount} mutual connection{mutualCount !== 1 ? 's' : ''}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
