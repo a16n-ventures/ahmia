@@ -496,6 +496,23 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
             
             <div className="flex items-center gap-3 mt-1">
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                {/* ✅ FIXED: Dynamic Label based on isEventPast */}
+                <Users className="w-3 h-3" /> {event.attendee_count || 0} {isEventPast ? 'attended' : 'attending'}
+              </div>
+              {event.ticket_price > 0 && (
+                <div className="flex items-center gap-1 text-xs font-semibold text-primary">
+                   <Ticket className="w-3 h-3" /> ₦{event.ticket_price.toLocaleString()}
+                </div>
+              )}
+            </div>
+          </div>
+            
+            <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
+              <MapPin className="w-3 h-3" /> <span className="truncate">{event.location}</span>
+            </div>
+            
+            <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Users className="w-3 h-3" /> {event.attendee_count || 0} attending
               </div>
               {event.ticket_price > 0 && (
