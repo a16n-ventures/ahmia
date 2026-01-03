@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow, isPast, isFuture, isToday, addHours, differenceInMinutes } from "date-fns"; 
 import React, { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -57,18 +56,6 @@ interface Event {
 }
 
 type ProfileWithStoryInner = { id: string; display_name: string | null; avatar_url: string | null; stories: Story[]; };
-
-// --- VERIFIED BADGE COMPONENT ---
-const VerifiedBadge = () => (
-  <svg 
-    className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 ml-1" 
-    viewBox="0 0 22 22" 
-    fill="currentColor"
-    aria-label="Verified"
-  >
-    <path d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.854-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.688-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.634.433 1.218.877 1.688.47.443 1.054.747 1.687.878.633.132 1.29.084 1.897-.136.274.586.705 1.084 1.246 1.439.54.354 1.17.551 1.816.569.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.239 1.266.296 1.903.164.636-.132 1.22-.447 1.68-.907.46-.46.776-1.044.908-1.681s.075-1.299-.165-1.903c.586-.274 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z" />
-  </svg>
-);
 
 // --- EVENT STATUS HELPER ---
 const getEventStatus = (startDate: string) => {
@@ -367,8 +354,8 @@ const EmptyState = ({ icon: Icon, title, desc, action, onAction }: any) => (
   </Card>
 );
 
-// ✅ FIXED: Wrapped in Dialog for reliable opening (z-index fix)
-function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) {
+// ✅ FIXED: StoryViewer now accepts refresh callback to avoid reload
+function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose: () => void; onStoryChange?: () => void }) {
   const { user: currentUser } = useAuth();
   const [stories, setStories] = useState<Story[]>([]);
   const [index, setIndex] = useState(0);
@@ -378,30 +365,6 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
   const [showActions, setShowActions] = useState(false); 
   const [viewCount, setViewCount] = useState(0);
   const [incomingHearts, setIncomingHearts] = useState<{ id: number, left: number }[]>([]);
-
-  // ✅ Check for verified/premium status for the story author
-  const { data: isVerified } = useQuery({
-    queryKey: ['story-author-premium', user.id],
-    queryFn: async () => {
-      const { data: premiumFeature } = await supabase
-        .from('premium_features')
-        .select('is_active')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .gt('expires_at', new Date().toISOString())
-        .maybeSingle();
-
-      const { data: sub } = await supabase
-        .from('subscriptions')
-        .select('status')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .maybeSingle();
-
-      return !!premiumFeature || !!sub;
-    },
-    enabled: !!user.id
-  });
 
   useEffect(() => {
     const load = async () => {
@@ -433,18 +396,11 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
     if (!current || !currentUser) return;
 
     // 1. Record View (Only if not my own story)
-    // ✅ FIX: Added sessionStorage check to enforce unique views per session
     if (!isMyStory) {
-      const viewKey = `story-view-${current.id}-${currentUser.id}`;
-      const hasViewed = sessionStorage.getItem(viewKey);
-
-      if (!hasViewed) {
-        const recordView = async () => {
-          await supabase.rpc('increment_story_view', { story_id: current.id, viewer_id: currentUser.id });
-          sessionStorage.setItem(viewKey, 'true'); // Mark as viewed in this session
-        };
-        recordView();
-      }
+      const recordView = async () => {
+        await supabase.rpc('increment_story_view', { story_id: current.id, viewer_id: currentUser.id });
+      };
+      recordView();
     }
 
     // 2. Subscribe to Realtime Updates (Views & Likes)
@@ -523,12 +479,18 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
       
       toast.success('Story deleted');
       
+      // ✅ FIXED: Update state locally AND notify parent, NO RELOAD
       if (stories.length === 1) {
         onClose();
-        window.location.reload(); 
+        onStoryChange?.(); // Refresh main list
       } else {
-        setStories(prev => prev.filter(s => s.id !== current.id));
-        if (index >= stories.length - 1) setIndex(Math.max(0, index - 1));
+        const newStories = stories.filter(s => s.id !== current.id);
+        setStories(newStories);
+        // Adjust index if we deleted the last one
+        if (index >= newStories.length) {
+          setIndex(Math.max(0, newStories.length - 1));
+        }
+        onStoryChange?.(); // Refresh main list in background
       }
       
     } catch (error: any) {
@@ -563,12 +525,10 @@ function StoryViewer({ user, onClose }: { user: Profile; onClose: () => void }) 
               alt={user.display_name || 'User'}
             />
             <div className="flex-1">
-              <span className="text-white font-bold text-sm drop-shadow-md flex items-center gap-1">
+              <span className="text-white font-bold text-sm drop-shadow-md block">
                 {isMyStory ? 'Your Story' : (user.display_name || 'User')}
-                {/* ✅ Added Verified Badge */}
-                {isVerified && !isMyStory && <VerifiedBadge />}
               </span>
-              <span className="text-white/70 text-xs block">
+              <span className="text-white/70 text-xs">
                 {formatDistanceToNow(new Date(current.created_at), { addSuffix: true })}
               </span>
             </div>
@@ -740,6 +700,67 @@ export default function Discover() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // ✅ FIXED: Extracted Story Fetching to reusable function
+  const fetchStories = async () => {
+    if (!user) return;
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 24);
+
+    const { data: storyData, error: storyError } = await supabase
+      .from('stories')
+      .select('*')
+      .gte('created_at', yesterday.toISOString())
+      .order('created_at', { ascending: false });
+
+    if (storyError) {
+      console.error('❌ Stories fetch error:', storyError);
+    } else if (storyData && storyData.length > 0) {
+      
+      const authorIds = Array.from(new Set(storyData.map((s: any) => s.author_id)));
+      
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, user_id, display_name, avatar_url')
+        .in('user_id', authorIds); 
+        
+      const profileMap = new Map();
+      profiles?.forEach((p: any) => {
+        profileMap.set(p.user_id, p);
+      });
+
+      const storyMap = new Map<string, any>();
+      
+      storyData.forEach((story: any) => {
+        const profile = profileMap.get(story.author_id);
+        
+        if (!profile) return;
+        
+        if (!storyMap.has(profile.user_id)) {
+          storyMap.set(profile.user_id, {
+            id: profile.user_id, 
+            display_name: profile.display_name,
+            avatar_url: profile.avatar_url,
+            stories: []
+          });
+        }
+        
+        storyMap.get(profile.user_id).stories.push({
+          id: story.id,
+          created_at: story.created_at,
+          content: story.content,
+          media_url: story.media_url,
+          media_type: story.media_type,
+          view_count: story.view_count || 0
+        });
+      });
+    
+      const usersWithStories = Array.from(storyMap.values());
+      setStoryUsers(usersWithStories);
+    } else {
+      setStoryUsers([]);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
     const init = async () => {
@@ -749,63 +770,8 @@ export default function Discover() {
         setCurrentUserProfile({ id: me.id, display_name: me.display_name, avatar_url: me.avatar_url });
       }
       
-      // 2. Fetch Stories
-      const yesterday = new Date();
-      yesterday.setHours(yesterday.getHours() - 24);
-
-      const { data: storyData, error: storyError } = await supabase
-        .from('stories')
-        .select('*')
-        .gte('created_at', yesterday.toISOString())
-        .order('created_at', { ascending: false });
-
-      if (storyError) {
-        console.error('❌ Stories fetch error:', storyError);
-      } else if (storyData && storyData.length > 0) {
-        
-        const authorIds = Array.from(new Set(storyData.map((s: any) => s.author_id)));
-        
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, user_id, display_name, avatar_url')
-          .in('user_id', authorIds); 
-          
-        const profileMap = new Map();
-        profiles?.forEach((p: any) => {
-          profileMap.set(p.user_id, p);
-        });
-
-        const storyMap = new Map<string, any>();
-        
-        storyData.forEach((story: any) => {
-          const profile = profileMap.get(story.author_id);
-          
-          if (!profile) return;
-          
-          if (!storyMap.has(profile.user_id)) {
-            storyMap.set(profile.user_id, {
-              id: profile.user_id, 
-              display_name: profile.display_name,
-              avatar_url: profile.avatar_url,
-              stories: []
-            });
-          }
-          
-          storyMap.get(profile.user_id).stories.push({
-            id: story.id,
-            created_at: story.created_at,
-            content: story.content,
-            media_url: story.media_url,
-            media_type: story.media_type,
-            view_count: story.view_count || 0
-          });
-        });
-      
-        const usersWithStories = Array.from(storyMap.values());
-        setStoryUsers(usersWithStories);
-      } else {
-        setStoryUsers([]);
-      }
+      // 2. Fetch Stories (using reusable function)
+      await fetchStories();
 
       // 5. Communities
       const { data: comms } = await supabase
@@ -1057,8 +1023,8 @@ export default function Discover() {
       setPreview(null);
       setCaption("");
       
-      // Simple reload to refresh data
-      window.location.reload();
+      // ✅ FIXED: Refresh data WITHOUT page reload
+      await fetchStories();
       
     } catch (e: any) {
       console.error("Story upload error:", e);
@@ -1506,7 +1472,7 @@ export default function Discover() {
                   )
                 )}
 
-                {eventsFilter === 'past' && (
+{eventsFilter === 'past' && (
                   pastEvents.length === 0 ? (
                     <EmptyState icon={Clock} title="No Past Events" desc="You haven't attended any events yet." />
                   ) : (
@@ -1666,7 +1632,8 @@ export default function Discover() {
         </Tabs>
       </div>
       
-      {selectedStory && <StoryViewer user={selectedStory} onClose={() => setSelectedStory(null)} />}
+      {/* ✅ FIXED: StoryViewer now accepts refresh callback to avoid reload */}
+      {selectedStory && <StoryViewer user={selectedStory} onClose={() => setSelectedStory(null)} onStoryChange={fetchStories} />}
       
       <EventDetailModal event={selectedEvent} isOpen={!!selectedEvent} onClose={() => setSelectedEvent(null)} onRSVP={handleRSVP} /> 
       <CommunityDetailModal community={selectedCommunity} isOpen={!!selectedCommunity} onClose={() => setSelectedCommunity(null)} onJoin={handleJoinCommunity} onOpen={() => navigate('/app/messages')} />
