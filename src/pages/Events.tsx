@@ -117,12 +117,10 @@ const EventSkeleton = () => (
     {[1, 2, 3].map(i => (
       <Card key={i} className="border-0 shadow-sm bg-card/50">
         <CardContent className="p-4 flex gap-4">
-          <div className="w-24 h-32 rounded-l bg-muted animate-pulse" />
+          <div className="w-14 h-16 rounded-xl bg-muted animate-pulse" />
           <div className="flex-1 space-y-2">
-            <div className="h-5 w-2/3 bg-muted animate-pulse rounded" />
-            <div className="h-4 w-1/2 bg-muted/50 animate-pulse rounded" />
-            <div className="h-4 w-1/3 bg-muted/50 animate-pulse rounded" />
-            <div className="h-8 w-24 bg-muted animate-pulse rounded mt-2" />
+            <div className="h-4 w-2/3 bg-muted animate-pulse rounded" />
+            <div className="h-3 w-1/2 bg-muted/50 animate-pulse rounded" />
           </div>
         </CardContent>
       </Card>
@@ -175,13 +173,12 @@ export default function Events() {
   const [bankForm, setBankForm] = useState<BankDetails>({ bank_name: '', account_number: '', account_name: '' }); 
 
   // --- HELPER: Logic to check if an event is still "Active" ---
-  // ✅ CHANGED: Allow events to remain active for 3 hours after start time
   const isEventActive = (dateString: string) => {
     const eventDate = new Date(dateString);
     const now = new Date();
     // Event is active until 3 hours after start time
     const expirationTime = addHours(eventDate, 3);
-    return expirationTime > now;
+    return now < expirationTime;
   };
 
   // --- HELPER: Check premium boost ---
@@ -428,177 +425,117 @@ export default function Events() {
 const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
     const status = getEventStatus(event.start_date);
     const eventDate = new Date(event.start_date);
-    const isFull = event.max_attendees && event.attendee_count ? event.attendee_count >= event.max_attendees : false;
     
     const isStillActive = isEventActive(event.start_date);
     const isEventPast = !isStillActive;
-    
-    // Explicitly check for pending status
     const isPending = event.my_status === 'pending';
 
+    // Adopted "Compact Row" styling from Discover.tsx
     return (
       <Card 
         key={event.id} 
-        className={`overflow-hidden hover:shadow-lg transition-all border-border/60 cursor-pointer group ${isPending ? 'border-yellow-200 bg-yellow-50/10' : ''}`}
+        className={`hover:shadow-md transition-all border-border/50 cursor-pointer group ${isPending ? 'border-yellow-200 bg-yellow-50/10' : ''}`}
         onClick={() => navigate(`/app/events/${event.id}`)}
       >
-        <CardContent className="p-0">
-          <div className="flex h-46">
-            {/* Image Section */}
-            <div className="w-28 bg-gradient-to-br from-purple-600 to-blue-600 relative overflow-hidden">
-              {event.image_url ? (
+        <CardContent className="p-4 flex items-center gap-4">
+          {/* Left: Image or Date Box */}
+          <div className="w-14 h-16 rounded-xl bg-primary/5 border border-primary/10 flex flex-col items-center justify-center text-primary flex-shrink-0 relative overflow-hidden">
+             {event.image_url ? (
                 <img 
                   src={event.image_url} 
                   className={`absolute inset-0 w-full h-full object-cover transition-transform duration-300 ${isPending || isEventPast ? 'grayscale-[50%]' : 'group-hover:scale-110'}`}
                   alt={event.title}
                 />
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
-                  <span className="text-xs font-bold uppercase tracking-wider opacity-90">
-                    {format(eventDate, 'MMM')}
-                  </span>
-                  <span className="text-3xl font-bold">
-                    {format(eventDate, 'd')}
-                  </span>
-                </div>
-              )}
-              
-              {/* Type Badge */}
-              <div className="absolute top-2 left-2 flex flex-col gap-1">
-                <Badge 
-                  className="text-[10px] px-2 py-0.5 backdrop-blur-md"
-                  variant={event.event_type === 'virtual' ? 'default' : 'secondary'}
-                >
-                  {event.event_type === 'virtual' ? <Video className="w-3 h-3" /> : <MapPinned className="w-3 h-3" />}
+             ) : (
+               <>
+                <span className="text-[10px] font-black uppercase tracking-wider opacity-60">
+                  {format(eventDate, 'MMM')}
+                </span>
+                <span className="text-xl font-bold leading-none">
+                  {format(eventDate, 'd')}
+                </span>
+               </>
+             )}
+             
+            {/* Status indicator dot */}
+            {isStillActive && !isPending && (
+                <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${status.color} z-10 border border-white`} />
+            )}
+            
+             {/* Pending Overlay */}
+             {isPending && (
+               <div className="absolute inset-0 bg-yellow-500/30 flex items-center justify-center z-20">
+                 <Clock className="w-4 h-4 text-white drop-shadow-md" />
+               </div>
+             )}
+          </div>
+
+          {/* Center: Info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center flex-wrap gap-1.5">
+              <h3 className="font-bold text-base truncate">{event.title}</h3>
+              {/* Status badge */}
+              {!isPending && (
+                <Badge className={`text-[10px] px-1.5 py-0 border-0 text-white ${status.color} ${status.label === 'Happening Now' ? 'animate-pulse' : ''}`}>
+                    {status.label}
                 </Badge>
-              </div>
-
-               {/* Boosted Zap Icon */}
-               {event.is_boosted && !isEventPast && (
-                <div className="absolute top-0 right-0 bg-yellow-400 text-white rounded-bl-lg p-1.5 shadow-sm z-10 animate-pulse">
-                  <Zap className="w-3 h-3 fill-white" />
-                </div>
               )}
-
-              {/* Pending Overlay Badge */}
               {isPending && (
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white border-0">
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-yellow-700 border-yellow-300 bg-yellow-50">
                     Pending
-                  </Badge>
+                </Badge>
+              )}
+               {event.is_boosted && !isEventPast && (
+                  <Badge className="bg-yellow-400 text-white border-0 px-1 py-0"><Zap className="w-2.5 h-2.5" /></Badge>
+               )}
+            </div>
+            
+            <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
+              <MapPin className="w-3 h-3" /> <span className="truncate">{event.location}</span>
+            </div>
+            
+            <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Users className="w-3 h-3" /> {event.attendee_count || 0} attending
+              </div>
+              {event.ticket_price > 0 && (
+                <div className="flex items-center gap-1 text-xs font-semibold text-primary">
+                   <Ticket className="w-3 h-3" /> ₦{event.ticket_price.toLocaleString()}
                 </div>
               )}
-            </div>
-
-            {/* Content Section */}
-            <div className="flex-1 p-4 min-w-0 flex flex-col justify-between">
-              <div>
-                <div className="flex justify-between items-start gap-2 mb-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold truncate text-base leading-tight mb-1">
-                      {event.title}
-                    </h3>
-                    <div className="flex items-center flex-wrap gap-1">
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          {event.category}
-                        </Badge>
-                        {isPending && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-yellow-700 border-yellow-300 bg-yellow-100">
-                                Awaiting Approval
-                            </Badge>
-                        )}
-                        {/* Status badge - always show for active events */}
-                        {isStillActive && !isPending && (
-                            <Badge className={`text-[10px] px-1.5 py-0 border-0 text-white ${status.color} ${status.label === 'Happening Now' || status.label === 'Expiring Soon' ? 'animate-pulse' : ''}`}>
-                                {status.label === 'Expiring Soon' && <Hourglass className="w-3 h-3 mr-1" />}
-                                {status.label}
-                            </Badge>
-                        )}
-                    </div>
-                  </div>
-                  
-                  {/* Price & Status Dot */}
-                  <div className="flex flex-col items-end gap-1">
-                    {event.ticket_price > 0 ? (
-                      <Badge className="bg-green-100 text-green-700 border-0 text-xs">
-                        ₦{event.ticket_price.toLocaleString()}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-muted-foreground text-xs">Free</Badge>
-                    )}
-                    <div className={`w-2 h-2 rounded-full ${status.color}`} />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="w-3 h-3 shrink-0" />
-                    <span className="truncate">
-                      {format(eventDate, 'EEE, MMM d • h:mm a')}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <MapPin className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{event.location}</span>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 mt-3">
-                {type === 'mine' ? (
-                  <>
-                    <Button 
-                      size="sm" variant="outline" className="h-7 text-xs flex-1"
-                      onClick={(e) => { e.stopPropagation(); navigate(`/app/events/${event.id}`); }}
-                    >
-                      <Edit className="w-3 h-3 mr-1" /> Manage
-                    </Button>
-                    <Button 
-                      size="sm" variant="ghost" className="h-7 px-2"
-                      onClick={(e) => { e.stopPropagation(); shareEvent(event); }}
-                    >
-                      <Share2 className="w-3 h-3" />
-                    </Button>
-                  </>
-                ) : type === 'attending' ? (
-                  <Button 
-                    size="sm" 
-                    className={`h-7 text-xs w-full shadow-sm ${
-                      isPending 
-                        ? 'bg-yellow-500 hover:bg-yellow-600 text-white' 
-                        : isEventPast 
-                        ? 'bg-muted text-muted-foreground' 
-                        : 'gradient-primary text-white'
-                    }`}
-                    disabled={isEventPast}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isEventPast) navigate(`/app/events/${event.id}`);
-                    }}
-                  >
-                    {isEventPast ? (
-                        <>Event Ended</>
-                    ) : isPending ? (
-                         <><Clock className="w-3 h-3 mr-1" /> Approval Pending</>
-                    ) : (
-                         <><Ticket className="w-3 h-3 mr-1" /> View Ticket</>
-                    )}
-                  </Button>
-                ) : (
-                  <Button 
-                    size="sm" 
-                    className="h-7 text-xs w-full"
-                    variant={isFull || isEventPast ? "outline" : "default"}
-                    disabled={isFull || isEventPast}
-                    onClick={(e) => { e.stopPropagation(); navigate(`/app/events/${event.id}`); }}
-                  >
-                    {isEventPast ? 'Event Ended' : isFull ? 'Event Full' : 'View Details'}
-                  </Button>
-                )}
-              </div>
             </div>
           </div>
+
+          {/* Right: Actions */}
+           <div className="flex flex-col gap-2">
+            {type === 'mine' ? (
+              <div className="flex gap-1">
+                <Button 
+                    size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-full"
+                    onClick={(e) => { e.stopPropagation(); shareEvent(event); }}
+                >
+                    <Share2 className="w-4 h-4 text-muted-foreground" />
+                </Button>
+                <Button 
+                    size="sm" variant="outline" className="h-8 rounded-full px-3 text-xs"
+                    onClick={(e) => { e.stopPropagation(); navigate(`/app/events/${event.id}`); }}
+                >
+                    Manage
+                </Button>
+              </div>
+            ) : (
+                <Button 
+                    size="sm" 
+                    variant={isEventPast ? "outline" : "default"}
+                    className={`h-8 rounded-full px-3 text-xs ${isPending ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : ''}`}
+                    disabled={isEventPast}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/app/events/${event.id}`); }}
+                >
+                    {isEventPast ? 'Ended' : isPending ? 'Waiting' : 'View'}
+                </Button>
+            )}
+           </div>
+
         </CardContent>
       </Card>
     );
@@ -615,7 +552,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
 
   const filteredMyEvents = filterEvents(myEvents);
   
-  // Active Filter with Grace Period
+  // Active Filter with Grace Period (Strictly filter out events older than 3 hours)
   const myActiveEvents = filteredMyEvents.filter(e => isEventActive(e.start_date));
   const myPastEvents = filteredMyEvents.filter(e => !isEventActive(e.start_date));
   

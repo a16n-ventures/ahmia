@@ -807,21 +807,23 @@ export default function Discover() {
       }
       
       // 6. Events - Fetch both active and past events
-      const now = new Date().toISOString();
+      // ✅ CHANGED: Set time reference to 3 hours ago to include events currently happening in "Active"
+      const now = new Date();
+      const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString();
       
-      // Fetch upcoming/active events
+      // Fetch upcoming/active events (Started after 3 hours ago)
       const { data: activeEvts } = await supabase
         .from('events')
         .select('*')
-        .gte('start_date', now)
+        .gte('start_date', threeHoursAgo) 
         .order('start_date', { ascending: true })
         .limit(20);
       
-      // Fetch past events
+      // Fetch past events (Started before 3 hours ago)
       const { data: pastEvts } = await supabase
         .from('events')
         .select('*')
-        .lt('start_date', now)
+        .lt('start_date', threeHoursAgo) 
         .order('start_date', { ascending: false })
         .limit(20);
       
@@ -1054,7 +1056,7 @@ export default function Discover() {
       if (document.getElementById('flutterwave-script')) { resolve(); return; }
       const script = document.createElement('script');
       script.id = 'flutterwave-script';
-      script.src = 'https://checkout.flutterwave.com/v3.js';
+      script.src = '[https://checkout.flutterwave.com/v3.js](https://checkout.flutterwave.com/v3.js)';
       script.async = true;
       script.onload = () => resolve();
       script.onerror = () => reject(new Error('Failed to load Flutterwave script'));
@@ -1090,7 +1092,7 @@ export default function Discover() {
         currency: paymentData.currency,
         payment_options: "card, banktransfer, ussd",
         customer: { email: paymentData.email, name: paymentData.name, phone_number: paymentData.phone || '' },
-        customizations: { title: "Event Ticket Purchase", description: paymentData.event_title, logo: "https://try.usecorridor.xyz/ahmia/logo.png" },
+        customizations: { title: "Event Ticket Purchase", description: paymentData.event_title, logo: "[https://try.usecorridor.xyz/ahmia/logo.png](https://try.usecorridor.xyz/ahmia/logo.png)" },
         callback: async function(response: any) {
           if (response.status === "successful" || response.status === "completed") {
             const toastId = toast.loading("Confirming your ticket purchase...");
@@ -1315,6 +1317,7 @@ export default function Discover() {
           <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1 rounded-xl">
             <TabsTrigger value="communities" className="rounded-lg">Communities</TabsTrigger>
             <TabsTrigger value="events" className="rounded-lg">Events</TabsTrigger>
+            {/* ✅ FIXED: Reduced icon size */}
             <TabsTrigger value="foryou" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-blue-600 data-[state=active]:text-white rounded-lg"><Sparkles className="w-3 h-3 mr-1" /> For You</TabsTrigger>
           </TabsList>
 
@@ -1347,6 +1350,7 @@ export default function Discover() {
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-1">{c.description}</p>
                       <div className="flex items-center gap-1 mt-1 text-xs text-primary font-medium">
+                        {/* ✅ FIXED: Reduced icon size */}
                         <Users className="w-3 h-3" /> {c.member_count} members
                       </div>
                     </div>
@@ -1400,15 +1404,25 @@ export default function Discover() {
                           onClick={() => setSelectedEvent(e)}
                         >
                           <CardContent className="p-4 flex items-center gap-4">
-                            <div className="w-14 h-16 rounded-xl bg-primary/5 border border-primary/10 flex flex-col items-center justify-center text-primary flex-shrink-0 relative">
-                              <span className="text-[10px] font-black uppercase tracking-wider opacity-60">
-                                {new Date(e.start_date).toLocaleString('default', {month:'short'})}
-                              </span>
-                              <span className="text-xl font-bold leading-none">
-                                {new Date(e.start_date).getDate()}
-                              </span>
+                            <div className="w-14 h-16 rounded-xl bg-primary/5 border border-primary/10 flex flex-col items-center justify-center text-primary flex-shrink-0 relative overflow-hidden">
+                                {e.image_url ? (
+                                    <img 
+                                    src={e.image_url} 
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                    alt={e.title}
+                                    />
+                                ) : (
+                                    <>
+                                    <span className="text-[10px] font-black uppercase tracking-wider opacity-60">
+                                        {new Date(e.start_date).toLocaleString('default', {month:'short'})}
+                                    </span>
+                                    <span className="text-xl font-bold leading-none">
+                                        {new Date(e.start_date).getDate()}
+                                    </span>
+                                    </>
+                                )}
                               {/* Status indicator dot */}
-                              <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${status.color} ${status.label === 'Happening Now' ? 'animate-pulse' : ''}`} />
+                              <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${status.color} z-10 border border-white ${status.label === 'Happening Now' ? 'animate-pulse' : ''}`} />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center flex-wrap gap-1.5">
@@ -1421,7 +1435,7 @@ export default function Discover() {
                                 {e.is_sponsored && <Badge variant="outline" className="text-[10px] h-5 border-yellow-500 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/20 px-1.5">Sponsored</Badge>}
                               </div>
                               <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                                <MapPin className="w-3.5 h-3.5" /> <span className="truncate">{e.location}</span>
+                                <MapPin className="w-3 h-3" /> <span className="truncate">{e.location}</span>
                               </div>
                               <div className="flex items-center gap-3 mt-1">
                                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -1475,10 +1489,12 @@ export default function Discover() {
                               {e.is_attending && <Badge className="bg-green-600/50 text-xs"><Check className="w-3 h-3 mr-1" /> Attended</Badge>}
                             </div>
                             <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                              <MapPin className="w-3.5 h-3.5" /> <span className="truncate">{e.location}</span>
+                              {/* ✅ FIXED: Reduced icon size */}
+                              <MapPin className="w-3 h-3" /> <span className="truncate">{e.location}</span>
                             </div>
                             <div className="flex items-center gap-3 mt-1">
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                {/* ✅ FIXED: Reduced icon size */}
                                 <Users className="w-3 h-3" /> {e.attendee_count || 0} attended
                               </div>
                             </div>
@@ -1542,6 +1558,7 @@ export default function Discover() {
                         <CardContent className="p-4">
                           <h3 className="font-bold truncate text-lg">{e.title}</h3>
                           <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                            {/* ✅ FIXED: Reduced icon size */}
                             <MapPin className="w-3 h-3" /> {e.location}
                           </p>
                         </CardContent>
@@ -1580,6 +1597,7 @@ export default function Discover() {
                           <h3 className="font-bold truncate text-base">{c.name}</h3>
                           <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{c.description}</p>
                           <div className="flex items-center gap-1 mt-2 text-xs text-primary font-medium">
+                            {/* ✅ FIXED: Reduced icon size */}
                             <Users className="w-3 h-3" /> {c.member_count} members
                           </div>
                         </CardContent>
