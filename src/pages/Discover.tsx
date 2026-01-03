@@ -1315,10 +1315,10 @@ export default function Discover() {
         <h1 className="text-2xl font-bold mb-4 tracking-tight">Discover</h1>
         <Tabs defaultValue="communities">
           <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1 rounded-xl">
-            <TabsTrigger value="communities" className="rounded-lg">Communities</TabsTrigger>
-            <TabsTrigger value="events" className="rounded-lg">Events</TabsTrigger>
+            <TabsTrigger value="communities" className="rounded-lg text-xs">Communities</TabsTrigger>
+            <TabsTrigger value="events" className="rounded-lg text-xs">Events</TabsTrigger>
             {/* ✅ FIXED: Reduced icon size */}
-            <TabsTrigger value="foryou" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-blue-600 data-[state=active]:text-white rounded-lg"><Sparkles className="w-3 h-3 mr-1" /> For You</TabsTrigger>
+            <TabsTrigger value="foryou" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-blue-600 data-[state=active]:text-white rounded-lg text-xs"><Sparkles className="w-3 h-3 mr-1" /> For You</TabsTrigger>
           </TabsList>
 
           <TabsContent value="communities" className="mt-6 space-y-3 animate-in fade-in-50">
@@ -1501,7 +1501,7 @@ export default function Discover() {
                             className="rounded-full"
                             onClick={(evt) => { evt.stopPropagation(); setSelectedEvent(e); }}
                           >
-                            View
+                            Ended
                           </Button>
                         </CardContent>
                       </Card>
