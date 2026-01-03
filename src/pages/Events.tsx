@@ -496,7 +496,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
             
             <div className="flex items-center gap-3 mt-1">
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Users className="w-3 h-3" /> {event.attendee_count || 0} attended
+                <Users className="w-3 h-3" /> {event.attendee_count || 0} attending
               </div>
               {event.ticket_price > 0 && (
                 <div className="flex items-center gap-1 text-xs font-semibold text-primary">
