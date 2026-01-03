@@ -217,13 +217,21 @@ export default function Friends() {
       if (contactUsernames.length === 0) return [];
       const { data } = await supabase
         .from('profiles')
-        .select('user_id, username')
+        .select('user_id, username, display_name, avatar_url')
         .in('username', contactUsernames);
       return data || [];
     },
     enabled: contactUsernames.length > 0,
     staleTime: 300000 // 5 minutes
   });
+
+  const registeredContactMap = useMemo(() => {
+    const map = new Map<string, { user_id: string; avatar_url?: string; display_name?: string }>();
+    contactProfiles?.forEach(p => {
+      if (p.username) map.set(p.username, { user_id: p.user_id, avatar_url: p.avatar_url || undefined, display_name: p.display_name || undefined });
+    });
+    return map;
+  }, [contactProfiles]);
 
   const contactUserIds = useMemo(() => contactProfiles?.map(p => p.user_id) || [], [contactProfiles]);
 
@@ -265,7 +273,6 @@ export default function Friends() {
     });
     return counts;
   }, [contactProfiles, contactFriendships, myFriendIds]);
-
 
   const hasLocationChangedSignificantly = useCallback((newLat: number, newLon: number): boolean => {
     if (!lastFetchLocationRef.current) return true;
@@ -640,20 +647,35 @@ export default function Friends() {
               ) : (
                 <div className="space-y-2">
                   {filteredContacts.map(contact => {
-                     const isInviting = inviteContact.isPending && inviteContact.variables?.id === contact.id;
                      const isDeleting = deleteContact.isPending;
+                     
+                     // Check if contact is a registered user
+                     const registeredUser = contact.username ? registeredContactMap.get(contact.username) : null;
                      const mutualCount = contact.username ? mutualCounts[contact.username] : 0;
                      
                      return (
                       <Card key={contact.id}>
                         <CardContent className="p-3 flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-                              {contact.name?.[0]?.toUpperCase() || contact.username?.[0]?.toUpperCase()}
-                            </div>
+                            {registeredUser ? (
+                                <Avatar className="h-10 w-10">
+                                    <AvatarImage src={registeredUser.avatar_url} />
+                                    <AvatarFallback>{registeredUser.display_name?.[0]?.toUpperCase() || contact.name?.[0]?.toUpperCase()}</AvatarFallback>
+                                </Avatar>
+                            ) : (
+                                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                                    {contact.name?.[0]?.toUpperCase() || contact.username?.[0]?.toUpperCase()}
+                                </div>
+                            )}
+                            
                             <div className="min-w-0">
-                              <h4 className="font-medium text-sm truncate">{contact.name || 'Unknown'}</h4>
-                              <p className="text-xs text-muted-foreground truncate mb-0.5">{contact.username || contact.phone}</p>
+                              <div className="flex items-center gap-1">
+                                <h4 className="font-medium text-sm truncate">{contact.name || registeredUser?.display_name || 'Unknown'}</h4>
+                                {registeredUser && premiumStatus[registeredUser.user_id] && <VerifiedBadge />}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate mb-0.5">
+                                {contact.username ? `@${contact.username}` : contact.phone}
+                              </p>
                               {mutualCount > 0 && (
                                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                                   <Users className="w-3 h-3" />
@@ -662,11 +684,16 @@ export default function Friends() {
                               )}
                             </div>
                           </div>
+                          
                           <div className="flex items-center gap-2">
-                             <Button size="sm" variant="outline" onClick={() => inviteContact.mutate(contact)} disabled={isInviting}>
-                                {isInviting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Invite'}
-                             </Button>
-                             <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => deleteContact.mutate(contact.id!)} disabled={isDeleting}>
+                             {/* ✅ ACTION BUTTON: Only 'Message' (if registered) and 'Remove' */}
+                             {registeredUser && (
+                                <Button size="sm" onClick={() => navigate(`/app/messages?tab=dm?userId=${registeredUser.user_id}`)}>
+                                    <MessageSquare className="w-3.5 h-3.5 mr-1" /> Message
+                                </Button>
+                             )}
+                             
+                             <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive opacity-50 hover:opacity-100" onClick={() => deleteContact.mutate(contact.id!)} disabled={isDeleting}>
                                 <X className="w-4 h-4" />
                              </Button>
                           </div>
