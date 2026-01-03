@@ -1498,8 +1498,8 @@ export default function Discover() {
                           <Button 
                             size="sm" 
                             variant="outline"
-                            className="rounded-full"
-                            onClick={(evt) => { evt.stopPropagation(); setSelectedEvent(e); }}
+                            className="rounded-full opacity-70"
+                            disabled={true}
                           >
                             Ended
                           </Button>
