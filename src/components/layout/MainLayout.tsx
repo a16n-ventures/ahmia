@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Compass, Users, MapPin, MessageSquare, Calendar, Bell, ShieldCheck, ShoppingBasket } from 'lucide-react';
+import { Compass, Users, MapPin, MessageSquare, Calendar, Bell, ShieldCheck, Store } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
@@ -242,46 +242,42 @@ const MainLayout = () => {
 </div>
 
           {/* Marketplace & Notification */}
-          <div className="flex items-center relative inline-block">
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className="hover:bg-muted/50 rounded-full h-10 w-10"
+              className="relative hover:bg-muted/50 rounded-full h-10 w-10 group" // Added 'relative' and 'group'
               onClick={() => navigate('/app/marketplace')}
             >
-  <ShoppingBasket className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              <Store className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
               
-  {/* Pulsating Hot Label */}
-  <div className="absolute -top-2 -right-3 z-10">
-    <div className="relative flex items-center justify-center">
-      {/* The Ping Animation Effect */}
-      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-      
-      {/* The Actual Badge */}
-      <span className="relative inline-flex rounded-full h-4 px-1 bg-gradient-to-r from-orange-500 to-red-600 text-[9px] font-bold text-white items-center justify-center shadow-sm border border-white dark:border-background">
-        HOT 🔥
-      </span>
-    </div>
-  </div>
-              
+              {/* Pulsating Hot Label */}
+              <div className="absolute -top-1 -right-2 z-10">
+                <div className="relative flex items-center justify-center">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 px-1 bg-gradient-to-r from-orange-500 to-red-600 text-[8px] font-bold text-white items-center justify-center shadow-sm border border-white dark:border-background">
+                    HOT
+                  </span>
+                </div>
+              </div>
             </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="relative hover:bg-muted/50 rounded-full h-10 w-10"
-            onClick={() => {
-              navigate('/app/notifications');
-            }}
-          >
-            <Bell className="w-5 h-5 text-foreground/80" />
-            {notificationCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-[18px] h-[18px] bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold animate-pulse ring-2 ring-background px-1">
-                {notificationCount > 99 ? '99+' : notificationCount}
-              </span>
-            )}
-          </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative hover:bg-muted/50 rounded-full h-10 w-10"
+              onClick={() => {
+                navigate('/app/notifications');
+              }}
+            >
+              <Bell className="w-5 h-5 text-foreground/80" />
+              {notificationCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-[18px] h-[18px] bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold animate-pulse ring-2 ring-background px-1">
+                  {notificationCount > 99 ? '99+' : notificationCount}
+                </span>
+              )}
+            </Button>
           </div>
-        </div>
       </header>
 
       <main className="flex-1 pb-24 overflow-x-hidden animate-in fade-in duration-300">
