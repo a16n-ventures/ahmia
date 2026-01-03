@@ -1525,7 +1525,7 @@ export default function Discover() {
               </Card>
             ) : (
               // ✅ FIXED: Sub-categories shown immediately
-              <Tabs defaultValue="smart_events" className="w-full">
+              <Tabs defaultValue="smart_events" className="w-full mx-auto">
                 <TabsList className="grid w-full grid-cols-2 bg-muted/30 p-1 mb-4 rounded-lg">
                   <TabsTrigger value="smart_events" className="text-xs">Smart Events</TabsTrigger>
                   <TabsTrigger value="smart_communities" className="text-xs">Smart Communities</TabsTrigger>
