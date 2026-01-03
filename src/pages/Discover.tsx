@@ -1510,7 +1510,7 @@ export default function Discover() {
               </>
             )}
           </TabsContent>
-
+          
           <TabsContent value="foryou" className="mt-6 space-y-4 animate-in fade-in-50">
             {!isPremium ? (
               <Card className="bg-gradient-to-br from-indigo-900 to-purple-900 border-0 text-white shadow-xl relative overflow-hidden">
@@ -1524,7 +1524,7 @@ export default function Discover() {
               </Card>
             ) : (
               <>
-                {/* Smart Feed Sub-tabs (Compact Style) */}
+                {/* Smart Feed Sub-tabs (Communities First) */}
                 <div className="flex items-center gap-2 mb-4 bg-muted/30 p-1 rounded-lg w-fit mx-auto">
                   <button
                     onClick={() => setSmartFeedTab('communities')}
@@ -1539,7 +1539,8 @@ export default function Discover() {
                     Smart Events
                   </button>
                 </div>
-                
+
+                {/* Content Logic: Smart Communities */}
                 {smartFeedTab === 'communities' && (
                   <div className="space-y-4">
                     {smartFeedLoading && smartCommunities.length === 0 ? (
@@ -1571,7 +1572,6 @@ export default function Discover() {
                             <h3 className="font-bold truncate text-base">{c.name}</h3>
                             <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{c.description}</p>
                             <div className="flex items-center gap-1 mt-2 text-xs text-primary font-medium">
-                              {/* ✅ FIXED: Reduced icon size */}
                               <Users className="w-3 h-3" /> {c.member_count} members
                             </div>
                           </CardContent>
@@ -1581,7 +1581,7 @@ export default function Discover() {
                   </div>
                 )}
 
-                {/* Content Logic */}
+                {/* Content Logic: Smart Events */}
                 {smartFeedTab === 'events' && (
                   <div className="space-y-4">
                     {smartFeedLoading && smartEvents.length === 0 ? (
@@ -1606,7 +1606,6 @@ export default function Discover() {
                           <CardContent className="p-4">
                             <h3 className="font-bold truncate text-lg">{e.title}</h3>
                             <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                              {/* ✅ FIXED: Reduced icon size */}
                               <MapPin className="w-3 h-3" /> {e.location}
                             </p>
                           </CardContent>
@@ -1618,50 +1617,6 @@ export default function Discover() {
               </>
             )}
           </TabsContent>
-
-                <TabsContent value="smart_communities" className="space-y-4">
-                  {smartFeedLoading && smartCommunities.length === 0 ? (
-                    <FeedSkeleton />
-                  ) : smartCommunities.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground text-sm">
-                      AI is looking for the best communities for you...
-                    </div>
-                  ) : (
-                    smartCommunities.map(c => (
-                      <Card 
-                        key={c.id} 
-                        className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                        onClick={() => setSelectedCommunity(c)}
-                      >
-                        <div className="h-24 bg-muted relative">
-                          {c.cover_url && <img src={c.cover_url} className="w-full h-full object-cover opacity-80" />}
-                          <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
-                            <Sparkles className="w-3 h-3 text-yellow-400" /> {(c.match_score || 90).toFixed(0)}% Match
-                          </div>
-                          <div className="absolute -bottom-6 left-4">
-                            <img 
-                              src={c.avatar_url || '/default-avatar.png'} 
-                              className="w-12 h-12 rounded-xl bg-background border-2 border-background object-cover shadow-md"
-                            />
-                          </div>
-                        </div>
-                        <CardContent className="p-4 pt-8">
-                          <h3 className="font-bold truncate text-base">{c.name}</h3>
-                          <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{c.description}</p>
-                          <div className="flex items-center gap-1 mt-2 text-xs text-primary font-medium">
-                            {/* ✅ FIXED: Reduced icon size */}
-                            <Users className="w-3 h-3" /> {c.member_count} members
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </TabsContent>
-              </Tabs>
-            )}
-          </TabsContent>
-        </Tabs>
-      </div>
       
       {selectedStory && <StoryViewer user={selectedStory} onClose={() => setSelectedStory(null)} />}
       
