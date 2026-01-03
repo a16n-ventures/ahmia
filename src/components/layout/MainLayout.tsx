@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Compass, Users, MapPin, MessageSquare, Calendar, Bell, ShieldCheck, Store } from 'lucide-react';
+import { Compass, Users, MapPin, MessageSquare, Calendar, Bell, ShieldCheck, ShoppingBasket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
@@ -249,7 +249,7 @@ const MainLayout = () => {
               className="relative inline-block hover:bg-muted/50 rounded-full h-10 w-10"
               onClick={() => navigate('/app/marketplace')}
             >
-  <Store className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+  <ShoppingBasket className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
               
   {/* Pulsating Hot Label */}
   <div className="absolute -top-2 -right-3 z-10">
