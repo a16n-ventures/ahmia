@@ -1370,11 +1370,11 @@ export default function Discover() {
 
           <TabsContent value="events" className="mt-6 space-y-4 animate-in fade-in-50">
             {/* Active/Past Events Sub-tabs */}
-            <div className="flex item-center gap-2 mb-4 p-1 rounded-lg w-fit mx-auto">
+            <div className="flex items-center gap-2 mb-4 p-1 rounded-lg w-fit mx-auto">
               <Button
                 size="sm"
                 variant={eventsFilter === 'active' ? 'default' : 'outline'}
-                className="text-xs font-medium px-3 py-1.5 rounded-md"
+                className="text-xs font-medium px-3 py-1.5 rounded-md transition-all"
                 onClick={() => setEventsFilter('active')}
               >
                 Active ({events.length})
@@ -1382,7 +1382,7 @@ export default function Discover() {
               <Button
                 size="sm"
                 variant={eventsFilter === 'past' ? 'default' : 'outline'}
-                className="text-xs font-medium px-3 py-1.5 rounded-md"
+                className="text-xs font-medium px-3 py-1.5 rounded-md transition-all"
                 onClick={() => setEventsFilter('past')}
               >
                 Past ({pastEvents.length})

@@ -388,7 +388,7 @@ export default function Events() {
   const getEventStatus = (startDate: string) => {
     const date = new Date(startDate);
     const now = new Date();
-    const expirationTime = addHours(date, 3); // 3-hour duration assumption
+    const expirationTime = addHours(date, 1); // 1-hour duration assumption
 
     // If start date is past but still within active window
     if (isPast(date) && now < expirationTime) {
@@ -496,7 +496,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
             
             <div className="flex items-center gap-3 mt-1">
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Users className="w-3 h-3" /> {event.attendee_count || 0} attending
+                <Users className="w-3 h-3" /> {event.attendee_count || 0} attended
               </div>
               {event.ticket_price > 0 && (
                 <div className="flex items-center gap-1 text-xs font-semibold text-primary">
