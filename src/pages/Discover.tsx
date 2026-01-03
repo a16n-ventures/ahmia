@@ -673,6 +673,7 @@ export default function Discover() {
   const [events, setEvents] = useState<Event[]>([]);
   const [pastEvents, setPastEvents] = useState<Event[]>([]);
   const [eventsFilter, setEventsFilter] = useState<'active' | 'past'>('active');
+  const [smartFeedTab, setSmartFeedTab] = useState<'events' | 'communities'>('communities');
   
   // Smart Feed States
   const [smartEvents, setSmartEvents] = useState<Event[]>([]);
@@ -1524,44 +1525,101 @@ export default function Discover() {
                 </CardContent>
               </Card>
             ) : (
-              // ✅ FIXED: Sub-categories shown immediately
-              <Tabs defaultValue="smart_events" className="w-full mx-auto">
-                <TabsList className="grid w-full grid-cols-2 bg-muted/30 p-1 mb-4 rounded-lg">
-                  <TabsTrigger value="smart_events" className="text-xs">Smart Events</TabsTrigger>
-                  <TabsTrigger value="smart_communities" className="text-xs">Smart Communities</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="smart_events" className="space-y-4">
-                  {smartFeedLoading && smartEvents.length === 0 ? (
-                    <FeedSkeleton />
-                  ) : smartEvents.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground text-sm">
-                      AI is looking for the best events for you...
-                    </div>
-                  ) : (
-                    smartEvents.map(e => (
-                      <Card 
-                        key={e.id} 
-                        className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
-                        onClick={() => setSelectedEvent(e)}
-                      >
-                        <div className="h-32 bg-muted relative">
-                          {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" />}
-                          <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
-                            <Sparkles className="w-3 h-3 text-yellow-400" /> {(e.match_score || 95).toFixed(0)}% Match
+              <>
+                {/* Smart Feed Sub-tabs (Compact Style) */}
+                <div className="flex items-center gap-2 mb-4 bg-muted/30 p-1 rounded-lg w-fit mx-auto">
+                  <button
+                    onClick={() => setSmartFeedTab('communities')}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-md transition-all ${smartFeedTab === 'communities' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:bg-background/50'}`}
+                  >
+                    Smart Communities
+                  </button>
+                  <button
+                    onClick={() => setSmartFeedTab('events')}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-md transition-all ${smartFeedTab === 'events' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:bg-background/50'}`}
+                  >
+                    Smart Events
+                  </button>
+                </div>
+                
+                {smartFeedTab === 'communities' && (
+                  <div className="space-y-4">
+                    {smartFeedLoading && smartCommunities.length === 0 ? (
+                      <FeedSkeleton />
+                    ) : smartCommunities.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        AI is looking for the best communities for you...
+                      </div>
+                    ) : (
+                      smartCommunities.map(c => (
+                        <Card 
+                          key={c.id} 
+                          className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
+                          onClick={() => setSelectedCommunity(c)}
+                        >
+                          <div className="h-24 bg-muted relative">
+                            {c.cover_url && <img src={c.cover_url} className="w-full h-full object-cover opacity-80" />}
+                            <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
+                              <Sparkles className="w-3 h-3 text-yellow-400" /> {(c.match_score || 90).toFixed(0)}% Match
+                            </div>
+                            <div className="absolute -bottom-6 left-4">
+                              <img 
+                                src={c.avatar_url || '/default-avatar.png'} 
+                                className="w-12 h-12 rounded-xl bg-background border-2 border-background object-cover shadow-md"
+                              />
+                            </div>
                           </div>
-                        </div>
-                        <CardContent className="p-4">
-                          <h3 className="font-bold truncate text-lg">{e.title}</h3>
-                          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                            {/* ✅ FIXED: Reduced icon size */}
-                            <MapPin className="w-3 h-3" /> {e.location}
-                          </p>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </TabsContent>
+                          <CardContent className="p-4 pt-8">
+                            <h3 className="font-bold truncate text-base">{c.name}</h3>
+                            <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{c.description}</p>
+                            <div className="flex items-center gap-1 mt-2 text-xs text-primary font-medium">
+                              {/* ✅ FIXED: Reduced icon size */}
+                              <Users className="w-3 h-3" /> {c.member_count} members
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* Content Logic */}
+                {smartFeedTab === 'events' && (
+                  <div className="space-y-4">
+                    {smartFeedLoading && smartEvents.length === 0 ? (
+                      <FeedSkeleton />
+                    ) : smartEvents.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        AI is looking for the best events for you...
+                      </div>
+                    ) : (
+                      smartEvents.map(e => (
+                        <Card 
+                          key={e.id} 
+                          className="overflow-hidden border-purple-200 dark:border-purple-900 shadow-sm hover:shadow-md transition-all cursor-pointer"
+                          onClick={() => setSelectedEvent(e)}
+                        >
+                          <div className="h-32 bg-muted relative">
+                            {e.image_url && <img src={e.image_url} className="w-full h-full object-cover" />}
+                            <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full backdrop-blur-md flex gap-1 font-bold items-center">
+                              <Sparkles className="w-3 h-3 text-yellow-400" /> {(e.match_score || 95).toFixed(0)}% Match
+                            </div>
+                          </div>
+                          <CardContent className="p-4">
+                            <h3 className="font-bold truncate text-lg">{e.title}</h3>
+                            <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                              {/* ✅ FIXED: Reduced icon size */}
+                              <MapPin className="w-3 h-3" /> {e.location}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </TabsContent>
 
                 <TabsContent value="smart_communities" className="space-y-4">
                   {smartFeedLoading && smartCommunities.length === 0 ? (
