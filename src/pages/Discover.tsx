@@ -1460,13 +1460,15 @@ export default function Discover() {
                   )
                 )}
 
-                {eventsFilter === 'past' && (
+{eventsFilter === 'past' && (
                   pastEvents.length === 0 ? (
                     <EmptyState icon={Clock} title="No Past Events" desc="You haven't attended any events yet." />
                   ) : (
                     pastEvents.map(e => (
-                      <Card
+                      <Card 
+                        key={e.id} 
                         className="hover:shadow-md transition-all border-border/50 cursor-pointer opacity-80"
+                        onClick={() => setSelectedEvent(e)}
                       >
                         <CardContent className="p-4 flex items-center gap-4">
                           <div className="w-14 h-16 rounded-xl bg-muted border border-muted-foreground/10 flex flex-col items-center justify-center text-muted-foreground flex-shrink-0">
@@ -1484,12 +1486,10 @@ export default function Discover() {
                               {e.is_attending && <Badge className="bg-green-600/50 text-xs"><Check className="w-3 h-3 mr-1" /> Attended</Badge>}
                             </div>
                             <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                              {/* ✅ FIXED: Reduced icon size */}
                               <MapPin className="w-3 h-3" /> <span className="truncate">{e.location}</span>
                             </div>
                             <div className="flex items-center gap-3 mt-1">
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                {/* ✅ FIXED: Reduced icon size */}
                                 <Users className="w-3 h-3" /> {e.attendee_count || 0} attended
                               </div>
                             </div>
