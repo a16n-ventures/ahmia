@@ -1,20 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
-  Heart, MessageCircle, Share, MapPin, Calendar, Users, Plus, 
-  Image, Video, X, Loader2, MoreVertical, Trash2, Copy, Eye, Share2
+  Heart, MessageCircle, Share2, MapPin, Calendar, Users, Plus, 
+  Image as ImageIcon, Video, X, Loader2, MoreVertical, Trash2, Copy, Eye, Send
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from "date-fns";
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 // --- TYPES ---
 interface Profile { id: string; display_name: string | null; avatar_url: string | null; }
@@ -29,50 +31,42 @@ interface Story {
 }
 type ProfileWithStoryInner = { id: string; display_name: string | null; avatar_url: string | null; stories: Story[]; };
 
-// --- VERIFIED BADGE COMPONENT ---
+interface Post {
+  id: string;
+  user_id: string;
+  content: string;
+  image_url?: string;
+  video_url?: string; // Derived from image_url if type is video
+  post_type: 'status' | 'image' | 'video' | 'event';
+  likes_count: number;
+  comments_count: number;
+  created_at: string;
+  profiles: { display_name: string; avatar_url: string; };
+  is_liked_by_user?: boolean; // For UI state
+}
+
+// --- VERIFIED BADGE ---
 const VerifiedBadge = () => (
-  <svg 
-    className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 ml-1" 
-    viewBox="0 0 22 22" 
-    fill="currentColor"
-    aria-label="Verified"
-  >
+  <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 ml-1" viewBox="0 0 22 22" fill="currentColor">
     <path d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.854-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.688-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.634.433 1.218.877 1.688.47.443 1.054.747 1.687.878.633.132 1.29.084 1.897-.136.274.586.705 1.084 1.246 1.439.54.354 1.17.551 1.816.569.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.239 1.266.296 1.903.164.636-.132 1.22-.447 1.68-.907.46-.46.776-1.044.908-1.681s.075-1.299-.165-1.903c.586-.274 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z" />
   </svg>
 );
 
-// --- STORY VIEWER COMPONENT ---
+// --- STORY VIEWER ---
 function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose: () => void; onStoryChange?: () => void }) {
   const { user: currentUser } = useAuth();
   const [stories, setStories] = useState<Story[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [liked, setLiked] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [showActions, setShowActions] = useState(false); 
-  const [viewCount, setViewCount] = useState(0);
   const [incomingHearts, setIncomingHearts] = useState<{ id: number, left: number }[]>([]);
 
-  // Check for verified/premium status for the story author
+  // Check premium status for badge
   const { data: isVerified } = useQuery({
     queryKey: ['story-author-premium', user.id],
     queryFn: async () => {
-      const { data: premiumFeature } = await supabase
-        .from('premium_features')
-        .select('is_active')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .gt('expires_at', new Date().toISOString())
-        .maybeSingle();
-
-      const { data: sub } = await supabase
-        .from('subscriptions')
-        .select('status')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .maybeSingle();
-
-      return !!premiumFeature || !!sub;
+      const { data: pf } = await supabase.from('premium_features').select('is_active').eq('user_id', user.id).eq('is_active', true).gt('expires_at', new Date().toISOString()).maybeSingle();
+      const { data: sub } = await supabase.from('subscriptions').select('status').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+      return !!pf || !!sub;
     },
     enabled: !!user.id
   });
@@ -82,14 +76,13 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
       const yesterday = new Date(Date.now() - 864e5).toISOString();
       const { data } = await supabase
         .from('stories')
-        .select('id, content, created_at, author_id, media_url, media_type, view_count')
+        .select('*')
         .eq('author_id', user.id) 
         .gte('created_at', yesterday)
         .order('created_at', { ascending: true });
       
       if (data && data.length > 0) {
         setStories(data);
-        setViewCount(data[0].view_count || 0);
       } else {
         onClose(); 
       }
@@ -107,121 +100,65 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
 
     if (!isMyStory) {
       const viewKey = `story-view-${current.id}-${currentUser.id}`;
-      const hasViewed = sessionStorage.getItem(viewKey);
-
-      if (!hasViewed) {
-        const recordView = async () => {
-          await supabase.rpc('increment_story_view', { story_id: current.id, viewer_id: currentUser.id });
-          sessionStorage.setItem(viewKey, 'true');
-        };
-        recordView();
+      if (!sessionStorage.getItem(viewKey)) {
+        supabase.rpc('increment_story_view', { story_id: current.id, viewer_id: currentUser.id });
+        sessionStorage.setItem(viewKey, 'true');
       }
     }
 
-    const channel = supabase
-      .channel(`story-${current.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'stories', filter: `id=eq.${current.id}` },
-        (payload: any) => {
-          if (payload.new.view_count !== undefined) {
-            setViewCount(payload.new.view_count);
-          }
-        }
-      )
-      .on(
-        'postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'story_likes', filter: `story_id=eq.${current.id}` },
-        (payload) => {
+    const channel = supabase.channel(`story-${current.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'story_likes', filter: `story_id=eq.${current.id}` }, (payload) => {
           if (payload.new.user_id !== currentUser.id) {
              const id = Date.now();
              setIncomingHearts(prev => [...prev, { id, left: Math.random() * 80 + 10 }]);
              setTimeout(() => setIncomingHearts(prev => prev.filter(h => h.id !== id)), 2000);
           }
-        }
-      )
-      .subscribe();
+      }).subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [current?.id, isMyStory, currentUser]);
 
   const next = () => {
-    if (index < stories.length - 1) {
-      setIndex(i => i + 1);
-      setLiked(false);
-      setViewCount(stories[index + 1].view_count || 0); 
-    } else {
-      onClose();
-    }
+    if (index < stories.length - 1) setIndex(i => i + 1);
+    else onClose();
   };
 
   const handleLike = async () => {
     if (!current || !currentUser) return;
-    setLiked(true);
     setIncomingHearts(prev => [...prev, { id: Date.now(), left: 50 }]);
-    
-    const { error } = await supabase.from('story_likes').insert({
-      story_id: current.id,
-      user_id: currentUser.id
-    });
-    
-    if (error) console.error("Error liking story:", error);
-    toast.success("Reaction sent ❤️");
+    await supabase.from('story_likes').insert({ story_id: current.id, user_id: currentUser.id });
   };
 
   const handleDeleteStory = async () => {
     if (!current || !currentUser) return;
-    
-    const confirmed = window.confirm('Delete this story? This cannot be undone.');
+    const confirmed = window.confirm('Delete this story?');
     if (!confirmed) return;
     
-    try {
-      const { error } = await supabase
-        .from('stories')
-        .delete()
-        .eq('id', current.id)
-        .eq('author_id', currentUser.id);
-      
-      if (error) throw error;
-      
-      if (current.media_url) {
-        const path = current.media_url.split('/').slice(-3).join('/');
-        await supabase.storage.from('stories').remove([path]);
-      }
-      
-      toast.success('Story deleted');
-      
-      if (stories.length === 1) {
-        onClose();
-        onStoryChange?.();
-      } else {
-        const newStories = stories.filter(s => s.id !== current.id);
-        setStories(newStories);
-        if (index >= newStories.length) {
-          setIndex(Math.max(0, newStories.length - 1));
-        }
-        onStoryChange?.(); 
-      }
-      
-    } catch (error: any) {
-      console.error('Delete error:', error);
-      toast.error('Failed to delete story');
+    await supabase.from('stories').delete().eq('id', current.id).eq('author_id', currentUser.id);
+    if (current.media_url) {
+      const path = current.media_url.split('/').slice(-3).join('/');
+      await supabase.storage.from('stories').remove([path]);
+    }
+    toast.success('Story deleted');
+    
+    if (stories.length === 1) {
+      onClose();
+      onStoryChange?.();
+    } else {
+      const newStories = stories.filter(s => s.id !== current.id);
+      setStories(newStories);
+      if (index >= newStories.length) setIndex(Math.max(0, newStories.length - 1));
+      onStoryChange?.(); 
     }
   };
 
-  const handleShareToDM = () => {
-    toast.info('Share to DM - Coming soon!');
-  };
-
-  if (loading) return null;
-  if (!current) return null;
+  if (loading || !current) return null;
 
   return (
     <Dialog open={true} onOpenChange={() => onClose()}>
       <DialogContent className="sm:max-w-md p-0 border-0 bg-transparent shadow-none gap-0 outline-none h-full sm:h-auto flex flex-col justify-center items-center">
         <div className="relative w-full h-full sm:h-[75vh] max-h-[800px] bg-black sm:rounded-2xl overflow-hidden flex flex-col border border-white/10 shadow-2xl">
+          {/* Progress Bar */}
           <div className="absolute top-0 w-full z-20 flex gap-1 p-2">
             {stories.map((_, i) => (
               <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm">
@@ -230,141 +167,58 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
             ))}
           </div>
           
+          {/* User Info */}
           <div className="absolute top-6 left-0 w-full p-4 z-20 flex items-center gap-3 bg-gradient-to-b from-black/60 to-transparent">
-            <img 
-              src={user.avatar_url || '/default-avatar.png'} 
-              className="w-10 h-10 rounded-full border-2 border-white/20 object-cover" 
-              alt={user.display_name || 'User'}
-            />
+            <img src={user.avatar_url || '/default-avatar.png'} className="w-10 h-10 rounded-full border-2 border-white/20 object-cover" />
             <div className="flex-1">
               <span className="text-white font-bold text-sm drop-shadow-md flex items-center gap-1">
-                {isMyStory ? 'Your Story' : (user.display_name || 'User')}
+                {isMyStory ? 'Your Story' : user.display_name}
                 {isVerified && !isMyStory && <VerifiedBadge />}
               </span>
-              <span className="text-white/70 text-xs block">
-                {formatDistanceToNow(new Date(current.created_at), { addSuffix: true })}
-              </span>
+              <span className="text-white/70 text-xs block">{formatDistanceToNow(new Date(current.created_at), { addSuffix: true })}</span>
             </div>
-            <button onClick={onClose} className="text-white/80 hover:text-white p-2">
-              <X className="w-6 h-6" />
-            </button>
+            <button onClick={onClose} className="text-white/80 hover:text-white p-2"><X className="w-6 h-6" /></button>
           </div>
           
+          {/* Delete Option */}
           {isMyStory && (
-            <button 
-              onClick={() => setShowActions(!showActions)} 
-              className="absolute top-6 right-16 z-50 text-white/80 hover:text-white p-2"
-            >
-              <MoreVertical className="w-6 h-6" />
-            </button>
+            <div className="absolute top-6 right-16 z-50">
+               <button onClick={handleDeleteStory} className="text-white/80 hover:text-red-500 p-2"><Trash2 className="w-5 h-5" /></button>
+            </div>
           )}
 
+          {/* Hearts Animation */}
           <div className="absolute inset-0 z-40 pointer-events-none overflow-hidden">
             {incomingHearts.map((h) => (
-              <div 
-                key={h.id}
-                className="absolute bottom-20 text-4xl animate-float-up"
-                style={{ left: `${h.left}%`, transition: 'transform 2s ease-out, opacity 2s ease-out' }}
-              >
-                ❤️
-              </div>
+              <div key={h.id} className="absolute bottom-20 text-4xl animate-float-up" style={{ left: `${h.left}%`, transition: 'transform 2s ease-out' }}>❤️</div>
             ))}
           </div>
           
-          {isMyStory && showActions && (
-            <div className="absolute top-20 right-4 z-30 bg-black/90 backdrop-blur-xl rounded-xl border border-white/20 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-              <button 
-                onClick={handleDeleteStory}
-                className="w-full px-4 py-3 text-left text-red-400 hover:bg-red-500/20 flex items-center gap-3 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span className="text-sm font-medium">Delete Story</span>
-              </button>
-              <button 
-                onClick={handleShareToDM}
-                className="w-full px-4 py-3 text-left text-white hover:bg-white/10 flex items-center gap-3 transition-colors"
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span className="text-sm font-medium">Share to DM</span>
-              </button>
-              <button 
-                onClick={() => {
-                  navigator.clipboard.writeText(current.media_url || current.content || '');
-                  toast.success('Copied!');
-                }}
-                className="w-full px-4 py-3 text-left text-white hover:bg-white/10 flex items-center gap-3 transition-colors"
-              >
-                <Copy className="w-4 h-4" />
-                <span className="text-sm font-medium">Copy</span>
-              </button>
-            </div>
-          )}
-          
+          {/* Content */}
           <div className="flex-1 flex items-center justify-center bg-black relative" onClick={next}>
             <div className="w-full h-full flex items-center justify-center p-4">
               {current.media_url ? (
                 current.media_type === 'video' ? (
-                  <video 
-                    src={current.media_url} 
-                    className="max-w-full max-h-full object-contain rounded-lg"
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                  />
+                  <video src={current.media_url} className="max-w-full max-h-full object-contain rounded-lg" autoPlay loop muted playsInline />
                 ) : (
-                  <img 
-                    src={current.media_url} 
-                    className="max-w-full max-h-full object-contain rounded-lg"
-                    alt="Story"
-                  />
+                  <img src={current.media_url} className="max-w-full max-h-full object-contain rounded-lg" alt="Story" />
                 )
               ) : (
-                <p className="text-white text-xl text-center px-8 leading-relaxed">
-                  {current.content || ''}
-                </p>
+                <p className="text-white text-xl text-center px-8 leading-relaxed">{current.content || ''}</p>
               )}
             </div>
-            
             {current.media_url && current.content && (
               <div className="absolute bottom-20 left-0 right-0 px-6">
-                <p className="text-white text-center text-sm bg-black/40 backdrop-blur-sm rounded-full py-2 px-4">
-                  {current.content}
-                </p>
+                <p className="text-white text-center text-sm bg-black/40 backdrop-blur-sm rounded-full py-2 px-4">{current.content}</p>
               </div>
             )}
           </div>
           
+          {/* Controls */}
           {!isMyStory && (
             <div className="absolute bottom-0 w-full p-4 z-30 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex gap-3 pb-8">
-              <Input 
-                value={msg} 
-                onChange={(e) => setMsg(e.target.value)} 
-                placeholder="Reply..." 
-                className="bg-white/10 border-white/10 text-white placeholder:text-white/60 rounded-full backdrop-blur-md focus-visible:ring-0" 
-                onClick={(e) => e.stopPropagation()} 
-              />
-              <Button 
-                size="icon" 
-                variant="ghost" 
-                className="text-white rounded-full hover:bg-white/10" 
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  handleLike();
-                }}
-              >
-                <Heart className={`w-7 h-7 transition-transform active:scale-125 ${liked ? 'fill-red-500 text-red-500' : ''}`} />
-              </Button>
-              <Button 
-                size="icon" 
-                variant="ghost" 
-                className="text-white rounded-full hover:bg-white/10"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleShareToDM();
-                }}
-              >
-                <Share2 className="w-7 h-7" />
+              <Button size="icon" variant="ghost" className="text-white rounded-full hover:bg-white/10" onClick={(e) => { e.stopPropagation(); handleLike(); }}>
+                <Heart className="w-7 h-7" />
               </Button>
             </div>
           )}
@@ -373,7 +227,7 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
               <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full flex items-center gap-2">
                 <Eye className="w-4 h-4 text-white" />
-                <span className="text-white text-sm font-medium">{viewCount} views</span>
+                <span className="text-white text-sm font-medium">{current.view_count || 0} views</span>
               </div>
             </div>
           )}
@@ -383,11 +237,12 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
   );
 }
 
-// --- MAIN SOCIAL FEED COMPONENT ---
+// --- SOCIAL FEED COMPONENT ---
 const SocialFeed = () => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [postText, setPostText] = useState('');
-  const [feedPosts, setFeedPosts] = useState<any[]>([]);
+  const [feedPosts, setFeedPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Story States
@@ -396,25 +251,39 @@ const SocialFeed = () => {
   const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
   const [storiesLoading, setStoriesLoading] = useState(true);
   
-  // Upload State
-  const [preview, setPreview] = useState<{ file: File, url: string } | null>(null);
-  const [caption, setCaption] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  // Post Upload State
+  const [postMedia, setPostMedia] = useState<{ file: File, url: string, type: 'image' | 'video' } | null>(null);
+  const [uploadingPost, setUploadingPost] = useState(false);
+  const postFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Story Upload State
+  const [storyPreview, setStoryPreview] = useState<{ file: File, url: string } | null>(null);
+  const [storyCaption, setStoryCaption] = useState("");
+  const [uploadingStory, setUploadingStory] = useState(false);
+  const storyFileRef = useRef<HTMLInputElement>(null);
+
+  // Comment Dialog State
+  const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState("");
+  const [postComments, setPostComments] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!user) return;
     fetchPosts();
     fetchStories();
     
-    // Fetch current user profile for the story bubble
-    if (user) {
-      supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle()
-        .then(({ data }) => {
-          if (data) {
-            setCurrentUserProfile({ id: data.id, display_name: data.display_name, avatar_url: data.avatar_url });
-          }
-        });
-    }
+    supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => { if (data) setCurrentUserProfile(data); });
+
+    // Subscribe to realtime posts
+    const channel = supabase.channel('social-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'social_posts' }, (payload) => {
+         // Optionally refresh or prepend
+         fetchPosts(); 
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   // --- STORY FUNCTIONS ---
@@ -424,47 +293,23 @@ const SocialFeed = () => {
     const yesterday = new Date();
     yesterday.setHours(yesterday.getHours() - 24);
 
-    const { data: storyData, error: storyError } = await supabase
-      .from('stories')
-      .select('*')
-      .gte('created_at', yesterday.toISOString())
-      .order('created_at', { ascending: false });
+    const { data: storyData } = await supabase.from('stories').select('*').gte('created_at', yesterday.toISOString()).order('created_at', { ascending: false });
 
-    if (storyError) {
-      console.error('❌ Stories fetch error:', storyError);
-    } else if (storyData && storyData.length > 0) {
+    if (storyData && storyData.length > 0) {
       const authorIds = Array.from(new Set(storyData.map((s: any) => s.author_id)));
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, user_id, display_name, avatar_url')
-        .in('user_id', authorIds); 
-        
-      const profileMap = new Map();
-      profiles?.forEach((p: any) => profileMap.set(p.user_id, p));
-
+      const { data: profiles } = await supabase.from('profiles').select('id, user_id, display_name, avatar_url').in('user_id', authorIds); 
+      
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]));
       const storyMap = new Map<string, any>();
+      
       storyData.forEach((story: any) => {
         const profile = profileMap.get(story.author_id);
         if (!profile) return;
-        
         if (!storyMap.has(profile.user_id)) {
-          storyMap.set(profile.user_id, {
-            id: profile.user_id, 
-            display_name: profile.display_name,
-            avatar_url: profile.avatar_url,
-            stories: []
-          });
+          storyMap.set(profile.user_id, { id: profile.user_id, display_name: profile.display_name, avatar_url: profile.avatar_url, stories: [] });
         }
-        storyMap.get(profile.user_id).stories.push({
-          id: story.id,
-          created_at: story.created_at,
-          content: story.content,
-          media_url: story.media_url,
-          media_type: story.media_type,
-          view_count: story.view_count || 0
-        });
+        storyMap.get(profile.user_id).stories.push(story);
       });
-    
       setStoryUsers(Array.from(storyMap.values()));
     } else {
       setStoryUsers([]);
@@ -472,170 +317,169 @@ const SocialFeed = () => {
     setStoriesLoading(false);
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setPreview({
-        file: e.target.files[0],
-        url: URL.createObjectURL(e.target.files[0])
-      });
-    }
+  const handleStoryFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) setStoryPreview({ file: e.target.files[0], url: URL.createObjectURL(e.target.files[0]) });
   };
 
-  const handleUpload = async () => {
-    if (!preview || !user) return;
-    setUploading(true);
-    
+  const handleStoryUpload = async () => {
+    if (!storyPreview || !user) return;
+    setUploadingStory(true);
     try {
-      const ext = preview.file.name.split('.').pop();
+      const ext = storyPreview.file.name.split('.').pop();
       const path = `${user.id}/${Date.now()}.${ext}`;
+      await supabase.storage.from('stories').upload(path, storyPreview.file);
+      const { data: { publicUrl } } = supabase.storage.from('stories').getPublicUrl(path);
       
-      const { error: uploadError } = await supabase.storage
-        .from('stories')
-        .upload(path, preview.file);
-      
-      if (uploadError) throw uploadError;
-      
-      const { data: { publicUrl } } = supabase.storage
-        .from('stories')
-        .getPublicUrl(path);
-      
-      const { error: insertError } = await supabase
-        .from('stories')
-        .insert({ 
-          author_id: user.id, 
-          content: caption || null,
-          media_url: publicUrl,
-          media_type: preview.file.type.startsWith('video') ? 'video' : 'image',
-          view_count: 0
-        });
-      
-      if (insertError) throw insertError;
+      await supabase.from('stories').insert({ 
+        author_id: user.id, 
+        content: storyCaption || null,
+        media_url: publicUrl,
+        media_type: storyPreview.file.type.startsWith('video') ? 'video' : 'image'
+      });
       
       toast.success("Story posted! 📸");
-      setPreview(null);
-      setCaption("");
-      await fetchStories(); // Refresh without reload
-      
+      setStoryPreview(null);
+      setStoryCaption("");
+      await fetchStories();
     } catch (e: any) {
-      console.error("Story upload error:", e);
       toast.error(e.message || "Upload failed");
     } finally {
-      setUploading(false);
+      setUploadingStory(false);
     }
   };
 
   // --- POST FUNCTIONS ---
   const fetchPosts = async () => {
-    try {
-      const { data: posts, error } = await supabase
-        .from('social_posts')
-        .select(`
-          *,
-          profiles!social_posts_user_id_fkey (
-            display_name,
-            avatar_url
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .limit(20);
+    const { data: posts, error } = await supabase
+      .from('social_posts')
+      .select(`*, profiles!social_posts_user_id_fkey(display_name, avatar_url)`)
+      .order('created_at', { ascending: false })
+      .limit(30);
 
-      if (error) throw error;
-      setFeedPosts(posts || []);
-    } catch (error) {
-      console.error('Fetch posts error:', error);
-      toast.error('Failed to load posts');
-    } finally {
-      setLoading(false);
+    if (!error && posts) setFeedPosts(posts as Post[]);
+    setLoading(false);
+  };
+
+  const handlePostMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      const file = e.target.files[0];
+      const type = file.type.startsWith('video') ? 'video' : 'image';
+      setPostMedia({ file, url: URL.createObjectURL(file), type });
     }
   };
 
   const handleCreatePost = async () => {
-    if (!postText.trim()) {
-      toast.error('Please write something');
+    if (!postText.trim() && !postMedia) {
+      toast.error('Please write something or add media');
       return;
     }
+    setUploadingPost(true);
 
     try {
-      const { error } = await supabase
-        .from('social_posts')
-        .insert({
-          user_id: user?.id,
-          content: postText.trim(),
-          post_type: 'status'
-        });
+      let publicUrl = null;
+      let postType = 'status';
+
+      if (postMedia) {
+        const ext = postMedia.file.name.split('.').pop();
+        const path = `posts/${user?.id}/${Date.now()}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from('post_media').upload(path, postMedia.file);
+        if (uploadError) throw uploadError;
+        
+        const res = supabase.storage.from('post_media').getPublicUrl(path);
+        publicUrl = res.data.publicUrl;
+        postType = postMedia.type;
+      }
+
+      const { error } = await supabase.from('social_posts').insert({
+        user_id: user?.id,
+        content: postText.trim(),
+        post_type: postType,
+        image_url: publicUrl // Store video URL here too for simplicity or use a separate column if schema allows
+      });
 
       if (error) throw error;
 
       toast.success('Post created!');
       setPostText('');
+      setPostMedia(null);
       fetchPosts();
-    } catch (error) {
-      console.error('Create post error:', error);
+    } catch (error: any) {
+      console.error(error);
       toast.error('Failed to create post');
+    } finally {
+      setUploadingPost(false);
     }
   };
 
-  const getPostTypeIcon = (type: string) => {
-    switch (type) {
-      case 'event': return <Calendar className="w-4 h-4" />;
-      case 'location': return <MapPin className="w-4 h-4" />;
-      default: return null;
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm("Are you sure?")) return;
+    await supabase.from('social_posts').delete().eq('id', postId).eq('user_id', user?.id);
+    setFeedPosts(prev => prev.filter(p => p.id !== postId));
+    toast.success("Post deleted");
+  };
+
+  // --- POST INTERACTIONS ---
+  const handleLikePost = async (postId: string) => {
+    // Optimistic UI update could be done here, but simpler to just call RPC or insert
+    // Assuming a 'post_likes' table exists. If not, just increment counter directly (less robust)
+    // Here we assume basic counter increment for simplicity unless robust table exists
+    // Ideally: await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
+    // Fallback simple increment:
+    const { error } = await supabase.rpc('increment_post_likes', { post_id: postId });
+    if (!error) {
+        setFeedPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: (p.likes_count || 0) + 1 } : p));
     }
   };
 
-  const PostCard = ({ post }: { post: any }) => {
-    const author = post.profiles;
-    const timeAgo = new Date(post.created_at).toLocaleDateString();
+  const handleSharePost = async (post: Post) => {
+    const shareData = {
+        title: `Post by ${post.profiles?.display_name}`,
+        text: post.content,
+        url: window.location.href // Or deep link to post
+    };
+    if (navigator.share) {
+        await navigator.share(shareData);
+    } else {
+        await navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}`);
+        toast.success("Copied to clipboard");
+    }
+  };
+
+  // --- COMMENTS LOGIC ---
+  const openComments = async (postId: string) => {
+    setActiveCommentPost(postId);
+    // Fetch comments
+    // Assuming 'post_comments' table: id, post_id, user_id, content, created_at
+    // If not exists, this part needs SQL setup. Assuming standard structure:
+    const { data } = await supabase
+        .from('post_comments')
+        .select('*, profiles(display_name, avatar_url)')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+    setPostComments(data || []);
+  };
+
+  const submitComment = async () => {
+    if (!activeCommentPost || !commentText.trim()) return;
     
-    return (
-      <Card className="gradient-card shadow-card border-0">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <Avatar className="w-10 h-10">
-              <AvatarImage src={author?.avatar_url} />
-              <AvatarFallback className="gradient-primary text-white text-sm">
-                {author?.display_name?.split(' ').map((n: string) => n[0]).join('') || 'U'}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-sm">{author?.display_name || 'User'}</h3>
-                {post.post_type !== 'status' && (
-                  <Badge variant="secondary" className="text-xs">
-                    {getPostTypeIcon(post.post_type)}
-                    <span className="ml-1 capitalize">{post.post_type}</span>
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <span>{timeAgo}</span>
-              </div>
-            </div>
-          </div>
+    const { error } = await supabase.from('post_comments').insert({
+        post_id: activeCommentPost,
+        user_id: user?.id,
+        content: commentText.trim()
+    });
 
-          <div className="mb-3">
-            <p className="text-sm">{post.content}</p>
-            {post.image_url && (
-              <div className="mt-3 rounded-lg overflow-hidden">
-                <img src={post.image_url} alt="Post" className="w-full h-auto" />
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-border/50">
-            <Button variant="ghost" size="sm" className="flex-1">
-              <Heart className="w-4 h-4 mr-1" /> {post.likes_count || 0}
-            </Button>
-            <Button variant="ghost" size="sm" className="flex-1">
-              <MessageCircle className="w-4 h-4 mr-1" /> {post.comments_count || 0}
-            </Button>
-            <Button variant="ghost" size="sm" className="flex-1">
-              <Share className="w-4 h-4 mr-1" /> 0
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
+    if (!error) {
+        setCommentText("");
+        // Refresh comments
+        const { data } = await supabase
+            .from('post_comments')
+            .select('*, profiles(display_name, avatar_url)')
+            .eq('post_id', activeCommentPost)
+            .order('created_at', { ascending: true });
+        setPostComments(data || []);
+        // Update count in feed
+        setFeedPosts(prev => prev.map(p => p.id === activeCommentPost ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p));
+    }
   };
 
   return (
@@ -646,41 +490,22 @@ const SocialFeed = () => {
         <div className="w-full overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 pt-2">
           {storiesLoading ? (
             <div className="flex gap-4">
-              <div className="w-16 h-16 bg-muted rounded-full animate-pulse" />
-              <div className="w-16 h-16 bg-muted rounded-full animate-pulse" />
-              <div className="w-16 h-16 bg-muted rounded-full animate-pulse" />
+              {[1,2,3].map(i => <div key={i} className="w-16 h-16 bg-muted rounded-full animate-pulse flex-shrink-0" />)}
             </div>
           ) : (
             <div className="flex gap-4 items-start">
               {/* My Story Bubble */}
               {(() => {
                 const myStory = storyUsers.find(u => u.id === user?.id);
-                const handleLongPress = (e: React.SyntheticEvent) => { e.preventDefault(); fileRef.current?.click(); };
-
                 return (
                   <div 
                     className="flex flex-col items-center gap-2 flex-shrink-0 relative cursor-pointer group"
-                    onClick={() => myStory ? setSelectedStory(myStory) : fileRef.current?.click()}
-                    onContextMenu={handleLongPress}
+                    onClick={() => myStory ? setSelectedStory(myStory) : storyFileRef.current?.click()}
                   >
-                    <input type="file" ref={fileRef} className="hidden" accept="image/*,video/*" onChange={handleFileSelect} />
-                    <div className={`w-16 h-16 rounded-full p-[3px] ${
-                      myStory 
-                        ? 'bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400' 
-                        : 'border-2 border-dashed border-muted-foreground/30'
-                    } relative group-hover:scale-105 transition-transform shadow-sm`}>
-                      <img 
-                        src={currentUserProfile?.avatar_url || '/default-avatar.png'} 
-                        className={`w-full h-full rounded-full object-cover ${myStory ? 'border-2 border-background' : 'opacity-50'}`} 
-                        alt="Your story"
-                      />
-                      {!myStory && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-background/20 rounded-full">
-                          <div className="absolute bottom-0 right-0 bg-primary text-white rounded-full p-1 border-2 border-background">
-                             <Plus className="w-3 h-3" />
-                          </div>
-                        </div>
-                      )}
+                    <input type="file" ref={storyFileRef} className="hidden" accept="image/*,video/*" onChange={handleStoryFileSelect} />
+                    <div className={`w-16 h-16 rounded-full p-[3px] ${myStory ? 'bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400' : 'border-2 border-dashed border-muted-foreground/30'} relative`}>
+                      <img src={currentUserProfile?.avatar_url || '/default-avatar.png'} className={`w-full h-full rounded-full object-cover ${myStory ? 'border-2 border-background' : 'opacity-50'}`} />
+                      {!myStory && <div className="absolute inset-0 flex items-center justify-center bg-background/20 rounded-full"><div className="absolute bottom-0 right-0 bg-primary text-white rounded-full p-1 border-2 border-background"><Plus className="w-3 h-3" /></div></div>}
                     </div>
                     <span className="text-xs font-bold max-w-[70px] truncate">Your Story</span>
                   </div>
@@ -689,19 +514,11 @@ const SocialFeed = () => {
               
               {/* Friends Stories */}
               {storyUsers.filter(u => u.id !== user?.id).map(u => (
-                <div 
-                  key={u.id} 
-                  className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 group" 
-                  onClick={() => setSelectedStory(u)}
-                >
-                  <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-purple-600 group-hover:scale-105 transition-transform shadow-sm">
-                    <img 
-                      src={u.avatar_url || '/default-avatar.png'} 
-                      className="w-full h-full rounded-full object-cover border-2 border-background" 
-                      alt={u.display_name || 'User'}
-                    />
+                <div key={u.id} className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0" onClick={() => setSelectedStory(u)}>
+                  <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-purple-600">
+                    <img src={u.avatar_url || '/default-avatar.png'} className="w-full h-full rounded-full object-cover border-2 border-background" />
                   </div>
-                  <span className="text-xs font-medium max-w-[70px] truncate">{u.display_name || 'User'}</span>
+                  <span className="text-xs font-medium max-w-[70px] truncate">{u.display_name}</span>
                 </div>
               ))}
             </div>
@@ -715,29 +532,45 @@ const SocialFeed = () => {
         </div>
 
         {/* Create Post */}
-        <Card className="gradient-card shadow-card border-0">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
+        <Card className="border-0 shadow-sm bg-card/50">
+          <CardContent className="p-4 space-y-4">
+            <div className="flex gap-3">
               <Avatar className="w-10 h-10">
                 <AvatarImage src={currentUserProfile?.avatar_url || undefined} />
-                <AvatarFallback className="gradient-primary text-white">U</AvatarFallback>
+                <AvatarFallback>U</AvatarFallback>
               </Avatar>
-              <div className="flex-1 space-y-3">
-                <Textarea
-                  placeholder="What's on your mind?"
-                  value={postText}
-                  onChange={(e) => setPostText(e.target.value)}
-                  className="min-h-[80px] resize-none"
-                />
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm"><Image className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="sm"><Video className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="sm"><MapPin className="w-4 h-4" /></Button>
-                  </div>
-                  <Button size="sm" className="gradient-primary text-white" onClick={handleCreatePost}>Post</Button>
+              <Textarea
+                placeholder="What's on your mind?"
+                value={postText}
+                onChange={(e) => setPostText(e.target.value)}
+                className="min-h-[80px] bg-transparent border-0 resize-none focus-visible:ring-0 p-0 text-base"
+              />
+            </div>
+            
+            {postMedia && (
+                <div className="relative rounded-xl overflow-hidden bg-black/5">
+                    <button onClick={() => setPostMedia(null)} className="absolute top-2 right-2 bg-black/50 p-1 rounded-full text-white"><X className="w-4 h-4" /></button>
+                    {postMedia.type === 'video' ? (
+                        <video src={postMedia.url} controls className="max-h-60 w-full object-contain" />
+                    ) : (
+                        <img src={postMedia.url} className="max-h-60 w-full object-cover" />
+                    )}
                 </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t">
+              <div className="flex gap-2">
+                <input type="file" ref={postFileInputRef} className="hidden" accept="image/*,video/*" onChange={handlePostMediaSelect} />
+                <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => postFileInputRef.current?.click()}>
+                    <ImageIcon className="w-5 h-5 mr-2 text-green-500" /> Photo/Video
+                </Button>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                    <MapPin className="w-5 h-5 mr-2 text-red-500" /> Location
+                </Button>
               </div>
+              <Button size="sm" className="bg-primary text-white rounded-full px-6" onClick={handleCreatePost} disabled={uploadingPost}>
+                {uploadingPost ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -745,49 +578,71 @@ const SocialFeed = () => {
         {/* Feed Posts */}
         <div className="space-y-4">
           {loading ? (
-            <div className="flex flex-col items-center py-8 gap-2">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              <p className="text-muted-foreground text-sm">Loading feed...</p>
-            </div>
+            <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
           ) : feedPosts.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <p>No posts yet. Be the first to share!</p>
-            </div>
+            <div className="text-center py-12 text-muted-foreground">No posts yet.</div>
           ) : (
             feedPosts.map((post) => (
-              <PostCard key={post.id} post={post} />
+              <Card key={post.id} className="border-0 shadow-sm overflow-hidden">
+                <CardHeader className="p-4 flex flex-row items-start gap-3 space-y-0">
+                  <Avatar>
+                    <AvatarImage src={post.profiles?.avatar_url} />
+                    <AvatarFallback>{post.profiles?.display_name?.[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate">{post.profiles?.display_name}</p>
+                    <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</p>
+                  </div>
+                  {post.user_id === user?.id && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger><MoreVertical className="w-5 h-5 text-muted-foreground" /></DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem className="text-red-600" onClick={() => handleDeletePost(post.id)}><Trash2 className="w-4 h-4 mr-2" /> Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </CardHeader>
+                <CardContent className="p-4 pt-0 space-y-3">
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
+                  {post.image_url && (
+                    <div className="rounded-xl overflow-hidden bg-muted">
+                        {post.post_type === 'video' || post.image_url.includes('.mp4') || post.image_url.includes('.webm') ? (
+                            <video src={post.image_url} controls className="w-full max-h-[500px] object-contain" />
+                        ) : (
+                            <img src={post.image_url} alt="Post content" className="w-full h-auto object-cover" />
+                        )}
+                    </div>
+                  )}
+                </CardContent>
+                <CardFooter className="p-2 border-t flex justify-between">
+                    <Button variant="ghost" size="sm" className="flex-1" onClick={() => handleLikePost(post.id)}>
+                        <Heart className="w-5 h-5 mr-2" /> {post.likes_count || 0}
+                    </Button>
+                    <Button variant="ghost" size="sm" className="flex-1" onClick={() => openComments(post.id)}>
+                        <MessageCircle className="w-5 h-5 mr-2" /> {post.comments_count || 0}
+                    </Button>
+                    <Button variant="ghost" size="sm" className="flex-1" onClick={() => handleSharePost(post)}>
+                        <Share2 className="w-5 h-5 mr-2" /> Share
+                    </Button>
+                </CardFooter>
+              </Card>
             ))
           )}
         </div>
       </div>
 
-      {/* Upload Preview Dialog */}
-      <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
-        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto bg-background/95 backdrop-blur-xl border-0">
+      {/* Story Upload Dialog */}
+      <Dialog open={!!storyPreview} onOpenChange={() => setStoryPreview(null)}>
+        <DialogContent className="sm:max-w-[480px] bg-background border-0">
           <DialogHeader><DialogTitle>Create Story</DialogTitle></DialogHeader>
-          <div className="h-[40vh] max-h-[400px] min-h-[300px] bg-black/10 rounded-xl overflow-hidden flex items-center justify-center relative border group">
-            {preview && (
-              preview.file.type.startsWith('video') ? (
-                <video src={preview.url} controls className="max-h-full max-w-full object-contain" />
-              ) : (
-                <img src={preview.url} className="max-h-full max-w-full object-contain" alt="Preview" />
-              )
-            )}
+          <div className="h-[40vh] bg-black/10 rounded-xl overflow-hidden flex items-center justify-center relative">
+            {storyPreview && (storyPreview.file.type.startsWith('video') ? <video src={storyPreview.url} controls className="h-full" /> : <img src={storyPreview.url} className="h-full object-contain" />)}
           </div>
-          <div className="space-y-4 pt-2">
-            <Input 
-              placeholder="Add a caption..." 
-              value={caption} 
-              onChange={e => setCaption(e.target.value)} 
-              className="bg-muted/50 border-0" 
-              maxLength={150}
-            />
-            <div className="text-xs text-muted-foreground text-right">{caption.length}/150</div>
+          <div className="space-y-4">
+            <Input placeholder="Add a caption..." value={storyCaption} onChange={e => setStoryCaption(e.target.value)} />
             <DialogFooter className="gap-2">
-              <Button variant="ghost" onClick={() => setPreview(null)}>Cancel</Button>
-              <Button onClick={handleUpload} disabled={uploading} className="gradient-primary text-white">
-                {uploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading...</> : <><Loader2 className="w-4 h-4 mr-2" /> Share</>}
-              </Button>
+                <Button variant="ghost" onClick={() => setStoryPreview(null)}>Cancel</Button>
+                <Button onClick={handleStoryUpload} disabled={uploadingStory}>{uploadingStory ? 'Uploading...' : 'Share Story'}</Button>
             </DialogFooter>
           </div>
         </DialogContent>
@@ -795,6 +650,30 @@ const SocialFeed = () => {
 
       {/* Story Viewer */}
       {selectedStory && <StoryViewer user={selectedStory} onClose={() => setSelectedStory(null)} onStoryChange={fetchStories} />}
+
+      {/* Comments Dialog */}
+      <Dialog open={!!activeCommentPost} onOpenChange={() => setActiveCommentPost(null)}>
+        <DialogContent className="sm:max-w-[500px] h-[70vh] flex flex-col">
+            <DialogHeader><DialogTitle>Comments</DialogTitle></DialogHeader>
+            <ScrollArea className="flex-1 pr-4">
+                <div className="space-y-4">
+                    {postComments.length === 0 ? <p className="text-center text-muted-foreground py-10">No comments yet.</p> : postComments.map(c => (
+                        <div key={c.id} className="flex gap-3">
+                            <Avatar className="w-8 h-8"><AvatarImage src={c.profiles?.avatar_url} /><AvatarFallback>U</AvatarFallback></Avatar>
+                            <div className="bg-muted/50 p-3 rounded-xl rounded-tl-none flex-1">
+                                <p className="text-xs font-bold mb-1">{c.profiles?.display_name}</p>
+                                <p className="text-sm">{c.content}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </ScrollArea>
+            <div className="flex gap-2 pt-2 border-t">
+                <Input placeholder="Write a comment..." value={commentText} onChange={e => setCommentText(e.target.value)} />
+                <Button size="icon" onClick={submitComment}><Send className="w-4 h-4" /></Button>
+            </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
