@@ -27,8 +27,7 @@ export default function Onboarding() {
           <InterestSelector 
             onComplete={() => {
               // Redirect to the Discover page with the 'foryou' tab active
-              navigate('/app/socialfeed, { replace: true });
-            }} 
+              navigate('/app/socialfeed', { replace: true});
           />
         </CardContent>
       </Card>
