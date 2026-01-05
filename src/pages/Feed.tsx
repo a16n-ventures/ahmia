@@ -11,19 +11,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Heart, MessageCircle, Share2, MapPin, Calendar, Users, Plus, 
   Image as ImageIcon, Video, X, Loader2, MoreVertical, Trash2, Edit2, Repeat, Send,
-  UserPlus, Check, Search, SlidersHorizontal, Sparkles, Filter
+  UserPlus, Check, Search, SlidersHorizontal, Sparkles, Filter, Ticket, Megaphone, Clock, Copy
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, isPast, isFuture, isToday, addHours, differenceInMinutes } from "date-fns";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useNavigate } from 'react-router-dom';
 import { FriendProfilePreview } from '@/components/friends/FriendProfilePreview';
 
 // --- TYPES ---
-interface Profile { id: string; display_name: string | null; avatar_url: string | null; user_id: string; }
+interface Profile { id: string; display_name: string | null; avatar_url: string | null; user_id?: string; }
 interface Story { 
   id: string; 
   content: string | null; 
@@ -49,8 +49,32 @@ interface Post {
   is_liked_by_user?: boolean;
 }
 
-interface Community { id: string; name: string; description: string; avatar_url: string; member_count: number; }
-interface Event { id: string; title: string; start_date: string; location: string; image_url: string; }
+interface Community { 
+  id: string; 
+  name: string; 
+  member_count: number | null; 
+  description: string | null; 
+  avatar_url: string | null;
+  cover_url?: string | null;
+  is_member?: boolean;
+  my_role?: 'admin' | 'member' | string | null;
+  match_score?: number; 
+}
+
+interface Event { 
+  id: string; 
+  title: string;
+  start_date: string;
+  location: string | null; 
+  image_url?: string; 
+  match_score?: number;
+  description?: string;
+  end_date?: string;
+  price?: number;
+  attendee_count?: number;
+  is_attending?: boolean;
+  is_sponsored?: boolean;
+}
 
 // --- SMART VERIFIED BADGE ---
 const VerifiedBadge = ({ userId }: { userId?: string }) => {
@@ -75,29 +99,315 @@ const VerifiedBadge = ({ userId }: { userId?: string }) => {
   );
 };
 
+// --- EVENT STATUS HELPER ---
+const getEventStatus = (startDate: string) => {
+  const date = new Date(startDate);
+  const now = new Date();
+  const expirationTime = addHours(date, 3); // 3-hour duration assumption
+
+  // If start date is past but still within active window
+  if (isPast(date) && now < expirationTime) {
+    if (differenceInMinutes(expirationTime, now) < 30) {
+      return { label: 'Ending Soon', color: 'bg-orange-500' };
+    }
+    return { label: 'Happening Now', color: 'bg-green-600' };
+  }
+
+  if (isToday(date)) return { label: 'Today', color: 'bg-blue-500' };
+  if (isFuture(date)) {
+    const hoursUntil = differenceInMinutes(date, now) / 60;
+    if (hoursUntil <= 24) return { label: 'Starting Soon', color: 'bg-amber-500' };
+    return { label: 'Upcoming', color: 'bg-primary' };
+  }
+  
+  return { label: 'Past', color: 'bg-muted-foreground' };
+};
+
+// --- EVENT DETAIL MODAL ---
+function EventDetailModal({ event, isOpen, onClose, onRSVP }: { 
+  event: Event | null; 
+  isOpen: boolean; 
+  onClose: () => void;
+  onRSVP: (eventId: string) => void;
+}) {
+  if (!event) return null;
+
+  const formatDate = (date: string) => {
+    return new Date(date).toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto p-0 overflow-hidden">
+        {event.image_url && (
+          <div className="w-full h-48 bg-muted relative">
+            <img 
+              src={event.image_url} 
+              alt={event.title}
+              className="w-full h-full object-cover"
+            />
+            {event.match_score && (
+              <Badge className="absolute top-4 right-4 bg-black/60 backdrop-blur-md">
+                <Sparkles className="w-3 h-3 mr-1 text-yellow-400" />
+                {event.match_score.toFixed(0)}% Match
+              </Badge>
+            )}
+            {event.is_sponsored && (
+              <Badge className="absolute top-4 left-4 bg-yellow-500/90 hover:bg-yellow-600 text-white backdrop-blur-md border-0">
+                <Megaphone className="w-3 h-3 mr-1" />
+                Sponsored
+              </Badge>
+            )}
+          </div>
+        )}
+        
+        <div className="p-6 space-y-4">
+          <div>
+            <h2 className="text-2xl font-bold mb-2">{event.title}</h2>
+            {event.description && (
+              <p className="text-muted-foreground">{event.description}</p>
+            )}
+          </div>
+
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex items-start gap-3">
+              <Calendar className="w-5 h-5 text-primary mt-0.5" />
+              <div>
+                <p className="font-medium">When</p>
+                <p className="text-sm text-muted-foreground">{formatDate(event.start_date)}</p>
+                {event.end_date && (
+                  <p className="text-sm text-muted-foreground">to {formatDate(event.end_date)}</p>
+                )}
+              </div>
+            </div>
+
+            {event.location && (
+              <div className="flex items-start gap-3">
+                <MapPin className="w-5 h-5 text-primary mt-0.5" />
+                <div>
+                  <p className="font-medium">Where</p>
+                  <p className="text-sm text-muted-foreground">{event.location}</p>
+                </div>
+              </div>
+            )}
+
+            {event.price !== undefined && (
+              <div className="flex items-start gap-3">
+                <Ticket className="w-5 h-5 text-primary mt-0.5" />
+                <div>
+                  <p className="font-medium">Price</p>
+                  <p className="text-sm text-muted-foreground">
+                    {event.price === 0 ? 'Free' : `$${event.price}`}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-start gap-3">
+              <Users className="w-5 h-5 text-primary mt-0.5" />
+              <div>
+                <p className="font-medium">Attendees</p>
+                <p className="text-sm text-muted-foreground">{event.attendee_count || 0} going</p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 border-t pt-4">
+            <Button variant="outline" onClick={onClose}>Close</Button>
+            <Button 
+              onClick={() => {
+                onRSVP(event.id);
+                onClose();
+              }}
+              className={event.is_attending ? "bg-green-600 hover:bg-green-700" : ""}
+            >
+              {event.is_attending ? (
+                <>
+                  <Check className="w-4 h-4 mr-2" />
+                  Going
+                </>
+              ) : (
+                <>
+                  <Ticket className="w-4 h-4 mr-2" />
+                  RSVP
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// --- COMMUNITY DETAIL MODAL ---
+function CommunityDetailModal({ 
+  community, 
+  isOpen, 
+  onClose, 
+  onJoin,
+  onOpen 
+}: {
+  community: Community | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onJoin: (communityId: string) => void;
+  onOpen: () => void;
+}) {
+  if (!community) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto p-0 overflow-hidden">
+        {(community.cover_url || community.avatar_url) && (
+          <div className="w-full h-48 bg-muted relative">
+            <img 
+              src={community.cover_url || community.avatar_url || '/default-avatar.png'} 
+              alt={community.name}
+              className="w-full h-full object-cover"
+            />
+            {community.is_member && (
+              <Badge className="absolute top-4 right-4 bg-green-600 backdrop-blur-md border-0">
+                <Check className="w-3 h-3 mr-1" />
+                {community.my_role === 'admin' ? 'Admin' : 'Joined'}
+              </Badge>
+            )}
+            {community.match_score && (
+              <Badge className="absolute top-4 left-4 bg-black/60 backdrop-blur-md">
+                <Sparkles className="w-3 h-3 mr-1 text-yellow-400" />
+                {community.match_score.toFixed(0)}% Match
+              </Badge>
+            )}
+          </div>
+        )}
+        
+        <div className="p-6 space-y-4">
+          <div>
+            <h2 className="text-2xl font-bold mb-2">{community.name}</h2>
+            {community.description && (
+              <p className="text-muted-foreground">{community.description}</p>
+            )}
+          </div>
+
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex items-start gap-3">
+              <Users className="w-5 h-5 text-primary mt-0.5" />
+              <div>
+                <p className="font-medium">Members</p>
+                <p className="text-sm text-muted-foreground">
+                  {community.member_count || 0} {community.member_count === 1 ? 'member' : 'members'}
+                </p>
+              </div>
+            </div>
+
+            {community.my_role && (
+              <div className="flex items-start gap-3">
+                <Badge className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center mt-0.5">
+                  <Check className="w-3 h-3" />
+                </Badge>
+                <div>
+                  <p className="font-medium">Your Role</p>
+                  <p className="text-sm text-muted-foreground capitalize">
+                    {community.my_role}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-start gap-3">
+              <Sparkles className="w-5 h-5 text-primary mt-0.5" />
+              <div>
+                <p className="font-medium">Community Type</p>
+                <p className="text-sm text-muted-foreground">
+                  Public • Open to join
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 border-t pt-4 flex-col sm:flex-row">
+            <Button variant="outline" onClick={onClose} className="w-full sm:w-auto">
+              Close
+            </Button>
+            
+            {community.is_member ? (
+              <Button 
+                onClick={() => {
+                  onOpen();
+                  onClose();
+                }}
+                className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Open Community
+              </Button>
+            ) : (
+              <Button 
+                onClick={() => {
+                  onJoin(community.id);
+                  onClose();
+                }}
+                className="w-full sm:w-auto"
+              >
+                <Users className="w-4 h-4 mr-2" />
+                Join Community
+              </Button>
+            )}
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // --- STORY VIEWER ---
 function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose: () => void; onStoryChange?: () => void }) {
   const { user: currentUser } = useAuth();
   const [stories, setStories] = useState<Story[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [liked, setLiked] = useState(false);
   const [msg, setMsg] = useState("");
+  const [showActions, setShowActions] = useState(false); 
+  const [viewCount, setViewCount] = useState(0);
   const [incomingHearts, setIncomingHearts] = useState<{ id: number, left: number }[]>([]);
+
+  // Check verified status
+  const { data: isVerified } = useQuery({
+    queryKey: ['story-author-premium', user.id],
+    queryFn: async () => {
+      // Handle potential ID mismatch (some profiles might use id vs user_id)
+      const targetId = user.user_id || user.id;
+      if (!targetId) return false;
+      
+      const { data: pf } = await supabase.from('premium_features').select('is_active').eq('user_id', targetId).eq('is_active', true).gt('expires_at', new Date().toISOString()).maybeSingle();
+      const { data: sub } = await supabase.from('subscriptions').select('status').eq('user_id', targetId).eq('status', 'active').maybeSingle();
+      return !!pf || !!sub;
+    },
+    enabled: !!(user.id || user.user_id)
+  });
 
   useEffect(() => {
     const load = async () => {
-      // Use the ID from the passed user object (which might be user_id or id depending on source)
-      const targetId = user.user_id || user.id; 
+      const targetId = user.user_id || user.id;
       const yesterday = new Date(Date.now() - 864e5).toISOString();
       const { data } = await supabase
         .from('stories')
-        .select('*')
+        .select('id, content, created_at, author_id, media_url, media_type, view_count')
         .eq('author_id', targetId) 
         .gte('created_at', yesterday)
         .order('created_at', { ascending: true });
       
       if (data && data.length > 0) {
         setStories(data);
+        setViewCount(data[0].view_count || 0);
       } else {
         onClose(); 
       }
@@ -109,18 +419,25 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
   const current = stories[index];
   const isMyStory = currentUser?.id === (user.user_id || user.id); 
   
+  // Realtime Logic
   useEffect(() => {
     if (!current || !currentUser) return;
 
     if (!isMyStory) {
       const viewKey = `story-view-${current.id}-${currentUser.id}`;
       if (!sessionStorage.getItem(viewKey)) {
-        supabase.rpc('increment_story_view', { story_id: current.id, viewer_id: currentUser.id });
-        sessionStorage.setItem(viewKey, 'true');
+        const recordView = async () => {
+          await supabase.rpc('increment_story_view', { story_id: current.id, viewer_id: currentUser.id });
+          sessionStorage.setItem(viewKey, 'true');
+        };
+        recordView();
       }
     }
 
     const channel = supabase.channel(`story-${current.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'stories', filter: `id=eq.${current.id}` }, (payload: any) => {
+          if (payload.new.view_count !== undefined) setViewCount(payload.new.view_count);
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'story_likes', filter: `story_id=eq.${current.id}` }, (payload) => {
           if (payload.new.user_id !== currentUser.id) {
              const id = Date.now();
@@ -133,31 +450,25 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
   }, [current?.id, isMyStory, currentUser]);
 
   const next = () => {
-    if (index < stories.length - 1) setIndex(i => i + 1);
-    else onClose();
+    if (index < stories.length - 1) {
+      setIndex(i => i + 1);
+      setLiked(false);
+      setViewCount(stories[index + 1].view_count || 0);
+    } else {
+      onClose();
+    }
   };
 
-  const handleLike = () => {
+  const handleLike = async () => {
     if (!current || !currentUser) return;
+    setLiked(true);
     setIncomingHearts(prev => [...prev, { id: Date.now(), left: 50 }]);
-    supabase.from('story_likes').insert({ story_id: current.id, user_id: currentUser.id });
-  };
-
-  const handleSendReply = async () => {
-    if(!msg.trim() || !currentUser) return;
-    await supabase.from('messages').insert({
-        sender_id: currentUser.id,
-        receiver_id: user.user_id || user.id,
-        content: `Replied to story: ${msg}`,
-    });
-    setMsg("");
-    toast.success("Reply sent");
+    await supabase.from('story_likes').insert({ story_id: current.id, user_id: currentUser.id });
   };
 
   const handleDeleteStory = async () => {
     if (!current || !currentUser) return;
-    const confirmed = window.confirm('Delete this story?');
-    if (!confirmed) return;
+    if (!confirm('Delete this story?')) return;
     
     await supabase.from('stories').delete().eq('id', current.id).eq('author_id', currentUser.id);
     if (current.media_url) {
@@ -177,13 +488,14 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
     }
   };
 
+  const handleShareToDM = () => toast.info('Share to DM - Coming soon!');
+
   if (loading || !current) return null;
 
   return (
     <Dialog open={true} onOpenChange={() => onClose()}>
       <DialogContent className="sm:max-w-md p-0 border-0 bg-transparent shadow-none gap-0 outline-none h-full sm:h-auto flex flex-col justify-center items-center">
         <div className="relative w-full h-full sm:h-[75vh] max-h-[800px] bg-black sm:rounded-2xl overflow-hidden flex flex-col border border-white/10 shadow-2xl">
-          {/* Progress Bar */}
           <div className="absolute top-0 w-full z-20 flex gap-1 p-2">
             {stories.map((_, i) => (
               <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm">
@@ -192,13 +504,12 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
             ))}
           </div>
           
-          {/* User Info */}
           <div className="absolute top-6 left-0 w-full p-4 z-20 flex items-center gap-3 bg-gradient-to-b from-black/60 to-transparent">
             <img src={user.avatar_url || '/default-avatar.png'} className="w-10 h-10 rounded-full border-2 border-white/20 object-cover" />
             <div className="flex-1">
               <span className="text-white font-bold text-sm drop-shadow-md flex items-center gap-1">
                 {isMyStory ? 'Your Story' : user.display_name}
-                <VerifiedBadge userId={user.user_id || user.id} />
+                {isVerified && !isMyStory && <VerifiedBadge userId={user.user_id || user.id} />}
               </span>
               <span className="text-white/70 text-xs block">{formatDistanceToNow(new Date(current.created_at), { addSuffix: true })}</span>
             </div>
@@ -206,8 +517,19 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
           </div>
           
           {isMyStory && (
-            <div className="absolute top-6 right-16 z-50">
-               <button onClick={handleDeleteStory} className="text-white/80 hover:text-red-500 p-2"><Trash2 className="w-5 h-5" /></button>
+            <button onClick={() => setShowActions(!showActions)} className="absolute top-6 right-16 z-50 text-white/80 hover:text-white p-2">
+              <MoreVertical className="w-6 h-6" />
+            </button>
+          )}
+
+          {isMyStory && showActions && (
+            <div className="absolute top-20 right-4 z-30 bg-black/90 backdrop-blur-xl rounded-xl border border-white/20 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+              <button onClick={handleDeleteStory} className="w-full px-4 py-3 text-left text-red-400 hover:bg-red-500/20 flex items-center gap-3 transition-colors">
+                <Trash2 className="w-4 h-4" /> <span className="text-sm font-medium">Delete Story</span>
+              </button>
+              <button onClick={() => { navigator.clipboard.writeText(current.media_url || ''); toast.success('Copied!'); }} className="w-full px-4 py-3 text-left text-white hover:bg-white/10 flex items-center gap-3 transition-colors">
+                <Copy className="w-4 h-4" /> <span className="text-sm font-medium">Copy</span>
+              </button>
             </div>
           )}
 
@@ -245,13 +567,11 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
                 className="bg-white/10 border-white/10 text-white placeholder:text-white/60 rounded-full backdrop-blur-md focus-visible:ring-0" 
                 onClick={(e) => e.stopPropagation()} 
               />
-              {msg.trim().length > 0 && (
-                  <Button size="icon" className="bg-primary text-white rounded-full ml-2" onClick={handleSendReply}>
-                      <Send className="w-4 h-4" />
-                  </Button>
-              )}
-              <Button size="icon" variant="ghost" className="text-white rounded-full hover:bg-white/10 active:scale-125 transition-transform" onClick={(e) => { e.stopPropagation(); handleLike(); }}>
-                <Heart className="w-7 h-7" />
+              <Button size="icon" variant="ghost" className="text-white rounded-full hover:bg-white/10" onClick={(e) => { e.stopPropagation(); handleLike(); }}>
+                <Heart className={`w-7 h-7 transition-transform active:scale-125 ${liked ? 'fill-red-500 text-red-500' : ''}`} />
+              </Button>
+              <Button size="icon" variant="ghost" className="text-white rounded-full hover:bg-white/10" onClick={(e) => { e.stopPropagation(); handleShareToDM(); }}>
+                <Share2 className="w-7 h-7" />
               </Button>
             </div>
           )}
@@ -260,7 +580,7 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
               <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full flex items-center gap-2">
                 <Eye className="w-4 h-4 text-white" />
-                <span className="text-white text-sm font-medium">{current.view_count || 0} views</span>
+                <span className="text-white text-sm font-medium">{viewCount} views</span>
               </div>
             </div>
           )}
@@ -322,13 +642,17 @@ const Feed = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [communities, setCommunities] = useState<Community[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
+  
+  // Modal States
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
 
   useEffect(() => {
     if (!user) return;
     fetchPosts();
     fetchStories();
     fetchRelationships();
-    fetchSpotlightData(); // Fetch communities and events
+    fetchSpotlightData();
     
     supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle()
       .then(({ data }) => { if (data) setCurrentUserProfile(data); });
@@ -392,17 +716,11 @@ const Feed = () => {
   const fetchPosts = async () => {
     const { data: posts, error } = await supabase
       .from('social_posts')
-      .select(`
-        *,
-        profiles (display_name, avatar_url, user_id),
-        post_likes (user_id)
-      `)
+      .select(`*, profiles (display_name, avatar_url, user_id), post_likes (user_id)`)
       .order('created_at', { ascending: false })
       .limit(30);
 
-    if (error) {
-      console.error("Error fetching posts:", error);
-    } else if (posts) {
+    if (!error && posts) {
       const formattedPosts = posts.map((p: any) => ({
           ...p,
           is_liked_by_user: p.post_likes && p.post_likes.some((l: any) => l.user_id === user?.id)
@@ -413,11 +731,9 @@ const Feed = () => {
   };
 
   const fetchSpotlightData = async () => {
-    // Fetch Communities
     const { data: comms } = await supabase.from('communities').select('*').limit(20);
     if (comms) setCommunities(comms);
 
-    // Fetch Events
     const { data: evts } = await supabase.from('events').select('*').gt('start_date', new Date().toISOString()).order('start_date', { ascending: true }).limit(20);
     if (evts) setEvents(evts);
   };
@@ -652,7 +968,32 @@ const Feed = () => {
     }
   };
 
-  // Filter content based on search query
+  // ✅ ADDED: Handlers for Modals
+  const handleJoinCommunity = async (communityId: string) => {
+    if (!user) return;
+    const { error } = await supabase.from('community_members').insert({ community_id: communityId, user_id: user.id, role: 'member' });
+    if (!error) {
+        await supabase.rpc('increment_community_members', { community_id: communityId });
+        toast.success("Joined community!");
+        // Refresh spotlight data to update UI
+        fetchSpotlightData();
+    } else {
+        toast.error("Failed to join");
+    }
+  };
+
+  const handleRSVP = async (eventId: string) => {
+    if (!user) return;
+    const { error } = await supabase.from('event_attendees').insert({ event_id: eventId, user_id: user.id, status: 'confirmed' });
+    if (!error) {
+        await supabase.rpc('increment_event_attendees', { event_id: eventId });
+        toast.success("RSVP sent!");
+        fetchSpotlightData();
+    } else {
+        toast.error("Failed to RSVP");
+    }
+  };
+
   const filteredPosts = feedPosts.filter(p => p.content.toLowerCase().includes(searchQuery.toLowerCase()) || p.profiles.display_name.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredCommunities = communities.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredEvents = events.filter(e => e.title.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -743,7 +1084,6 @@ const Feed = () => {
                       />
                     </div>
                     
-                    {/* Tagging Dropdown */}
                     {showTagList && (
                         <div className="absolute top-16 left-14 bg-popover border shadow-md rounded-md z-10 w-48 max-h-40 overflow-y-auto">
                             {friends.filter(f => f.display_name.toLowerCase().includes(tagQuery.toLowerCase())).map(f => (
@@ -884,7 +1224,7 @@ const Feed = () => {
 
                     <TabsContent value="communities" className="space-y-4">
                         {filteredCommunities.map(c => (
-                            <Card key={c.id} className="overflow-hidden border-border/60 hover:border-primary/50 transition-colors cursor-pointer" onClick={() => navigate(`/app/messages?tab=community`)}>
+                            <Card key={c.id} className="overflow-hidden border-border/60 hover:border-primary/50 transition-colors cursor-pointer" onClick={() => setSelectedCommunity(c)}>
                                 <div className="flex items-center p-4 gap-4">
                                     <Avatar className="h-14 w-14 rounded-xl">
                                         <AvatarImage src={c.avatar_url} className="object-cover" />
@@ -905,7 +1245,7 @@ const Feed = () => {
 
                     <TabsContent value="events" className="space-y-4">
                         {filteredEvents.map(e => (
-                            <Card key={e.id} className="overflow-hidden border-border/60 hover:border-primary/50 transition-colors">
+                            <Card key={e.id} className="overflow-hidden border-border/60 hover:border-primary/50 transition-colors" onClick={() => setSelectedEvent(e)}>
                                 <div className="h-32 w-full bg-muted relative">
                                     <img src={e.image_url} className="w-full h-full object-cover" />
                                     <div className="absolute top-2 right-2 bg-background/80 backdrop-blur-sm px-2 py-1 rounded text-xs font-bold">
@@ -1007,6 +1347,22 @@ const Feed = () => {
         profile={previewProfile}
         open={!!previewProfile}
         onClose={() => setPreviewProfile(null)}
+      />
+
+      {/* ✅ ADDED: Detail Modals for Events & Communities */}
+      <EventDetailModal 
+        event={selectedEvent} 
+        isOpen={!!selectedEvent} 
+        onClose={() => setSelectedEvent(null)} 
+        onRSVP={handleRSVP} 
+      /> 
+      
+      <CommunityDetailModal 
+        community={selectedCommunity} 
+        isOpen={!!selectedCommunity} 
+        onClose={() => setSelectedCommunity(null)} 
+        onJoin={handleJoinCommunity} 
+        onOpen={() => navigate('/app/messages?tab=community')} 
       />
     </div>
   );
