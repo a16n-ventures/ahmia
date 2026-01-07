@@ -27,6 +27,8 @@ import { FriendSkeleton } from "@/components/friends/FriendSkeleton";
 import { FriendProfilePreview } from "@/components/friends/FriendProfilePreview";
 import { BlockReportDialog } from "@/components/friends/BlockReportDialog";
 import { ContactImportModal } from "@/components/ContactImportModal";
+import { NearbyUserCard } from "@/components/friends/NearbyUserCard"; // ✅ IMPORTED
+import { ContactCard } from "@/components/friends/ContactCard";       // ✅ IMPORTED
 
 // Utilities
 const DEBOUNCE_DELAY = 500;
@@ -77,12 +79,16 @@ type TabValue = 'friends' | 'requests' | 'discover';
 type RequestView = 'received' | 'sent';
 type DiscoverView = 'nearby' | 'contacts';
 
+// Local interface needed if not exported from hooks
 interface NearbyUser {
   user_id: string;
   display_name: string;
   avatar_url: string | null;
   distance_km: number;
   match_score: number;
+  // Add other properties if needed by NearbyUserCard
+  email?: string;
+  username?: string;
 }
 
 export default function Friends() {
@@ -164,6 +170,7 @@ export default function Friends() {
     });
     incomingRequests.forEach(r => ids.add(r.requester_id));
     outgoingRequests.forEach(r => ids.add(r.addressee_id));
+    // nearbyUsers already have user_id, add them
     nearbyUsers.forEach(n => ids.add(n.user_id));
     return Array.from(ids);
   }, [friends, incomingRequests, outgoingRequests, nearbyUsers, userId]);
@@ -195,85 +202,6 @@ export default function Friends() {
     enabled: allRelevantUserIds.length > 0,
     staleTime: 60000
   });
-
-  // --- Mutual Connections Logic ---
-  const myFriendIds = useMemo(() => {
-    const ids = new Set<string>();
-    friends.forEach(f => {
-      ids.add(f.requester_id === userId ? f.addressee_id : f.requester_id);
-    });
-    return ids;
-  }, [friends, userId]);
-
-  const contactEmails = useMemo(() => 
-    contacts
-      .map(c => c.email)
-      .filter((e): e is string => !!e), 
-    [contacts]
-  );
-
-  const { data: contactProfiles } = useQuery({
-    queryKey: ['contact-profiles', contactEmails],
-    queryFn: async () => {
-      if (contactEmails.length === 0) return [];
-      const { data } = await supabase
-        .from('profiles')
-        .select('user_id, display_name, avatar_url, email')
-        .in('email', contactEmails);
-      return data || [];
-    },
-    enabled: contactEmails.length > 0,
-    staleTime: 300000 // 5 minutes
-  });
-
-  const registeredContactMap = useMemo(() => {
-    const map = new Map<string, { user_id: string; avatar_url?: string; display_name?: string }>();
-    contactProfiles?.forEach(p => {
-      if (p.email) map.set(p.email, { user_id: p.user_id, avatar_url: p.avatar_url || undefined, display_name: p.display_name || undefined });
-    });
-    return map;
-  }, [contactProfiles]);
-
-  const contactUserIds = useMemo(() => contactProfiles?.map(p => p.user_id) || [], [contactProfiles]);
-
-  const { data: contactFriendships } = useQuery({
-    queryKey: ['contact-friendships', contactUserIds],
-    queryFn: async () => {
-      if (contactUserIds.length === 0) return [];
-      // Fetch public friendships for contacts to calculate mutuals
-      const { data } = await supabase
-        .from('friendships')
-        .select('requester_id, addressee_id')
-        .or(`requester_id.in.(${contactUserIds.join(',')}),addressee_id.in.(${contactUserIds.join(',')})`)
-        .eq('status', 'accepted'); 
-      return data || [];
-    },
-    enabled: contactUserIds.length > 0 && contactUserIds.length < 50, // Safety cap to avoid huge query
-    staleTime: 300000
-  });
-
-  const mutualCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    if (!contactProfiles || !contactFriendships) return counts;
-
-    contactProfiles.forEach(p => {
-      if (!p.email) return;
-      
-      const theirFriendIds = new Set<string>();
-      contactFriendships.forEach(f => {
-        if (f.requester_id === p.user_id) theirFriendIds.add(f.addressee_id);
-        if (f.addressee_id === p.user_id) theirFriendIds.add(f.requester_id);
-      });
-
-      let mutual = 0;
-      theirFriendIds.forEach(id => {
-        if (myFriendIds.has(id)) mutual++;
-      });
-      
-      counts[p.email] = mutual;
-    });
-    return counts;
-  }, [contactProfiles, contactFriendships, myFriendIds]);
 
   const hasLocationChangedSignificantly = useCallback((newLat: number, newLon: number): boolean => {
     if (!lastFetchLocationRef.current) return true;
@@ -372,7 +300,9 @@ export default function Friends() {
             display_name: displayName,
             avatar_url: profile?.avatar_url || null,
             distance_km: candidate.distance,
-            match_score: Math.max(0, 100 - candidate.distance)
+            match_score: Math.max(0, 100 - candidate.distance),
+            email: profile?.email,
+            username: profile?.username
           };
         })
         .filter((user): user is NearbyUser => user !== null);
@@ -418,10 +348,11 @@ export default function Friends() {
     return () => clearInterval(refreshInterval);
   }, [activeTab, discoverView, userLocation, isLocationLoading, requestLocation, fetchNearbyUsers, hasLocationChangedSignificantly]);
 
+  // ✅ DEDUPLICATION Logic
   const filteredFriends = useMemo(() => {
     let res = [...friends];
     
-    // ✅ DEDUPLICATION: Ensure unique users
+    // Ensure unique users
     const uniqueIds = new Set();
     res = res.filter(f => {
       const friendId = f.requester_id === userId ? f.addressee_id : f.requester_id;
@@ -592,42 +523,15 @@ export default function Friends() {
                     <p className="text-xs mt-1">Invite friends to join!</p>
                   </div>
                 ) : (
-                  // INLINE NEARBY USER CARD
-                  nearbyUsers.map(p => {
-                    const isAdding = mutations.sendRequest.isPending && mutations.sendRequest.variables?.user_id === p.user_id;
-                    const isVerified = premiumStatus[p.user_id] || false;
-                    
-                    return (
-                      <Card key={p.user_id} className="overflow-hidden">
-                        <CardContent className="p-3 flex items-center gap-3">
-                          <Avatar className="h-12 w-12 border-2 border-background">
-                            <AvatarImage src={p.avatar_url || undefined} />
-                            <AvatarFallback>{p.display_name[0].toUpperCase()}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1">
-                                <h4 className="font-semibold truncate text-sm">{p.display_name}</h4>
-                                {isVerified && <VerifiedBadge />}
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <MapPin className="w-3 h-3" /> {p.distance_km.toFixed(1)}km
-                              </span>
-                            </div>
-                          </div>
-                          <Button 
-                            size="sm" 
-                            variant="secondary" 
-                            onClick={() => mutations.sendRequest.mutate({ user_id: p.user_id })}
-                            disabled={isAdding}
-                            className="shrink-0"
-                          >
-                            {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    );
-                  })
+                  // ✅ FIXED: Using the NearbyUserCard Component
+                  nearbyUsers.map(p => (
+                    <NearbyUserCard 
+                      key={p.user_id} 
+                      profile={p}
+                      isAdding={mutations.sendRequest.isPending && mutations.sendRequest.variables?.user_id === p.user_id}
+                      onAddFriend={(profile) => mutations.sendRequest.mutate({ user_id: profile.user_id })}
+                    />
+                  ))
                 )}
               </div> 
             </>
@@ -636,7 +540,6 @@ export default function Friends() {
           {/* CONTACTS VIEW */}
           {discoverView === 'contacts' && (
             <div className="space-y-3">
-              {/* ✅ FIXED: Render Button and Modal separately */}
               <div className="flex justify-center w-full">
                 <Button 
                   className="w-fit px-8 bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-sm" 
@@ -645,7 +548,6 @@ export default function Friends() {
                   <User className="w-4 h-4 mr-2" /> Add New Contact
                 </Button>
               </div>
-              {/* The Modal controls its own visibility via props */}
               <ContactImportModal 
                 open={showAddContact} 
                 onOpenChange={setShowAddContact}
@@ -659,61 +561,17 @@ export default function Friends() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredContacts.map(contact => {
-                     const isDeleting = deleteContact.isPending;
-                     
-                     // Check if contact is a registered user by email
-                     const registeredUser = contact.email ? registeredContactMap.get(contact.email) : null;
-                     const mutualCount = contact.email ? mutualCounts[contact.email] : 0;
-                     
-                     return (
-                      <Card key={contact.id}>
-                        <CardContent className="p-3 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            {registeredUser ? (
-                                <Avatar className="h-10 w-10">
-                                    <AvatarImage src={registeredUser.avatar_url} />
-                                    <AvatarFallback>{registeredUser.display_name?.[0]?.toUpperCase() || contact.name?.[0]?.toUpperCase()}</AvatarFallback>
-                                </Avatar>
-                            ) : (
-                                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-                                    {contact.name?.[0]?.toUpperCase() || 'C'}
-                                </div>
-                            )}
-                            
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1">
-                                <h4 className="font-medium text-sm truncate">{contact.name || registeredUser?.display_name || 'Unknown'}</h4>
-                                {registeredUser && premiumStatus[registeredUser.user_id] && <VerifiedBadge />}
-                              </div>
-                              <p className="text-xs text-muted-foreground truncate mb-0.5">
-                                {contact.phone || contact.email || 'No contact info'}
-                              </p>
-                              {mutualCount > 0 && (
-                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                  <Users className="w-3 h-3" />
-                                  <span>{mutualCount} mutual connection{mutualCount !== 1 ? 's' : ''}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                             {/* ✅ ACTION BUTTON: Only 'Message' (if registered) and 'Remove' */}
-                             {registeredUser && (
-                                <Button size="sm" onClick={() => navigate(`/app/messages?tab=dm?userId=${registeredUser.user_id}`)}>
-                                    <MessageSquare className="w-3.5 h-3.5 mr-1" /> Message
-                                </Button>
-                             )}
-                             
-                             <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive opacity-50 hover:opacity-100" onClick={() => deleteContact.mutate(contact.id!)} disabled={isDeleting}>
-                                <X className="w-4 h-4" />
-                             </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                     );
-                  })}
+                  {filteredContacts.map(contact => (
+                     // ✅ FIXED: Using the ContactCard Component
+                     <ContactCard 
+                        key={contact.id}
+                        contact={contact}
+                        isDeleting={deleteContact.isPending}
+                        isInviting={inviteContact.isPending}
+                        onDelete={(id) => deleteContact.mutate(id)}
+                        onInvite={(c) => inviteContact.mutate(c.id!)}
+                     />
+                  ))}
                 </div>
               )}
             </div>
