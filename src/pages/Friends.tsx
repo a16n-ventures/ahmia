@@ -420,6 +420,16 @@ export default function Friends() {
 
   const filteredFriends = useMemo(() => {
     let res = [...friends];
+    
+    // ✅ DEDUPLICATION: Ensure unique users
+    const uniqueIds = new Set();
+    res = res.filter(f => {
+      const friendId = f.requester_id === userId ? f.addressee_id : f.requester_id;
+      if (uniqueIds.has(friendId)) return false;
+      uniqueIds.add(friendId);
+      return true;
+    });
+
     if (debouncedSearch) {
       res = res.filter(f => {
         const p = f.requester_id === userId ? f.addressee : f.requester;
