@@ -26,7 +26,7 @@ export function ContactCard({
     if (!contact.phone) return;
     
     // Normalize invite message
-    const message = encodeURIComponent("Hey! Check out this app: https://try.usecorridor.xyz");
+    const message = encodeURIComponent("Hey! Check out this app: https://try.usecorridor.xyz/ahmia");
     
     // Use window.location for better mobile compatibility with SMS protocols
     window.location.href = `sms:${contact.phone}?&body=${message}`;
@@ -68,7 +68,7 @@ export function ContactCard({
                 onClick={handleSMSInvite}
               >
                 <MessageSquare className="w-3.5 h-3.5 mr-1" />
-                Text
+                Invite 
               </Button>
             ) : (
               /* Email Invite Button - Fallback to standard invite */
