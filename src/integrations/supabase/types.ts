@@ -181,6 +181,35 @@ export type Database = {
           },
         ]
       }
+      comment_likes: {
+        Row: {
+          comment_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_likes_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "post_comments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       communities: {
         Row: {
           cover_url: string | null
@@ -1028,6 +1057,7 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          likes_count: number | null
           parent_id: string | null
           post_id: string
           updated_at: string
@@ -1037,6 +1067,7 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          likes_count?: number | null
           parent_id?: string | null
           post_id: string
           updated_at?: string
@@ -1046,6 +1077,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          likes_count?: number | null
           parent_id?: string | null
           post_id?: string
           updated_at?: string
@@ -1945,6 +1977,10 @@ export type Database = {
         Args: { amount: number; user_id: string }
         Returns: undefined
       }
+      decrement_comment_likes: {
+        Args: { p_comment_id: string }
+        Returns: undefined
+      }
       decrement_community_members: {
         Args: { community_id: string }
         Returns: undefined
@@ -2034,6 +2070,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_comment_likes: {
+        Args: { p_comment_id: string }
+        Returns: undefined
       }
       increment_community_members: {
         Args: { community_id: string }

@@ -636,6 +636,7 @@ const Feed = () => {
   const [postComments, setPostComments] = useState<any[]>([]);
   const [sharePost, setSharePost] = useState<Post | null>(null);
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
+  const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
   
   // Profile Preview
   const [previewProfile, setPreviewProfile] = useState<any | null>(null);
@@ -986,6 +987,8 @@ const Feed = () => {
   const openComments = async (postId: string) => {
     setActiveCommentPost(postId);
     setReplyingTo(null);
+    setLikedComments(new Set());
+    
     const { data, error } = await supabase
       .from('post_comments')
       .select('*, profiles:user_id(display_name, avatar_url)')
@@ -997,6 +1000,20 @@ const Feed = () => {
       setPostComments([]);
     } else {
       setPostComments(data || []);
+      
+      // Fetch user's liked comments
+      if (user && data && data.length > 0) {
+        const commentIds = data.map((c: any) => c.id);
+        const { data: likes } = await supabase
+          .from('comment_likes')
+          .select('comment_id')
+          .eq('user_id', user.id)
+          .in('comment_id', commentIds);
+        
+        if (likes) {
+          setLikedComments(new Set(likes.map(l => l.comment_id)));
+        }
+      }
     }
   };
 
@@ -1031,6 +1048,37 @@ const Feed = () => {
 
   const handleReply = (commentId: string, authorName: string) => {
     setReplyingTo({ id: commentId, name: authorName });
+  };
+
+  const handleLikeComment = async (commentId: string) => {
+    if (!user) return;
+    
+    const isLiked = likedComments.has(commentId);
+    
+    // Optimistic update
+    setLikedComments(prev => {
+      const next = new Set(prev);
+      if (isLiked) {
+        next.delete(commentId);
+      } else {
+        next.add(commentId);
+      }
+      return next;
+    });
+    
+    setPostComments(prev => prev.map(c => 
+      c.id === commentId 
+        ? { ...c, likes_count: (c.likes_count || 0) + (isLiked ? -1 : 1) }
+        : c
+    ));
+
+    if (isLiked) {
+      await supabase.from('comment_likes').delete().match({ comment_id: commentId, user_id: user.id });
+      await supabase.rpc('decrement_comment_likes', { p_comment_id: commentId });
+    } else {
+      await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: user.id });
+      await supabase.rpc('increment_comment_likes', { p_comment_id: commentId });
+    }
   };
 
   // Helper to organize comments into threads
@@ -1550,14 +1598,25 @@ const Feed = () => {
                                 <p className="text-xs font-bold mb-1">{c.profiles?.display_name}</p>
                                 <p className="text-sm">{c.content}</p>
                               </div>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="text-xs text-muted-foreground mt-1 h-6 px-2"
-                                onClick={() => handleReply(c.id, c.profiles?.display_name || 'User')}
-                              >
-                                Reply
-                              </Button>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className={`text-xs h-6 px-2 ${likedComments.has(c.id) ? 'text-red-500' : 'text-muted-foreground'}`}
+                                  onClick={() => handleLikeComment(c.id)}
+                                >
+                                  <Heart className={`w-3 h-3 mr-1 ${likedComments.has(c.id) ? 'fill-red-500' : ''}`} />
+                                  {c.likes_count || 0}
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="text-xs text-muted-foreground h-6 px-2"
+                                  onClick={() => handleReply(c.id, c.profiles?.display_name || 'User')}
+                                >
+                                  Reply
+                                </Button>
+                              </div>
                             </div>
                           </div>
                           {/* Replies */}
@@ -1571,6 +1630,15 @@ const Feed = () => {
                                       <p className="text-xs font-bold mb-0.5">{reply.profiles?.display_name}</p>
                                       <p className="text-sm">{reply.content}</p>
                                     </div>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className={`text-xs h-5 px-1 mt-0.5 ${likedComments.has(reply.id) ? 'text-red-500' : 'text-muted-foreground'}`}
+                                      onClick={() => handleLikeComment(reply.id)}
+                                    >
+                                      <Heart className={`w-3 h-3 mr-1 ${likedComments.has(reply.id) ? 'fill-red-500' : ''}`} />
+                                      {reply.likes_count || 0}
+                                    </Button>
                                   </div>
                                 </div>
                               ))}
