@@ -153,10 +153,6 @@ const MapPage = () => {
       const loc = friendLocations.find(l => l.user_id === friendId);
 
       if (loc && loc.latitude && loc.longitude) {
-        // Logic: Show them if they have coordinates.
-    //  if (!loc.is_sharing_location) {
- //   return; // Skip to next iteration
-     //  }
         uniqueFriendsMap.set(friendId, {
           user_id: friendId,
           latitude: loc.latitude,
@@ -175,122 +171,137 @@ const MapPage = () => {
   }, [friends, friendLocations, location, user?.id]);
 
   // --- Fetch User's Discovery Radius from Profile ---
-const { data: userProfile } = useQuery({
-  queryKey: ['user-profile', user?.id],
-  queryFn: async () => {
-    if (!user?.id) return null;
-    const { data } = await supabase
-      .from('profiles')
-      .select('preferences')
-      .eq('user_id', user.id)
-      .single();
-    return data;
-  },
-  enabled: !!user?.id,
-  staleTime: 60000, // Cache for 1 minute
-});
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from('profiles')
+        .select('preferences')
+        .eq('user_id', user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+    staleTime: 60000, // Cache for 1 minute
+  });
 
-// Extract discovery radius (in meters), default to 10km if not set
-const discoveryRadiusMeters = useMemo(() => {
-  const prefs = userProfile?.preferences as { discovery_radius?: number } | null;
-  const savedRadius = prefs?.discovery_radius;
-  return savedRadius ?? 10000; // Default 10km in meters
-}, [userProfile]);
+  // Extract discovery radius (in meters), default to 10km if not set
+  const discoveryRadiusMeters = useMemo(() => {
+    const prefs = userProfile?.preferences as { discovery_radius?: number } | null;
+    const savedRadius = prefs?.discovery_radius;
+    return savedRadius ?? 10000; // Default 10km in meters
+  }, [userProfile]);
 
-// Convert to kilometers for filtering
-const discoveryRadiusKm = discoveryRadiusMeters / 1000;
+  // Convert to kilometers for filtering
+  const discoveryRadiusKm = discoveryRadiusMeters / 1000;
 
-// --- UPDATE friendsMapped logic to use user's radius ---
-const friendsMapped: FriendOnMap[] = useMemo(() => {
-  if (!location) return [];
-  
-  console.log(`🎯 Filtering friends within ${discoveryRadiusKm}km radius`);
-  
-  return nearbyFriendsRaw
-    .map((loc: any) => {
-      const dist = distanceKm(location.latitude, location.longitude, loc.latitude, loc.longitude);
-      
-      // ✅ USE USER'S DISCOVERY RADIUS instead of hardcoded 100km
-      if (dist > discoveryRadiusKm) {
-        console.log(`⏭️ Friend "${loc.profiles?.display_name}" is ${dist.toFixed(1)}km away (outside ${discoveryRadiusKm}km radius)`);
-        return null;
-  }
-
-        const online = friendsPresence[loc.user_id] === 'online';
-      
-      let statusText = 'Offline';
-      if (online) statusText = 'Active now';
-      else if (!loc.is_sharing) statusText = 'Location paused';
-      else statusText = 'Active recently';
-
-      console.log(`✅ Friend "${loc.profiles?.display_name}" included: ${dist.toFixed(1)}km away`);
-
-      const isPremium = premiumStatus[loc.user_id] || false;
-
-      return {
-        id: loc.user_id,
-        name: loc.profiles?.display_name || 'Friend',
-        avatar: loc.profiles?.avatar_url,
-        locationLabel: 'On the map',
-        coordinates: { lat: loc.latitude, lng: loc.longitude },
-        status: online ? 'online' : 'offline',
-        lastSeen: statusText,
-        distanceKm: Number(dist.toFixed(1)),
-        latitude: loc.latitude,
-        longitude: loc.longitude,
-        is_premium: isPremium
-      };
-    })
-    .filter(Boolean) as FriendOnMap[];
-}, [nearbyFriendsRaw, friendsPresence, location, discoveryRadiusKm, premiumStatus]);
-
-// --- UPDATE events query to use user's radius ---
-const { data: events = [], isLoading: eventsLoading } = useQuery({
-  queryKey: ['events', 'nearby', location?.latitude, location?.longitude, discoveryRadiusKm],
-  queryFn: async () => {
+  // --- UPDATE friendsMapped logic to use user's radius ---
+  const friendsMapped: FriendOnMap[] = useMemo(() => {
     if (!location) return [];
     
-    console.log(`🎯 Fetching events within ${discoveryRadiusKm}km radius`);
+    console.log(`🎯 Filtering friends within ${discoveryRadiusKm}km radius`);
     
-    const { data } = await supabase
-      .from('events')
-      .select('*, creator:profiles!creator_id(display_name, avatar_url)')
-      .gt('start_date', new Date().toISOString())
-      .limit(50);
-      
-    if (!data) return [];
+    return nearbyFriendsRaw
+      .map((loc: any) => {
+        const dist = distanceKm(location.latitude, location.longitude, loc.latitude, loc.longitude);
+        
+        // ✅ USE USER'S DISCOVERY RADIUS
+        if (dist > discoveryRadiusKm) {
+          console.log(`⏭️ Friend "${loc.profiles?.display_name}" is ${dist.toFixed(1)}km away (outside ${discoveryRadiusKm}km radius)`);
+          return null;
+        }
 
-    return data.map((e: any) => {
-      const eLat = e.latitude || 6.5244; 
-      const eLng = e.longitude || 3.3792;
-      const dist = distanceKm(location.latitude, location.longitude, eLat, eLng);
+        const online = friendsPresence[loc.user_id] === 'online';
+        
+        let statusText = 'Offline';
+        if (online) statusText = 'Active now';
+        else if (!loc.is_sharing) statusText = 'Location paused';
+        else statusText = 'Active recently';
+
+        console.log(`✅ Friend "${loc.profiles?.display_name}" included: ${dist.toFixed(1)}km away`);
+
+        const isPremium = premiumStatus[loc.user_id] || false;
+
+        return {
+          id: loc.user_id,
+          name: loc.profiles?.display_name || 'Friend',
+          avatar: loc.profiles?.avatar_url,
+          locationLabel: 'On the map',
+          coordinates: { lat: loc.latitude, lng: loc.longitude },
+          status: online ? 'online' : 'offline',
+          lastSeen: statusText,
+          distanceKm: Number(dist.toFixed(1)),
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          is_premium: isPremium
+        };
+      })
+      .filter(Boolean) as FriendOnMap[];
+  }, [nearbyFriendsRaw, friendsPresence, location, discoveryRadiusKm, premiumStatus]);
+
+  // --- UPDATE events query to use user's radius ---
+  const { data: events = [], isLoading: eventsLoading } = useQuery({
+    queryKey: ['events', 'nearby', location?.latitude, location?.longitude, discoveryRadiusKm],
+    queryFn: async () => {
+      if (!location) return [];
       
-      // ✅ USE USER'S DISCOVERY RADIUS
-      if (dist > discoveryRadiusKm) {
-        console.log(`⏭️ Event "${e.title}" is ${dist.toFixed(1)}km away (outside ${discoveryRadiusKm}km radius)`);
-        return null;
+      console.log(`🎯 Fetching events within ${discoveryRadiusKm}km radius`);
+      
+      // ✅ Removed LIMIT to fetch ALL nearby events
+      const { data } = await supabase
+        .from('events')
+        .select('*, creator:profiles!creator_id(display_name, avatar_url)')
+        .gt('start_date', new Date().toISOString());
+        
+      if (!data) return [];
+
+      return data.map((e: any) => {
+        const eLat = e.latitude || 6.5244; 
+        const eLng = e.longitude || 3.3792;
+        const dist = distanceKm(location.latitude, location.longitude, eLat, eLng);
+        
+        // ✅ USE USER'S DISCOVERY RADIUS
+        if (dist > discoveryRadiusKm) {
+          console.log(`⏭️ Event "${e.title}" is ${dist.toFixed(1)}km away (outside ${discoveryRadiusKm}km radius)`);
+          return null;
+        }
+
+        console.log(`✅ Event "${e.title}" included: ${dist.toFixed(1)}km away`);
+
+        return {
+          id: e.id,
+          title: e.title,
+          location: e.location,
+          start_date: e.start_date,
+          event_type: e.event_type,
+          category: e.category,
+          ticket_price: e.ticket_price,
+          image_url: e.image_url,
+          creator: Array.isArray(e.creator) ? e.creator[0] : e.creator,
+          latitude: eLat,
+          longitude: eLng,
+          distanceKm: Number(dist.toFixed(1))
+        };
+      }).filter(Boolean);
+    },
+    enabled: !!location && activeView === 'events',
+  });
+
+  // ✅ ADDED: Format events for the map component
+  const nearbyEventsForMap = useMemo(() => {
+    return events.map((e: any) => ({
+      user_id: e.id, // Use event ID as "user_id" for the map marker
+      latitude: e.latitude,
+      longitude: e.longitude,
+      is_sharing: true, // Events are always "visible"
+      updated_at: new Date().toISOString(),
+      profiles: {
+        display_name: e.title,
+        avatar_url: e.image_url || e.creator?.avatar_url
       }
-
-      console.log(`✅ Event "${e.title}" included: ${dist.toFixed(1)}km away`);
-
-      return {
-        id: e.id,
-        title: e.title,
-        location: e.location,
-        start_date: e.start_date,
-        event_type: e.event_type,
-        category: e.category,
-        ticket_price: e.ticket_price,
-        image_url: e.image_url,
-        creator: Array.isArray(e.creator) ? e.creator[0] : e.creator,
-        latitude: eLat,
-        longitude: eLng,
-        distanceKm: Number(dist.toFixed(1))
-      };
-    }).filter(Boolean);
-  },
-  enabled: !!location && activeView === 'events',
-});
+    }));
+  }, [events]);
 
   // --- 4. Ghost Mode ---
   useEffect(() => {
@@ -353,10 +364,11 @@ const { data: events = [], isLoading: eventsLoading } = useQuery({
     <div className="relative h-screen w-screen overflow-hidden bg-background">
       {/* LAYER 1: MAP */}
       <div className="absolute inset-0 z-0 h-full w-full">
+        {/* ✅ UPDATED: Pass either friends or events to the map based on active view */}
         <LeafletMap
           ref={mapRef}
           userLocation={location}
-          friendsLocations={activeView === 'friends' ? nearbyFriendsRaw : []} 
+          friendsLocations={activeView === 'friends' ? nearbyFriendsRaw : nearbyEventsForMap} 
           loading={locationLoading}
           error={locationError}
           mapStyle={mapStyle} 
@@ -407,11 +419,11 @@ const { data: events = [], isLoading: eventsLoading } = useQuery({
             </Tabs> 
 
             <div className="mt-2 px-1">
-  <div className="flex items-center gap-2 text-xs text-white/80 bg-white/10 rounded-lg px-3 py-2 backdrop-blur-md">
-    <Radar className="w-3 h-3" />
-    <span>Showing {activeView} within <strong>{discoveryRadiusKm}km</strong></span>
-  </div>
-</div>
+              <div className="flex items-center gap-2 text-xs text-white/80 bg-white/10 rounded-lg px-3 py-2 backdrop-blur-md">
+                <Radar className="w-3 h-3" />
+                <span>Showing {activeView} within <strong>{discoveryRadiusKm}km</strong></span>
+              </div>
+            </div>
 
             <Button
               size="sm"
