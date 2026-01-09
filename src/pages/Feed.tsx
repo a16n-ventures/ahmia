@@ -22,6 +22,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useNavigate } from 'react-router-dom';
 import { FriendProfilePreview } from '@/components/friends/FriendProfilePreview';
+import { VerifiedBadge } from '@/components/VerifiedBadge';
+import { useFeedPosts } from '@/hooks/useFeedData';
+import { useStories } from '@/hooks/useStories';
+import { useSinglePremiumStatus } from '@/hooks/usePremiumStatus';
 
 // --- TYPES ---
 interface Profile { id: string; display_name: string | null; avatar_url: string | null; user_id?: string; }
@@ -35,20 +39,6 @@ interface Story {
   view_count?: number;
 }
 type ProfileWithStoryInner = { id: string; display_name: string | null; avatar_url: string | null; user_id: string; stories: Story[]; };
-
-interface Post {
-  id: string;
-  user_id: string;
-  content: string;
-  image_url?: string;
-  post_type: 'status' | 'image' | 'video' | 'event' | 'repost';
-  likes_count: number;
-  comments_count: number;
-  location?: string;
-  created_at: string;
-  profiles: { display_name: string; avatar_url: string; user_id: string; };
-  is_liked_by_user?: boolean;
-}
 
 interface Community { 
   id: string; 
@@ -76,29 +66,6 @@ interface Event {
   is_attending?: boolean;
   is_sponsored?: boolean;
 }
-
-// --- SMART VERIFIED BADGE ---
-const VerifiedBadge = ({ userId }: { userId?: string }) => {
-  const [isPremium, setIsPremium] = useState(false);
-
-  useEffect(() => {
-    if (!userId) return;
-    const checkStatus = async () => {
-        const { data: pf } = await supabase.from('premium_features').select('is_active').eq('user_id', userId).eq('is_active', true).gt('expires_at', new Date().toISOString()).maybeSingle();
-        const { data: sub } = await supabase.from('subscriptions').select('status').eq('user_id', userId).eq('status', 'active').maybeSingle();
-        if (pf || sub) setIsPremium(true);
-    };
-    checkStatus();
-  }, [userId]);
-
-  if (!isPremium) return null;
-
-  return (
-    <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 ml-1" viewBox="0 0 22 22" fill="currentColor">
-      <path d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.854-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.688-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.634.433 1.218.877 1.688.47.443 1.054.747 1.687.878.633.132 1.29.084 1.897-.136.274.586.705 1.084 1.246 1.439.54.354 1.17.551 1.816.569.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.239 1.266.296 1.903.164.636-.132 1.22-.447 1.68-.907.46-.46.776-1.044.908-1.681s.075-1.299-.165-1.903c.586-.274 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z" />
-    </svg>
-  );
-};
 
 // --- EVENT STATUS HELPER ---
 const getEventStatus = (startDate: string) => {
@@ -480,29 +447,17 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
   const [viewCount, setViewCount] = useState(0);
   const [incomingHearts, setIncomingHearts] = useState<{ id: number, left: number }[]>([]);
 
-  // Check verified status
-  const { data: isVerified } = useQuery({
-    queryKey: ['story-author-premium', user.id],
-    queryFn: async () => {
-      // Handle potential ID mismatch (some profiles might use id vs user_id)
-      const targetId = user.user_id || user.id;
-      if (!targetId) return false;
-      
-      const { data: pf } = await supabase.from('premium_features').select('is_active').eq('user_id', targetId).eq('is_active', true).gt('expires_at', new Date().toISOString()).maybeSingle();
-      const { data: sub } = await supabase.from('subscriptions').select('status').eq('user_id', targetId).eq('status', 'active').maybeSingle();
-      return !!pf || !!sub;
-    },
-    enabled: !!(user.id || user.user_id)
-  });
+  // ✅ OPTIMIZED: Use consistent user_id and hook for premium check
+  const authorId = user.user_id || user.id;
+  const { data: isPremium } = useSinglePremiumStatus(authorId);
 
   useEffect(() => {
     const load = async () => {
-      const targetId = user.user_id || user.id;
       const yesterday = new Date(Date.now() - 864e5).toISOString();
       const { data } = await supabase
         .from('stories')
         .select('id, content, created_at, author_id, media_url, media_type, view_count')
-        .eq('author_id', targetId) 
+        .eq('author_id', authorId) 
         .gte('created_at', yesterday)
         .order('created_at', { ascending: true });
       
@@ -515,10 +470,10 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
       setLoading(false);
     };
     load();
-  }, [user.id]);
+  }, [authorId, onClose]);
 
   const current = stories[index];
-  const isMyStory = currentUser?.id === (user.user_id || user.id); 
+  const isMyStory = currentUser?.id === authorId; 
   
   // Realtime Logic
   useEffect(() => {
@@ -610,7 +565,8 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
             <div className="flex-1">
               <span className="text-white font-bold text-sm drop-shadow-md flex items-center gap-1">
                 {isMyStory ? 'Your Story' : user.display_name}
-                {isVerified && !isMyStory && <VerifiedBadge userId={user.user_id || user.id} />}
+                {/* ✅ OPTIMIZED: Use VerifiedBadge component with pre-fetched data */}
+                {!isMyStory && <VerifiedBadge isPremium={isPremium} />}
               </span>
               <span className="text-white/70 text-xs block">{formatDistanceToNow(new Date(current.created_at), { addSuffix: true })}</span>
             </div>
@@ -668,9 +624,6 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
                 className="bg-white/10 border-white/10 text-white placeholder:text-white/60 rounded-full backdrop-blur-md focus-visible:ring-0" 
                 onClick={(e) => e.stopPropagation()} 
               />
-              <Button size="icon" variant="ghost" className="text-white rounded-full hover:bg-white/10" onClick={(e) => { e.stopPropagation(); handleLike(); }}>
-                <Heart className={`w-7 h-7 transition-transform active:scale-125 ${liked ? 'fill-red-500 text-red-500' : ''}`} />
-              </Button>
               <Button size="icon" variant="ghost" className="text-white rounded-full hover:bg-white/10" onClick={(e) => { e.stopPropagation(); handleShareToDM(); }}>
                 <Share2 className="w-7 h-7" />
               </Button>
@@ -695,9 +648,13 @@ function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose:
 const Feed = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [postText, setPostText] = useState('');
-  const [feedPosts, setFeedPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  
+  // ✅ OPTIMIZED: Use custom hooks for posts and stories
+  const { posts: feedPosts, likePost, deletePost, isLoading: postsLoading } = useFeedPosts(user?.id);
+  const { storyUsers, uploadStory, deleteStory, isUploading: storiesUploading } = useStories(user?.id);
   
   // Tagging
   const [friends, setFriends] = useState<any[]>([]);
@@ -709,10 +666,8 @@ const Feed = () => {
   const [sentRequests, setSentRequests] = useState<string[]>([]);
 
   // Story States
-  const [storyUsers, setStoryUsers] = useState<ProfileWithStoryInner[]>([]);
   const [selectedStory, setSelectedStory] = useState<Profile | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
-  const [storiesLoading, setStoriesLoading] = useState(true);
   
   // Post Upload State
   const [postMedia, setPostMedia] = useState<{ file: File, url: string, type: 'image' | 'video' } | null>(null);
@@ -721,20 +676,19 @@ const Feed = () => {
   const postFileInputRef = useRef<HTMLInputElement>(null);
 
   // Edit Post State
-  const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [editingPost, setEditingPost] = useState<any | null>(null);
   const [editContent, setEditContent] = useState("");
 
   // Story Upload State
   const [storyPreview, setStoryPreview] = useState<{ file: File, url: string } | null>(null);
   const [storyCaption, setStoryCaption] = useState("");
-  const [uploadingStory, setUploadingStory] = useState(false);
   const storyFileRef = useRef<HTMLInputElement>(null);
 
   // Comment & Share States
   const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [postComments, setPostComments] = useState<any[]>([]);
-  const [sharePost, setSharePost] = useState<Post | null>(null);
+  const [sharePost, setSharePost] = useState<any | null>(null);
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
   
@@ -751,10 +705,16 @@ const Feed = () => {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
 
+  // ✅ OPTIMIZED: Cleanup URL objects to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (postMedia) URL.revokeObjectURL(postMedia.url);
+      if (storyPreview) URL.revokeObjectURL(storyPreview.url);
+    };
+  }, [postMedia, storyPreview]);
+
   useEffect(() => {
     if (!user) return;
-    fetchPosts();
-    fetchStories();
     fetchRelationships();
     fetchSpotlightData();
     
@@ -772,66 +732,20 @@ const Feed = () => {
     };
     fetchMyFriends();
 
+    // Real-time subscription for posts - only refetch, don't manually update
     const channel = supabase.channel('social-feed')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'social_posts' }, () => {
-         fetchPosts(); 
+         queryClient.invalidateQueries({ queryKey: ['feed-posts'] });
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user, queryClient]);
 
   const fetchRelationships = async () => {
       if(!user) return;
       const {data: reqs} = await supabase.from('friendships').select('addressee_id').eq('requester_id', user.id).eq('status', 'pending');
       if(reqs) setSentRequests(reqs.map(r => r.addressee_id));
-  };
-
-  const fetchStories = async () => {
-    if (!user) return;
-    setStoriesLoading(true);
-    const yesterday = new Date();
-    yesterday.setHours(yesterday.getHours() - 24);
-
-    const { data: storyData } = await supabase.from('stories').select('*').gte('created_at', yesterday.toISOString()).order('created_at', { ascending: false });
-
-    if (storyData && storyData.length > 0) {
-      const authorIds = Array.from(new Set(storyData.map((s: any) => s.author_id)));
-      const { data: profiles } = await supabase.from('profiles').select('id, user_id, display_name, avatar_url').in('user_id', authorIds); 
-      
-      const profileMap = new Map(profiles?.map(p => [p.user_id, p]));
-      const storyMap = new Map<string, any>();
-      
-      storyData.forEach((story: any) => {
-        const profile = profileMap.get(story.author_id);
-        if (!profile) return;
-        if (!storyMap.has(profile.user_id)) {
-          storyMap.set(profile.user_id, { id: profile.user_id, user_id: profile.user_id, display_name: profile.display_name, avatar_url: profile.avatar_url, stories: [] });
-        }
-        storyMap.get(profile.user_id).stories.push(story);
-      });
-      setStoryUsers(Array.from(storyMap.values()));
-    } else {
-      setStoryUsers([]);
-    }
-    setStoriesLoading(false);
-  };
-
-  const fetchPosts = async () => {
-    const { data: posts, error } = await supabase
-      .from('social_posts')
-      .select(`*, profiles (display_name, avatar_url, user_id), post_likes (user_id)`)
-      .order('created_at', { ascending: false })
-      .limit(30);
-
-    if (!error && posts) {
-      const formattedPosts = posts.map((p: any) => ({
-          ...p,
-          is_liked_by_user: p.post_likes && p.post_likes.some((l: any) => l.user_id === user?.id)
-      }));
-      setFeedPosts(formattedPosts as Post[]);
-    }
-    setLoading(false);
   };
 
   const fetchSpotlightData = async () => {
@@ -890,31 +804,18 @@ const Feed = () => {
     if (e.target.files?.[0]) setStoryPreview({ file: e.target.files[0], url: URL.createObjectURL(e.target.files[0]) });
   };
 
-  const handleStoryUpload = async () => {
-    if (!storyPreview || !user) return;
-    setUploadingStory(true);
-    try {
-      const ext = storyPreview.file.name.split('.').pop();
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      await supabase.storage.from('stories').upload(path, storyPreview.file);
-      const { data: { publicUrl } } = supabase.storage.from('stories').getPublicUrl(path);
-      
-      await supabase.from('stories').insert({ 
-        author_id: user.id, 
-        content: storyCaption || null,
-        media_url: publicUrl,
-        media_type: storyPreview.file.type.startsWith('video') ? 'video' : 'image'
-      });
-      
-      toast.success("Story posted! 📸");
-      setStoryPreview(null);
-      setStoryCaption("");
-      await fetchStories();
-    } catch (e: any) {
-      toast.error(e.message || "Upload failed");
-    } finally {
-      setUploadingStory(false);
-    }
+  // ✅ OPTIMIZED: Use hook for story upload
+  const handleStoryUpload = () => {
+    if (!storyPreview) return;
+    uploadStory(
+      { file: storyPreview.file, caption: storyCaption || undefined },
+      {
+        onSuccess: () => {
+          setStoryPreview(null);
+          setStoryCaption("");
+        }
+      }
+    );
   };
 
   const handlePostMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1008,7 +909,7 @@ const Feed = () => {
       setPostText('');
       setPostMedia(null);
       setLocationData(null);
-      fetchPosts();
+      queryClient.invalidateQueries({ queryKey: ['feed-posts'] });
     } catch (error: any) {
       toast.error('Failed to create post');
     } finally {
@@ -1016,14 +917,13 @@ const Feed = () => {
     }
   };
 
+  // ✅ OPTIMIZED: Use hook for delete
   const handleDeletePost = async (postId: string) => {
     if (!confirm("Are you sure?")) return;
-    await supabase.from('social_posts').delete().eq('id', postId).eq('user_id', user?.id);
-    setFeedPosts(prev => prev.filter(p => p.id !== postId));
-    toast.success("Post deleted");
+    deletePost(postId);
   };
 
-  const openEditPost = (post: Post) => {
+  const openEditPost = (post: any) => {
       setEditingPost(post);
       setEditContent(post.content);
   };
@@ -1034,7 +934,7 @@ const Feed = () => {
       if(!error) {
           toast.success("Post updated");
           setEditingPost(null);
-          fetchPosts();
+          queryClient.invalidateQueries({ queryKey: ['feed-posts'] });
       } else {
           toast.error("Failed to update post");
       }
@@ -1046,24 +946,12 @@ const Feed = () => {
       toast.success("Request sent");
   };
 
-  const handleLikePost = async (post: Post) => {
-    const isLiked = post.is_liked_by_user;
-    setFeedPosts(prev => prev.map(p => p.id === post.id ? { 
-        ...p, 
-        likes_count: isLiked ? p.likes_count - 1 : p.likes_count + 1,
-        is_liked_by_user: !isLiked
-    } : p));
-
-    if (isLiked) {
-        await supabase.from('post_likes').delete().match({ post_id: post.id, user_id: user?.id });
-        await supabase.rpc('decrement_post_likes', { post_id: post.id });
-    } else {
-        await supabase.from('post_likes').insert({ post_id: post.id, user_id: user?.id });
-        await supabase.rpc('increment_post_likes', { post_id: post.id });
-    }
+  // ✅ OPTIMIZED: Use hook for like
+  const handleLikePost = (post: any) => {
+    likePost({ postId: post.id, isLiked: post.is_liked_by_user || false });
   };
 
-  const handleRepost = async (post: Post) => {
+  const handleRepost = async (post: any) => {
       const { error } = await supabase.from('social_posts').insert({
           user_id: user?.id,
           content: `Reposted from ${post.profiles.display_name}: \n\n${post.content}`,
@@ -1138,12 +1026,10 @@ const Feed = () => {
     
     await supabase.rpc('increment_post_comments', { post_id: activeCommentPost });
     setPostComments(prev => [...prev, data]);
-    setFeedPosts(prev => prev.map(p => 
-      p.id === activeCommentPost ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p
-    ));
     setCommentText("");
     setReplyingTo(null);
     toast.success("Comment posted!");
+    queryClient.invalidateQueries({ queryKey: ['feed-posts'] });
   };
 
   const handleReply = (commentId: string, authorName: string) => {
@@ -1186,10 +1072,8 @@ const Feed = () => {
     
     await supabase.rpc('decrement_post_comments', { post_id: postId });
     setPostComments(prev => prev.filter(c => c.id !== commentId && c.parent_id !== commentId));
-    setFeedPosts(prev => prev.map(p => 
-      p.id === postId ? { ...p, comments_count: Math.max((p.comments_count || 0) - 1, 0) } : p
-    ));
     toast.success('Comment deleted');
+    queryClient.invalidateQueries({ queryKey: ['feed-posts'] });
   };
 
   const handleLikeComment = async (commentId: string) => {
@@ -1234,7 +1118,6 @@ const Feed = () => {
     }));
   };
 
-  // ✅ ADDED: Handlers for Modals
   const handleJoinCommunity = async (communityId: string) => {
     if (!user) return;
     try {
@@ -1339,7 +1222,6 @@ const Feed = () => {
               
               const updateEvents = (list: Event[]) => list.map(e => e.id === paymentData.event_id ? { ...e, is_attending: true, attendee_count: (e.attendee_count || 0) + 1 } : e);
               setEvents(prev => updateEvents(prev));
-              setEvents(prev => updateEvents(prev));
 
               toast.success("Ticket purchased successfully! 🎉", { id: toastId });
             } catch (error: any) {
@@ -1416,7 +1298,7 @@ const Feed = () => {
     }
   };
 
-  const filteredPosts = feedPosts.filter(p => p.content.toLowerCase().includes(searchQuery.toLowerCase()) || p.profiles.display_name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredPosts = feedPosts.filter(p => p.content?.toLowerCase().includes(searchQuery.toLowerCase()) || p.profiles?.display_name?.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredCommunities = communities.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredEvents = events.filter(e => e.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -1426,14 +1308,14 @@ const Feed = () => {
         
         {/* STORY TRAY */}
         <div className="w-full overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 pt-2">
-          {storiesLoading ? (
+          {storiesUploading ? (
             <div className="flex gap-4">
               {[1,2,3].map(i => <div key={i} className="w-16 h-16 bg-muted rounded-full animate-pulse flex-shrink-0" />)}
             </div>
           ) : (
             <div className="flex gap-4 items-start">
               {(() => {
-                const myStory = storyUsers.find(u => u.user_id === user?.id || u.id === user?.id);
+                const myStory = storyUsers.find(u => u.user_id === user?.id);
                 return (
                   <div 
                     className="flex flex-col items-center gap-2 flex-shrink-0 relative cursor-pointer group"
@@ -1449,7 +1331,7 @@ const Feed = () => {
                 );
               })()}
               
-              {storyUsers.filter(u => u.user_id !== user?.id && u.id !== user?.id).map(u => (
+              {storyUsers.filter(u => u.user_id !== user?.id).map(u => (
                 <div key={u.user_id} className="flex flex-col items-center gap-2 cursor-pointer flex-shrink-0" onClick={() => setSelectedStory(u)}>
                   <div className="w-16 h-16 rounded-full p-[3px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-purple-600">
                     <img src={u.avatar_url || '/default-avatar.png'} className="w-full h-full rounded-full object-cover border-2 border-background" />
@@ -1551,7 +1433,7 @@ const Feed = () => {
 
                 {/* Posts List */}
                 <div className="space-y-4">
-                  {loading ? (
+                  {postsLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
                   ) : filteredPosts.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">No posts found.</div>
@@ -1561,17 +1443,18 @@ const Feed = () => {
                         <CardHeader className="p-4 flex flex-row items-start gap-3 space-y-0">
                           <div className="cursor-pointer" onClick={() => setPreviewProfile({ user_id: post.user_id })}>
                             <Avatar>
-                              <AvatarImage src={post.profiles?.avatar_url} />
+                              <AvatarImage src={post.profiles?.avatar_url || undefined} />
                               <AvatarFallback>{post.profiles?.display_name?.[0]}</AvatarFallback>
                             </Avatar>
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-sm truncate flex items-center cursor-pointer" onClick={() => setPreviewProfile({ user_id: post.user_id })}>
                                 {post.profiles?.display_name}
-                                <VerifiedBadge userId={post.user_id} />
+                                {/* ✅ OPTIMIZED: Use VerifiedBadge with pre-fetched premium status */}
+                                <VerifiedBadge isPremium={post.is_premium} />
                             </p>
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
+                                <span>{formatDistanceToNow(new Date(post.created_at || new Date()), { addSuffix: true })}</span>
                                 {post.location && <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3" /> {post.location}</span>}
                             </div>
                           </div>
@@ -1649,7 +1532,7 @@ const Feed = () => {
                             <Card key={c.id} className="overflow-hidden border-border/60 hover:border-primary/50 transition-colors cursor-pointer" onClick={() => setSelectedCommunity(c)}>
                                 <div className="flex items-center p-4 gap-4">
                                     <Avatar className="h-14 w-14 rounded-xl">
-                                        <AvatarImage src={c.avatar_url} className="object-cover" />
+                                        <AvatarImage src={c.avatar_url || undefined} className="object-cover" />
                                         <AvatarFallback>{c.name[0]}</AvatarFallback>
                                     </Avatar>
                                     <div className="flex-1 min-w-0">
@@ -1700,7 +1583,7 @@ const Feed = () => {
             <Input placeholder="Add a caption..." value={storyCaption} onChange={e => setStoryCaption(e.target.value)} />
             <DialogFooter className="gap-2">
                 <Button variant="ghost" onClick={() => setStoryPreview(null)}>Cancel</Button>
-                <Button onClick={handleStoryUpload} disabled={uploadingStory}>{uploadingStory ? 'Uploading...' : 'Share Story'}</Button>
+                <Button onClick={handleStoryUpload} disabled={storiesUploading}>{storiesUploading ? 'Uploading...' : 'Share Story'}</Button>
             </DialogFooter>
           </div>
         </DialogContent>
@@ -1719,7 +1602,7 @@ const Feed = () => {
       </Dialog>
 
       {/* Story Viewer */}
-      {selectedStory && <StoryViewer user={selectedStory} onClose={() => setSelectedStory(null)} onStoryChange={fetchStories} />}
+      {selectedStory && <StoryViewer user={selectedStory} onClose={() => setSelectedStory(null)} onStoryChange={() => queryClient.invalidateQueries({ queryKey: ['stories'] })} />}
 
       {/* Comments Dialog */}
       <Dialog open={!!activeCommentPost} onOpenChange={() => { setActiveCommentPost(null); setReplyingTo(null); }}>
@@ -1816,7 +1699,7 @@ const Feed = () => {
         onClose={() => setPreviewProfile(null)}
       />
 
-      {/* ✅ ADDED: Detail Modals for Events & Communities */}
+      {/* Event Detail Modal */}
       <EventDetailModal 
         event={selectedEvent} 
         isOpen={!!selectedEvent} 
@@ -1824,6 +1707,7 @@ const Feed = () => {
         onRSVP={handleRSVP} 
       /> 
       
+      {/* Community Detail Modal */}
       <CommunityDetailModal 
         community={selectedCommunity} 
         isOpen={!!selectedCommunity} 
@@ -1835,4 +1719,4 @@ const Feed = () => {
   );
 };
 
-export default Feed;
+export default Feed; 
