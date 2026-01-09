@@ -1,6 +1,0 @@
-phases:
-  build:
-    commands:
-      - echo Building the Docker image...
-      - docker build -t my-app .
-      - docker push $REPOSITORY_URI:latest
