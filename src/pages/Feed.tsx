@@ -12,7 +12,7 @@ import {
   Heart, MessageCircle, Share2, MapPin, Calendar, Users, Plus, 
   Image as ImageIcon, Video, X, Loader2, MoreVertical, Trash2, Edit2, Repeat, Send,
   UserPlus, Check, Search, SlidersHorizontal, Sparkles, Filter, Ticket, Megaphone, Clock, Copy,
-  MessageSquare, Eye
+  MessageSquare, Eye, Type, CloudUpload
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -730,6 +730,11 @@ const Feed = () => {
   const [uploadingStory, setUploadingStory] = useState(false);
   const storyFileRef = useRef<HTMLInputElement>(null);
 
+  // Creation Modal State (Unified)
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createType, setCreateType] = useState<'story' | 'post' | 'photo' | 'video'>('post');
+  const unifiedFileRef = useRef<HTMLInputElement>(null);
+
   // Comment & Share States
   const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
@@ -885,6 +890,18 @@ const Feed = () => {
     }
   };
 
+  // --- HELPER TO OPEN MODAL ---
+  const openCreateModal = (type: 'story' | 'post' | 'photo' | 'video') => {
+    setCreateType(type);
+    setCreateModalOpen(true);
+    // Clear states when opening
+    setPostText('');
+    setPostMedia(null);
+    setLocationData(null);
+    setStoryCaption('');
+    setStoryPreview(null);
+  };
+
   // --- HANDLERS ---
   const handleStoryFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) setStoryPreview({ file: e.target.files[0], url: URL.createObjectURL(e.target.files[0]) });
@@ -909,6 +926,7 @@ const Feed = () => {
       toast.success("Story posted! 📸");
       setStoryPreview(null);
       setStoryCaption("");
+      setCreateModalOpen(false); // Close unified modal
       await fetchStories();
     } catch (e: any) {
       toast.error(e.message || "Upload failed");
@@ -922,6 +940,20 @@ const Feed = () => {
       const file = e.target.files[0];
       const type = file.type.startsWith('video') ? 'video' : 'image';
       setPostMedia({ file, url: URL.createObjectURL(file), type });
+    }
+  };
+
+  // UNIFIED MEDIA HANDLER
+  const handleUnifiedFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return;
+    const file = e.target.files[0];
+    const url = URL.createObjectURL(file);
+    const type = file.type.startsWith('video') ? 'video' : 'image';
+
+    if (createType === 'story') {
+      setStoryPreview({ file, url });
+    } else {
+      setPostMedia({ file, url, type });
     }
   };
 
@@ -1008,11 +1040,30 @@ const Feed = () => {
       setPostText('');
       setPostMedia(null);
       setLocationData(null);
+      setCreateModalOpen(false); // Close unified modal
       fetchPosts();
     } catch (error: any) {
       toast.error('Failed to create post');
     } finally {
       setUploadingPost(false);
+    }
+  };
+
+  // UNIFIED SUBMIT HANDLER
+  const handleUnifiedSubmit = () => {
+    if (createType === 'story') {
+      handleStoryUpload();
+    } else {
+      // Validate media for Photo/Video types
+      if (createType === 'photo' && (!postMedia || postMedia.type !== 'image')) {
+        toast.error("Please select a photo");
+        return;
+      }
+      if (createType === 'video' && (!postMedia || postMedia.type !== 'video')) {
+        toast.error("Please select a video");
+        return;
+      }
+      handleCreatePost();
     }
   };
 
@@ -1437,9 +1488,8 @@ const Feed = () => {
                 return (
                   <div 
                     className="flex flex-col items-center gap-2 flex-shrink-0 relative cursor-pointer group"
-                    onClick={() => myStory ? setSelectedStory(myStory) : storyFileRef.current?.click()}
+                    onClick={() => myStory ? setSelectedStory(myStory) : openCreateModal('story')}
                   >
-                    <input type="file" ref={storyFileRef} className="hidden" accept="image/*,video/*" onChange={handleStoryFileSelect} />
                     <div className={`w-16 h-16 rounded-full p-[3px] ${myStory ? 'bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400' : 'border-2 border-dashed border-muted-foreground/30'} relative`}>
                       <img src={currentUserProfile?.avatar_url || '/default-avatar.png'} className={`w-full h-full rounded-full object-cover ${myStory ? 'border-2 border-background' : 'opacity-50'}`} />
                       {!myStory && <div className="absolute inset-0 flex items-center justify-center bg-background/20 rounded-full"><div className="absolute bottom-0 right-0 bg-primary text-white rounded-full p-1 border-2 border-background"><Plus className="w-3 h-3" /></div></div>}
@@ -1490,62 +1540,17 @@ const Feed = () => {
 
             {/* FEED CONTENT */}
             <TabsContent value="feed" className="space-y-4">
-                {/* Create Post */}
-                <Card className="border-0 shadow-sm bg-card/50 relative">
-                  <CardContent className="p-4 space-y-4">
-                    <div className="flex gap-3">
+                {/* Simplified Post Trigger */}
+                <Card className="border-0 shadow-sm bg-card/50 cursor-pointer hover:bg-card/80 transition-colors" onClick={() => openCreateModal('post')}>
+                  <CardContent className="p-4 flex items-center gap-3">
                       <Avatar className="w-10 h-10">
                         <AvatarImage src={currentUserProfile?.avatar_url || undefined} />
                         <AvatarFallback>U</AvatarFallback>
                       </Avatar>
-                      <Textarea
-                        placeholder="What's on your mind? Type @ to tag friends"
-                        value={postText}
-                        onChange={handleTextChange}
-                        className="min-h-[80px] bg-transparent border-0 resize-none focus-visible:ring-0 p-0 text-base"
-                      />
-                    </div>
-                    
-                    {showTagList && (
-                        <div className="absolute top-16 left-14 bg-popover border shadow-md rounded-md z-10 w-48 max-h-40 overflow-y-auto">
-                            {friends.filter(f => f.display_name.toLowerCase().includes(tagQuery.toLowerCase())).map(f => (
-                                <div key={f.user_id} className="p-2 hover:bg-muted cursor-pointer text-sm flex items-center gap-2" onClick={() => addTag(f.display_name)}>
-                                    <Avatar className="w-6 h-6"><AvatarImage src={f.avatar_url}/></Avatar> {f.display_name}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    
-                    {postMedia && (
-                        <div className="relative rounded-xl overflow-hidden bg-black/5">
-                            <button onClick={() => setPostMedia(null)} className="absolute top-2 right-2 bg-black/50 p-1 rounded-full text-white"><X className="w-4 h-4" /></button>
-                            {postMedia.type === 'video' ? (
-                                <video src={postMedia.url} controls className="max-h-60 w-full object-contain" />
-                            ) : (
-                                <img src={postMedia.url} className="max-h-60 w-full object-cover" />
-                            )}
-                        </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-2 border-t">
-                      <div className="flex gap-1 items-center">
-                        <input type="file" ref={postFileInputRef} className="hidden" accept="image/*,video/*" onChange={handlePostMediaSelect} />
-                        <Button variant="ghost" size="sm" className="text-muted-foreground shrink-0" onClick={() => postFileInputRef.current?.click()}>
-                            <ImageIcon className="w-5 h-5 mr-2 text-green-500" /> Photo/Video
-                        </Button>
-                        <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className={`shrink-0 ${locationData ? "text-blue-500" : "text-muted-foreground"}`} 
-                            onClick={getLocation}
-                        >
-                            <MapPin className="w-5 h-5" /> 
-                        </Button>
+                      <div className="flex-1 h-10 bg-muted/50 rounded-full flex items-center px-4 text-muted-foreground text-sm">
+                        What's on your mind?
                       </div>
-                      <Button size="sm" className="bg-primary text-white rounded-full px-6 shrink-0" onClick={handleCreatePost} disabled={uploadingPost}>
-                        {uploadingPost ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
-                      </Button>
-                    </div>
+                      <Button size="icon" variant="ghost" className="text-green-500"><ImageIcon className="w-5 h-5" /></Button>
                   </CardContent>
                 </Card>
 
@@ -1689,19 +1694,143 @@ const Feed = () => {
         </Tabs>
       </div>
 
-      {/* Story Upload Dialog */}
-      <Dialog open={!!storyPreview} onOpenChange={() => setStoryPreview(null)}>
-        <DialogContent className="sm:max-w-[480px] bg-background border-0">
-          <DialogHeader><DialogTitle>Create Story</DialogTitle></DialogHeader>
-          <div className="h-[40vh] bg-black/10 rounded-xl overflow-hidden flex items-center justify-center relative">
-            {storyPreview && (storyPreview.file.type.startsWith('video') ? <video src={storyPreview.url} controls className="h-full" /> : <img src={storyPreview.url} className="h-full object-contain" />)}
-          </div>
-          <div className="space-y-4">
-            <Input placeholder="Add a caption..." value={storyCaption} onChange={e => setStoryCaption(e.target.value)} />
-            <DialogFooter className="gap-2">
-                <Button variant="ghost" onClick={() => setStoryPreview(null)}>Cancel</Button>
-                <Button onClick={handleStoryUpload} disabled={uploadingStory}>{uploadingStory ? 'Uploading...' : 'Share Story'}</Button>
-            </DialogFooter>
+      {/* FAB: Floating Action Button */}
+      <div className="fixed bottom-24 right-4 z-50">
+          <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                  <Button className="h-14 w-14 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 shadow-lg hover:shadow-xl transition-all p-0">
+                      <Plus className="h-8 w-8 text-white" />
+                  </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" className="w-48 mb-2 p-1.5 rounded-xl border-0 shadow-xl bg-popover/95 backdrop-blur-lg">
+                  <DropdownMenuItem onClick={() => openCreateModal('story')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
+                      <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-3"><Plus className="w-4 h-4" /></div>
+                      Create Story
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openCreateModal('post')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
+                       <div className="h-8 w-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center mr-3"><Type className="w-4 h-4" /></div>
+                      Create Post
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openCreateModal('photo')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
+                       <div className="h-8 w-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center mr-3"><ImageIcon className="w-4 h-4" /></div>
+                      Share Photo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openCreateModal('video')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
+                       <div className="h-8 w-8 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center mr-3"><Video className="w-4 h-4" /></div>
+                      Share Video
+                  </DropdownMenuItem>
+              </DropdownMenuContent>
+          </DropdownMenu>
+      </div>
+
+      {/* UNIFIED CREATE MODAL */}
+      <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
+        <DialogContent className="sm:max-w-[480px] bg-background p-0 overflow-hidden gap-0">
+          <DialogHeader className="p-4 border-b">
+            <DialogTitle>
+                {createType === 'story' && "Create Story"}
+                {createType === 'post' && "Create Post"}
+                {createType === 'photo' && "Share Photo"}
+                {createType === 'video' && "Share Video"}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="p-4 space-y-4">
+            {/* User Info */}
+            <div className="flex gap-3 items-center">
+              <Avatar className="w-10 h-10">
+                <AvatarImage src={currentUserProfile?.avatar_url || undefined} />
+                <AvatarFallback>U</AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                 <p className="font-semibold text-sm">{currentUserProfile?.display_name || 'You'}</p>
+                 <p className="text-xs text-muted-foreground capitalize">{createType}</p>
+              </div>
+            </div>
+
+            {/* Content Input */}
+            <Textarea 
+              placeholder={createType === 'story' ? "Add a caption..." : "What's on your mind? Use @ to tag friends"}
+              value={createType === 'story' ? storyCaption : postText}
+              onChange={createType === 'story' ? (e) => setStoryCaption(e.target.value) : handleTextChange}
+              className="min-h-[100px] bg-transparent border-0 resize-none focus-visible:ring-0 p-0 text-base"
+            />
+            
+            {/* Tag List */}
+            {showTagList && (
+                <div className="bg-popover border shadow-md rounded-md z-10 w-full max-h-40 overflow-y-auto">
+                    {friends.filter(f => f.display_name.toLowerCase().includes(tagQuery.toLowerCase())).map(f => (
+                        <div key={f.user_id} className="p-2 hover:bg-muted cursor-pointer text-sm flex items-center gap-2" onClick={() => addTag(f.display_name)}>
+                            <Avatar className="w-6 h-6"><AvatarImage src={f.avatar_url}/></Avatar> {f.display_name}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Media Preview & Upload Area */}
+            <div className="relative">
+                {(createType === 'story' ? storyPreview : postMedia) ? (
+                   <div className="relative rounded-xl overflow-hidden bg-black/5 max-h-64 flex items-center justify-center">
+                      <button 
+                        onClick={() => createType === 'story' ? setStoryPreview(null) : setPostMedia(null)} 
+                        className="absolute top-2 right-2 z-10 bg-black/50 hover:bg-black/70 p-1.5 rounded-full text-white transition-colors"
+                      >
+                          <X className="w-4 h-4" />
+                      </button>
+                      
+                      {(createType === 'story' ? storyPreview?.file.type.startsWith('video') : postMedia?.type === 'video') ? (
+                          <video src={createType === 'story' ? storyPreview?.url : postMedia?.url} controls className="max-h-64 w-full object-contain" />
+                      ) : (
+                          <img src={createType === 'story' ? storyPreview?.url : postMedia?.url} className="max-h-64 w-full object-cover" />
+                      )}
+                   </div>
+                ) : (
+                    // Upload Area triggers automatically for Photo/Video/Story if empty, or can be clicked
+                    <div 
+                      className="border-2 border-dashed border-muted rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => unifiedFileRef.current?.click()}
+                    >
+                        <input 
+                            type="file" 
+                            ref={unifiedFileRef} 
+                            className="hidden" 
+                            accept={
+                                createType === 'video' ? "video/*" : 
+                                createType === 'photo' ? "image/*" : 
+                                "image/*,video/*"
+                            } 
+                            onChange={handleUnifiedFileSelect} 
+                        />
+                        <div className="bg-primary/10 p-4 rounded-full mb-3 text-primary">
+                            {createType === 'video' ? <Video className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
+                        </div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                            {createType === 'post' ? "Add Photo/Video (Optional)" : `Upload ${createType}`}
+                        </p>
+                    </div>
+                )}
+            </div>
+            
+            {/* Actions Footer */}
+            <div className="flex items-center justify-between pt-2">
+                <div className="flex gap-2">
+                   {createType !== 'story' && (
+                     <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className={`rounded-full ${locationData ? "text-blue-500 border-blue-200 bg-blue-50" : ""}`}
+                        onClick={getLocation}
+                     >
+                        <MapPin className="w-4 h-4 mr-2" />
+                        {locationData ? "Location Added" : "Add Location"}
+                     </Button>
+                   )}
+                </div>
+                <Button onClick={handleUnifiedSubmit} disabled={uploadingPost || uploadingStory} className="rounded-full px-6">
+                    {(uploadingPost || uploadingStory) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    {createType === 'story' ? 'Share Story' : 'Post'}
+                </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
