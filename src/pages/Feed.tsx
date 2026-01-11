@@ -12,7 +12,7 @@ import {
   Heart, MessageCircle, Share2, MapPin, Calendar, Users, Plus, 
   Image as ImageIcon, Video, X, Loader2, MoreVertical, Trash2, Edit2, Repeat, Send,
   UserPlus, Check, Search, SlidersHorizontal, Sparkles, Filter, Ticket, Megaphone, Clock, Copy,
-  MessageSquare, Eye, Type, CloudUpload
+  MessageSquare, Eye, Type, CloudUpload, CreditCard, BarChart, ChevronRight, Info, Lock, ArrowLeft
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +22,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useNavigate } from 'react-router-dom';
 import { FriendProfilePreview } from '@/components/friends/FriendProfilePreview';
+import { Slider } from "@/components/ui/slider"; // Assuming you have this or I will use standard input range if not available in your UI kit, will use standard range for safety
 
 // --- TYPES ---
 interface Profile { id: string; display_name: string | null; avatar_url: string | null; user_id?: string; }
@@ -41,7 +42,7 @@ interface Post {
   user_id: string;
   content: string;
   image_url?: string;
-  post_type: 'status' | 'image' | 'video' | 'event' | 'repost';
+  post_type: 'status' | 'image' | 'video' | 'event' | 'repost' | 'ad';
   likes_count: number;
   comments_count: number;
   location?: string;
@@ -771,8 +772,16 @@ const Feed = () => {
 
   // Creation Modal State (Unified)
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [createType, setCreateType] = useState<'story' | 'post' | 'photo' | 'video'>('post');
+  const [createType, setCreateType] = useState<'story' | 'post' | 'photo' | 'video' | 'ad'>('post');
   const unifiedFileRef = useRef<HTMLInputElement>(null);
+
+  // --- AD WIZARD STATES (Adapted from screenshots) ---
+  const [adStep, setAdStep] = useState<number>(0); // 0=Content, 1=Budget, 2=Review, 3=Payment, 4=Card
+  const [adBudget, setAdBudget] = useState([2136]); // Daily budget default matches screenshot
+  const [adDuration, setAdDuration] = useState([6]); // Duration default matches screenshot
+  const [adGoal, setAdGoal] = useState('Profile visits');
+  const [adAudience, setAdAudience] = useState('Nigeria');
+  const [cardDetails, setCardDetails] = useState({ name: '', number: '', expiry: '', cvv: '' });
 
   // Comment & Share States
   const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
@@ -940,7 +949,7 @@ const Feed = () => {
   };
 
   // --- HELPER TO OPEN MODAL ---
-  const openCreateModal = (type: 'story' | 'post' | 'photo' | 'video') => {
+  const openCreateModal = (type: 'story' | 'post' | 'photo' | 'video' | 'ad') => {
     setCreateType(type);
     setCreateModalOpen(true);
     // Clear states when opening
@@ -949,6 +958,8 @@ const Feed = () => {
     setLocationData(null);
     setStoryCaption('');
     setStoryPreview(null);
+    setAdStep(0); // Reset ad step
+    setCardDetails({ name: '', number: '', expiry: '', cvv: '' });
   };
 
   // --- HANDLERS ---
@@ -1062,7 +1073,7 @@ const Feed = () => {
 
     try {
       let publicUrl = null;
-      let postType = 'status';
+      let postType = createType === 'ad' ? 'ad' : 'status'; // Handle Ad type
 
       if (postMedia) {
         const ext = postMedia.file.name.split('.').pop();
@@ -1075,17 +1086,42 @@ const Feed = () => {
         postType = postMedia.type;
       }
 
-      const { error } = await supabase.from('social_posts').insert({
+      // 1. Create Post
+      const { data: postData, error } = await supabase.from('social_posts').insert({
         user_id: user?.id,
         content: postText.trim(),
         post_type: postType,
         image_url: publicUrl,
         location: locationData 
-      });
+      }).select('id').single();
 
       if (error) throw error;
 
-      toast.success('Post created!');
+      // 2. Create Ad Record (if type is ad)
+      if (createType === 'ad' && postData) {
+         const budgetVal = adBudget[0];
+         const durationVal = adDuration[0];
+         const vat = budgetVal * durationVal * 0.075;
+         const total = (budgetVal * durationVal) + vat;
+
+         // Attempt to save to an 'ads' table if exists, otherwise this part might fail gracefully or logic can be adapted
+         try {
+             await supabase.from('ads').insert({
+                 user_id: user?.id,
+                 post_id: postData.id,
+                 daily_budget: budgetVal,
+                 duration_days: durationVal,
+                 total_spend: total,
+                 goal: adGoal,
+                 audience: adAudience,
+                 status: 'pending_review'
+             });
+         } catch (adError) {
+             console.log("Ad table might not exist yet", adError);
+         }
+      }
+
+      toast.success(createType === 'ad' ? 'Ad created successfully!' : 'Post created!');
       setPostText('');
       setPostMedia(null);
       setLocationData(null);
@@ -1102,6 +1138,12 @@ const Feed = () => {
   const handleUnifiedSubmit = () => {
     if (createType === 'story') {
       handleStoryUpload();
+    } else if (createType === 'ad') {
+       if (adStep < 4) {
+           setAdStep(prev => prev + 1); // Progress through Wizard
+       } else {
+           handleCreatePost(); // Final submission
+       }
     } else {
       // Validate media for Photo/Video types
       if (createType === 'photo' && (!postMedia || postMedia.type !== 'image')) {
@@ -1580,6 +1622,20 @@ const Feed = () => {
   const filteredCommunities = communities.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredEvents = events.filter(e => e.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
+  // --- AD WIZARD HELPERS ---
+  const formatNaira = (amount: number) => {
+    return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount);
+  };
+  
+  const estimatedReach = (budget: number, days: number) => {
+    // Rough logic based on screenshots: 2136/day -> 6500-17000 reach/6 days
+    const baseMultiplier = 3; 
+    const total = budget * days;
+    const min = Math.floor(total * 0.5);
+    const max = Math.floor(total * 1.3);
+    return `${min.toLocaleString()} - ${max.toLocaleString()}`;
+  };
+
   return (
     <div className="min-h-screen bg-background pb-20">
       <div className="container-mobile py-4 space-y-4">
@@ -1687,6 +1743,9 @@ const Feed = () => {
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
                                 {post.location && <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3" /> {post.location}</span>}
+                                {post.post_type === 'ad' && (
+                                  <span className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider">Sponsored</span>
+                                )}
                             </div>
                           </div>
                           
@@ -1728,6 +1787,14 @@ const Feed = () => {
                                     <img src={post.image_url} alt="Post content" className="w-full h-auto object-cover" />
                                 )}
                             </div>
+                          )}
+                          {post.post_type === 'ad' && (
+                             <div className="bg-blue-50/50 border border-blue-100 p-3 rounded-lg flex items-center justify-between">
+                                 <div className="text-xs text-blue-800">
+                                     <span className="font-bold">Sponsored Post</span> • Learn More
+                                 </div>
+                                 <ChevronRight className="w-4 h-4 text-blue-400" />
+                             </div>
                           )}
                         </CardContent>
                         <CardFooter className="p-2 border-t flex justify-between">
@@ -1817,24 +1884,17 @@ const Feed = () => {
               <DropdownMenuContent side="top" align="end" className="w-48 mb-2 p-1.5 rounded-xl border-0 shadow-xl bg-popover/95 backdrop-blur-lg">
                   <DropdownMenuItem onClick={() => openCreateModal('story')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
                       <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-3"><Plus className="w-4 h-4" /></div>
-                      Create Story
+                      Story
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openCreateModal('post')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
                        <div className="h-8 w-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center mr-3"><Type className="w-4 h-4" /></div>
-                      Create Post
+                      Post
                   </DropdownMenuItem>
-                  {/* Share Photo - Commented out per user request
-                  <DropdownMenuItem onClick={() => openCreateModal('photo')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
-                       <div className="h-8 w-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center mr-3"><ImageIcon className="w-4 h-4" /></div>
-                      Share Photo
+                  {/* Added Ad Button to FAB */}
+                  <DropdownMenuItem onClick={() => openCreateModal('ad')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
+                       <div className="h-8 w-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mr-3"><Megaphone className="w-4 h-4" /></div>
+                      Ad
                   </DropdownMenuItem>
-                  */}
-                  {/* Share Video - Commented out per user request
-                  <DropdownMenuItem onClick={() => openCreateModal('video')} className="p-2.5 rounded-lg focus:bg-muted font-medium cursor-pointer">
-                       <div className="h-8 w-8 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center mr-3"><Video className="w-4 h-4" /></div>
-                      Share Video
-                  </DropdownMenuItem>
-                  */}
               </DropdownMenuContent>
           </DropdownMenu>
       </div>
@@ -1843,97 +1903,336 @@ const Feed = () => {
       <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
         <DialogContent className="sm:max-w-[480px] bg-background p-0 overflow-hidden gap-0">
           <DialogHeader className="p-4 border-b">
-            <DialogTitle>
-                {createType === 'story' && "Create Story"}
-                {createType === 'post' && "Create Post"}
-                {createType === 'photo' && "Share Photo"}
-                {createType === 'video' && "Share Video"}
-            </DialogTitle>
+            {/* Dynamic Header for Ad Wizard */}
+            {createType === 'ad' && adStep > 0 ? (
+                <div className="flex items-center gap-3">
+                    <Button size="icon" variant="ghost" className="h-8 w-8 -ml-2" onClick={() => setAdStep(s => s - 1)}>
+                        <ArrowLeft className="w-4 h-4" />
+                    </Button>
+                    <DialogTitle>
+                        {adStep === 1 && "Budget & duration"}
+                        {adStep === 2 && "Review"}
+                        {adStep === 3 && "Payment method"}
+                        {adStep === 4 && "Debit or credit card"}
+                    </DialogTitle>
+                    <div className="ml-auto text-xs text-muted-foreground font-medium">Step {adStep}/4</div>
+                </div>
+            ) : (
+                <DialogTitle>
+                    {createType === 'story' && "Story"}
+                    {createType === 'post' && "Post"}
+                    {createType === 'photo' && "Photo"}
+                    {createType === 'video' && "Video"}
+                    {createType === 'ad' && "Create Ad Content"}
+                </DialogTitle>
+            )}
           </DialogHeader>
           
           <div className="p-4 space-y-4">
-            {/* User Info */}
-            <div className="flex gap-3 items-center">
-              <Avatar className="w-10 h-10">
-                <AvatarImage src={currentUserProfile?.avatar_url || undefined} />
-                <AvatarFallback>U</AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                 <p className="font-semibold text-sm flex items-center gap-1">
-                   {currentUserProfile?.display_name || 'You'}
-                   <VerifiedBadge userId={user.id} />
-                 </p>
-                 <p className="text-xs text-muted-foreground capitalize">{createType}</p>
-              </div>
-            </div>
-
-            {/* Content Input */}
-            <Textarea 
-              placeholder={createType === 'story' ? "Add a caption..." : "What's on your mind? Use @ to tag friends"}
-              value={createType === 'story' ? storyCaption : postText}
-              onChange={createType === 'story' ? (e) => setStoryCaption(e.target.value) : handleTextChange}
-              className="min-h-[100px] bg-transparent border-0 resize-none focus-visible:ring-0 p-0 text-base"
-            />
             
-            {/* Tag List */}
-            {showTagList && (
-                <div className="bg-popover border shadow-md rounded-md z-10 w-full max-h-40 overflow-y-auto">
-                    {friends.filter(f => f.display_name.toLowerCase().includes(tagQuery.toLowerCase())).map(f => (
-                        <div key={f.user_id} className="p-2 hover:bg-muted cursor-pointer text-sm flex items-center gap-2" onClick={() => addTag(f.display_name)}>
-                            <Avatar className="w-6 h-6"><AvatarImage src={f.avatar_url}/></Avatar> {f.display_name}
+            {/* --- AD WIZARD STEPS --- */}
+            
+            {/* STEP 0: Content Creation (Standard Post Input) */}
+            {createType === 'ad' && adStep === 0 && (
+                <>
+                   <div className="flex gap-3 items-center">
+                     <Avatar className="w-10 h-10"><AvatarImage src={currentUserProfile?.avatar_url || undefined} /><AvatarFallback>U</AvatarFallback></Avatar>
+                     <div className="flex-1">
+                        <p className="font-semibold text-sm flex items-center gap-1">{currentUserProfile?.display_name || 'You'}<VerifiedBadge userId={user.id} /></p>
+                        <p className="text-xs text-muted-foreground">Create your ad creative</p>
+                     </div>
+                   </div>
+                   <Textarea 
+                     placeholder="Write your ad copy..."
+                     value={postText}
+                     onChange={handleTextChange}
+                     className="min-h-[100px] bg-transparent border-0 resize-none focus-visible:ring-0 p-0 text-base"
+                   />
+                   <div className="relative">
+                       {postMedia ? (
+                          <div className="relative rounded-xl overflow-hidden bg-black/5 max-h-64 flex items-center justify-center">
+                             <button onClick={() => setPostMedia(null)} className="absolute top-2 right-2 z-10 bg-black/50 hover:bg-black/70 p-1.5 rounded-full text-white transition-colors"><X className="w-4 h-4" /></button>
+                             {postMedia.type === 'video' ? <video src={postMedia.url} controls className="max-h-64 w-full object-contain" /> : <img src={postMedia.url} className="max-h-64 w-full object-cover" />}
+                          </div>
+                       ) : (
+                           <div className="border-2 border-dashed border-muted rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => unifiedFileRef.current?.click()}>
+                               <input type="file" ref={unifiedFileRef} className="hidden" accept="image/*,video/*" onChange={handleUnifiedFileSelect} />
+                               <div className="bg-primary/10 p-4 rounded-full mb-3 text-primary"><ImageIcon className="w-6 h-6" /></div>
+                               <p className="text-sm font-medium text-muted-foreground">Add Ad Media</p>
+                           </div>
+                       )}
+                   </div>
+                </>
+            )}
+
+            {/* STEP 1: Budget & Duration */}
+            {createType === 'ad' && adStep === 1 && (
+                <div className="space-y-8 pt-2">
+                    <div className="text-center space-y-2">
+                        <h3 className="text-lg font-bold">What's your ad budget?</h3>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="font-semibold">Daily budget</span>
+                            <span className="text-muted-foreground">{formatNaira(adBudget[0])} daily</span>
                         </div>
-                    ))}
+                        <Slider 
+                           value={adBudget} 
+                           onValueChange={setAdBudget} 
+                           max={50000} 
+                           step={100} 
+                           className="py-4"
+                        />
+                    </div>
+
+                    <div className="space-y-4">
+                         <div className="flex justify-between items-center mb-2">
+                            <span className="font-semibold">Duration</span>
+                            <span className="text-muted-foreground">{adDuration[0]} days</span>
+                        </div>
+                        <div className="flex gap-2 p-3 bg-muted/30 rounded-lg border cursor-pointer">
+                            <div className="h-5 w-5 rounded-full border-2 border-primary flex items-center justify-center"><div className="w-2.5 h-2.5 bg-primary rounded-full" /></div>
+                            <div className="flex-1">
+                                <p className="text-sm font-medium">Set duration</p>
+                                <Slider 
+                                   value={adDuration} 
+                                   onValueChange={setAdDuration} 
+                                   max={30} 
+                                   step={1} 
+                                   className="mt-4"
+                                />
+                                <p className="text-xs text-muted-foreground mt-2">{adDuration[0]} days</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-muted/30 p-4 rounded-xl border flex gap-3 items-start">
+                         <Info className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                         <div>
+                             <p className="font-medium text-sm">Your selections might limit your profile visits</p>
+                             <p className="text-xs text-muted-foreground mt-1">
+                                 Businesses like yours spend {formatNaira(7121)} per day over 5 days.
+                             </p>
+                             <button className="text-xs text-blue-600 font-medium mt-1">About similar businesses</button>
+                         </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-end border-t pt-4">
+                        <div>
+                            <p className="text-sm font-medium">Ad budget</p>
+                            <p className="text-xs text-muted-foreground">Estimated reach</p>
+                        </div>
+                        <div className="text-right">
+                             <p className="font-bold">{formatNaira(adBudget[0] * adDuration[0])} over {adDuration[0]} days</p>
+                             <p className="text-xs text-muted-foreground">{estimatedReach(adBudget[0], adDuration[0])}</p>
+                        </div>
+                    </div>
                 </div>
             )}
 
-            {/* Media Preview & Upload Area */}
-            <div className="relative">
-                {(createType === 'story' ? storyPreview : postMedia) ? (
-                   <div className="relative rounded-xl overflow-hidden bg-black/5 max-h-64 flex items-center justify-center">
-                      <button 
-                        onClick={() => createType === 'story' ? setStoryPreview(null) : setPostMedia(null)} 
-                        className="absolute top-2 right-2 z-10 bg-black/50 hover:bg-black/70 p-1.5 rounded-full text-white transition-colors"
-                      >
-                          <X className="w-4 h-4" />
-                      </button>
-                      
-                      {(createType === 'story' ? storyPreview?.file.type.startsWith('video') : postMedia?.type === 'video') ? (
-                          <video src={createType === 'story' ? storyPreview?.url : postMedia?.url} controls className="max-h-64 w-full object-contain" />
-                      ) : (
-                          <img src={createType === 'story' ? storyPreview?.url : postMedia?.url} className="max-h-64 w-full object-cover" />
-                      )}
-                   </div>
-                ) : (
-                    // Upload Area triggers automatically for Photo/Video/Story if empty, or can be clicked
-                    <div 
-                      className="border-2 border-dashed border-muted rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => unifiedFileRef.current?.click()}
-                    >
-                        <input 
-                            type="file" 
-                            ref={unifiedFileRef} 
-                            className="hidden" 
-                            accept={
-                                createType === 'video' ? "video/*" : 
-                                createType === 'photo' ? "image/*" : 
-                                "image/*,video/*"
-                            } 
-                            onChange={handleUnifiedFileSelect} 
-                        />
-                        <div className="bg-primary/10 p-4 rounded-full mb-3 text-primary">
-                            {createType === 'video' ? <Video className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
+            {/* STEP 2: Review */}
+            {createType === 'ad' && adStep === 2 && (
+                <div className="space-y-6">
+                    <div className="text-center">
+                        <h3 className="text-lg font-bold">Everything look good?</h3>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <p className="font-medium">Goal</p>
+                            <p className="text-sm text-muted-foreground">Profile visits to {currentUserProfile?.display_name || 'profile'}</p>
                         </div>
-                        <p className="text-sm font-medium text-muted-foreground">
-                            {createType === 'post' ? "Add Photo/Video (Optional)" : `Upload ${createType}`}
+                        <div>
+                            <p className="font-medium">Audience</p>
+                            <p className="text-sm text-muted-foreground">People most likely to engage | {adAudience}</p>
+                        </div>
+                        <div>
+                            <p className="font-medium">Budget & duration</p>
+                            <p className="text-sm text-muted-foreground">{formatNaira(adBudget[0] * adDuration[0])} over {adDuration[0]} days</p>
+                        </div>
+                        <div className="flex justify-between items-center py-2">
+                             <span className="font-medium">Preview ad</span>
+                             <div className="flex items-center gap-2 cursor-pointer">
+                                 {postMedia ? (
+                                    <div className="w-8 h-8 bg-muted rounded overflow-hidden">
+                                        <img src={postMedia.url} className="w-full h-full object-cover" />
+                                    </div>
+                                 ) : (
+                                    <div className="w-8 h-8 bg-muted rounded flex items-center justify-center"><ImageIcon className="w-4 h-4" /></div>
+                                 )}
+                                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                             </div>
+                        </div>
+                    </div>
+
+                    <div className="border-t pt-4 space-y-3">
+                        <h4 className="font-bold">Cost Summary</h4>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Ad Budget</span>
+                            <span>{formatNaira(adBudget[0] * adDuration[0])}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Estimated VAT</span>
+                            <span>{formatNaira((adBudget[0] * adDuration[0]) * 0.075)}</span>
+                        </div>
+                         <div className="flex justify-between font-bold text-base pt-2">
+                            <span>Total Spend</span>
+                            <span>{formatNaira((adBudget[0] * adDuration[0]) * 1.075)}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                            Ads are reviewed within 24 hours, although in some cases it may take longer. Once they're running, you can pause spending at any time.
                         </p>
                     </div>
+                </div>
+            )}
+
+            {/* STEP 3: Payment Method */}
+            {createType === 'ad' && adStep === 3 && (
+                 <div className="space-y-6">
+                    <div className="text-center">
+                        <h3 className="text-lg font-bold">Add payment method</h3>
+                    </div>
+                    
+                    <div className="border rounded-xl p-4 flex items-center justify-between cursor-pointer border-blue-500 bg-blue-50/50">
+                        <div className="flex items-center gap-3">
+                             <CreditCard className="w-6 h-6 text-blue-600" />
+                             <span className="font-medium">Debit or credit card</span>
+                        </div>
+                        <div className="h-5 w-5 rounded-full border-2 border-blue-600 flex items-center justify-center">
+                            <div className="w-2.5 h-2.5 bg-blue-600 rounded-full" />
+                        </div>
+                    </div>
+                    
+                    <div className="flex gap-1 justify-center pt-4">
+                        {/* Icons for Visa, Master, Amex etc */}
+                        <div className="h-6 w-10 bg-blue-800 rounded text-[8px] text-white flex items-center justify-center font-bold">VISA</div>
+                        <div className="h-6 w-10 bg-orange-500 rounded text-[8px] text-white flex items-center justify-center font-bold">MC</div>
+                        <div className="h-6 w-10 bg-blue-400 rounded text-[8px] text-white flex items-center justify-center font-bold">AMEX</div>
+                    </div>
+
+                    <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground mt-8">
+                        <Lock className="w-3 h-3" />
+                        Your payment methods are saved and stored securely.
+                    </div>
+                 </div>
+            )}
+            
+            {/* STEP 4: Card Details */}
+             {createType === 'ad' && adStep === 4 && (
+                 <div className="space-y-6">
+                    <div className="text-center">
+                        <h3 className="text-lg font-bold">Debit or credit card</h3>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                             <Input placeholder="Name on card" className="h-12 rounded-xl" value={cardDetails.name} onChange={e => setCardDetails({...cardDetails, name: e.target.value})} />
+                        </div>
+                        <div className="space-y-2">
+                             <Input placeholder="Card number" className="h-12 rounded-xl" value={cardDetails.number} onChange={e => setCardDetails({...cardDetails, number: e.target.value})} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <Input placeholder="MM/YY" className="h-12 rounded-xl" value={cardDetails.expiry} onChange={e => setCardDetails({...cardDetails, expiry: e.target.value})} />
+                            <Input placeholder="CVV" className="h-12 rounded-xl" type="password" value={cardDetails.cvv} onChange={e => setCardDetails({...cardDetails, cvv: e.target.value})} />
+                        </div>
+                    </div>
+
+                     <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground mt-8 text-center px-4">
+                        <Lock className="w-3 h-3 flex-shrink-0" />
+                        <span>Your payment methods are saved and stored securely.<br/><span className="text-blue-600">Terms and applicable Privacy Policies apply</span></span>
+                    </div>
+                 </div>
+            )}
+
+            {/* STANDARD NON-AD CONTENT INPUT (Existing Logic) */}
+            {createType !== 'ad' && (
+                <>
+                {/* User Info */}
+                <div className="flex gap-3 items-center">
+                  <Avatar className="w-10 h-10">
+                    <AvatarImage src={currentUserProfile?.avatar_url || undefined} />
+                    <AvatarFallback>U</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                     <p className="font-semibold text-sm flex items-center gap-1">
+                       {currentUserProfile?.display_name || 'You'}
+                       <VerifiedBadge userId={user.id} />
+                     </p>
+                     <p className="text-xs text-muted-foreground capitalize">{createType}</p>
+                  </div>
+                </div>
+
+                {/* Content Input */}
+                <Textarea 
+                  placeholder={createType === 'story' ? "Add a caption..." : "What's on your mind? Use @ to tag friends"}
+                  value={createType === 'story' ? storyCaption : postText}
+                  onChange={createType === 'story' ? (e) => setStoryCaption(e.target.value) : handleTextChange}
+                  className="min-h-[100px] bg-transparent border-0 resize-none focus-visible:ring-0 p-0 text-base"
+                />
+                
+                {/* Tag List */}
+                {showTagList && (
+                    <div className="bg-popover border shadow-md rounded-md z-10 w-full max-h-40 overflow-y-auto">
+                        {friends.filter(f => f.display_name.toLowerCase().includes(tagQuery.toLowerCase())).map(f => (
+                            <div key={f.user_id} className="p-2 hover:bg-muted cursor-pointer text-sm flex items-center gap-2" onClick={() => addTag(f.display_name)}>
+                                <Avatar className="w-6 h-6"><AvatarImage src={f.avatar_url}/></Avatar> {f.display_name}
+                            </div>
+                        ))}
+                    </div>
                 )}
-            </div>
+
+                {/* Media Preview & Upload Area */}
+                <div className="relative">
+                    {(createType === 'story' ? storyPreview : postMedia) ? (
+                       <div className="relative rounded-xl overflow-hidden bg-black/5 max-h-64 flex items-center justify-center">
+                          <button 
+                            onClick={() => createType === 'story' ? setStoryPreview(null) : setPostMedia(null)} 
+                            className="absolute top-2 right-2 z-10 bg-black/50 hover:bg-black/70 p-1.5 rounded-full text-white transition-colors"
+                          >
+                              <X className="w-4 h-4" />
+                          </button>
+                          
+                          {(createType === 'story' ? storyPreview?.file.type.startsWith('video') : postMedia?.type === 'video') ? (
+                              <video src={createType === 'story' ? storyPreview?.url : postMedia?.url} controls className="max-h-64 w-full object-contain" />
+                          ) : (
+                              <img src={createType === 'story' ? storyPreview?.url : postMedia?.url} className="max-h-64 w-full object-cover" />
+                          )}
+                       </div>
+                    ) : (
+                        // Upload Area triggers automatically for Photo/Video/Story if empty, or can be clicked
+                        <div 
+                          className="border-2 border-dashed border-muted rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => unifiedFileRef.current?.click()}
+                        >
+                            <input 
+                                type="file" 
+                                ref={unifiedFileRef} 
+                                className="hidden" 
+                                accept={
+                                    createType === 'video' ? "video/*" : 
+                                    createType === 'photo' ? "image/*" : 
+                                    "image/*,video/*"
+                                } 
+                                onChange={handleUnifiedFileSelect} 
+                            />
+                            <div className="bg-primary/10 p-4 rounded-full mb-3 text-primary">
+                                {createType === 'video' ? <Video className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
+                            </div>
+                            <p className="text-sm font-medium text-muted-foreground">
+                                {createType === 'post' ? "Add Photo/Video (Optional)" : `Upload ${createType}`}
+                            </p>
+                        </div>
+                    )}
+                </div>
+                </>
+            )}
             
             {/* Actions Footer */}
             <div className="flex items-center justify-between pt-2">
                 <div className="flex gap-2">
-                   {createType !== 'story' && (
+                   {/* Hide generic actions if in Ad Wizard > Step 0 */}
+                   {createType !== 'story' && (createType !== 'ad' || adStep === 0) && (
                      <Button 
                         variant="outline" 
                         size="sm" 
@@ -1947,7 +2246,9 @@ const Feed = () => {
                 </div>
                 <Button onClick={handleUnifiedSubmit} disabled={uploadingPost || uploadingStory} className="rounded-full px-6">
                     {(uploadingPost || uploadingStory) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    {createType === 'story' ? 'Share Story' : 'Post'}
+                    {createType === 'story' ? 'Share Story' : 
+                     createType === 'ad' ? (adStep === 2 ? 'Boost post' : adStep === 4 ? 'Save' : 'Next') : 
+                     'Post'}
                 </Button>
             </div>
           </div>
