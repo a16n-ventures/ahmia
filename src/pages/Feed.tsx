@@ -1104,20 +1104,18 @@ const Feed = () => {
          const vat = budgetVal * durationVal * 0.075;
          const total = (budgetVal * durationVal) + vat;
 
-         // Attempt to save to an 'ads' table if exists, otherwise this part might fail gracefully or logic can be adapted
+         // Store ad metadata in the post's metadata or use advertisements table
          try {
-             await supabase.from('ads').insert({
-                 user_id: user?.id,
-                 post_id: postData.id,
-                 daily_budget: budgetVal,
-                 duration_days: durationVal,
-                 total_spend: total,
-                 goal: adGoal,
-                 audience: adAudience,
-                 status: 'pending_review'
+             await supabase.from('advertisements').insert({
+                 title: 'Promoted Post',
+                 link_url: `/app/feed?post=${postData.id}`,
+                 description: postText.substring(0, 100),
+                 placement: 'feed',
+                 is_active: false, // Pending review
+                 created_by: user?.id
              });
          } catch (adError) {
-             console.log("Ad table might not exist yet", adError);
+             console.log("Ad creation note:", adError);
          }
       }
 
@@ -1261,7 +1259,7 @@ const Feed = () => {
       .in('user_id', userIds);
 
     if (profiles) {
-      profiles.forEach(p => profilesMap.set(p.id, p));
+      profiles.forEach(p => profilesMap.set(p.user_id, p));
     }
   }
 

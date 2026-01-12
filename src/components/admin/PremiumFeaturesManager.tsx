@@ -36,7 +36,7 @@ export default function PremiumFeaturesManager() {
   // Grant State
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [featureForm, setFeatureForm] = useState({
-    feature_type: 'full_package' as const,
+    feature_type: 'full_package' as 'full_package' | 'profile_boost' | 'event_boost' | 'profile_badge',
     duration_days: 30,
   });
 
@@ -87,7 +87,7 @@ export default function PremiumFeaturesManager() {
           .from('premium_features')
           .select('id')
           .eq('user_id', uid)
-          .eq('feature_type', featureType)
+          .eq('feature_type', featureType as 'full_package' | 'profile_boost' | 'event_boost' | 'profile_badge')
           .maybeSingle();
 
         if (existing) {

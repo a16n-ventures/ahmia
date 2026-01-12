@@ -117,40 +117,33 @@ export function useNearbyUsers(userId: string | undefined, enabled: boolean = tr
           .sort((a, b) => (a.distance_km || 0) - (b.distance_km || 0));
       }
 
-      // Filter out excluded users from RPC results and ensure proper profile data
-      const nearbyWithProfiles = (data || [])
-        .filter((u: any) => !excludeIds.has(u.user_id))
-        .map((u: any) => ({
+      // Filter out excluded users from RPC results
+      const filteredData = (data || []).filter((u: any) => !excludeIds.has(u.user_id));
+      
+      // Always fetch real profile data for ALL nearby users to ensure we get actual names
+      const allUserIds = filteredData.map((u: any) => u.user_id);
+      
+      if (allUserIds.length === 0) return [];
+      
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, display_name, avatar_url, email')
+        .in('user_id', allUserIds);
+      
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      
+      // Merge RPC distance data with real profile data
+      const nearbyWithRealProfiles = filteredData.map((u: any) => {
+        const profile = profileMap.get(u.user_id);
+        return {
           user_id: u.user_id,
-          display_name: u.display_name,
-          avatar_url: u.avatar_url,
+          display_name: profile?.display_name || profile?.email?.split('@')[0] || u.display_name,
+          avatar_url: profile?.avatar_url || u.avatar_url,
           distance_km: u.distance_km
-        }));
+        };
+      });
       
-      // For any users with generic names, fetch their real profile data
-      const genericUsers = nearbyWithProfiles.filter(
-        u => !u.display_name || u.display_name.startsWith('User')
-      );
-      
-      if (genericUsers.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('user_id, display_name, avatar_url')
-          .in('user_id', genericUsers.map(u => u.user_id));
-        
-        if (profiles) {
-          const profileMap = new Map(profiles.map(p => [p.user_id, p]));
-          nearbyWithProfiles.forEach(u => {
-            const profile = profileMap.get(u.user_id);
-            if (profile) {
-              u.display_name = profile.display_name || u.display_name;
-              u.avatar_url = profile.avatar_url || u.avatar_url;
-            }
-          });
-        }
-      }
-      
-      return nearbyWithProfiles;
+      return nearbyWithRealProfiles;
     },
     enabled: enabled && !!userId && !!userLocation,
     staleTime: 60000,
