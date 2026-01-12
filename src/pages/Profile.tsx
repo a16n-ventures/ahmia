@@ -150,9 +150,6 @@ const Profile = () => {
   const queryClient = useQueryClient();
   const { location: currentLocation, requestLocation, isLoading: locationLoading } = useGeolocation();
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [discoveryRadius, setDiscoveryRadius] = useState([5000]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -163,11 +160,11 @@ const Profile = () => {
     fullName: '',
     username: '',
     email: '',
-    phone: ''
+    phone: '',
+    bio: ''
   });
   
   // Links management state
-  const [showLinksDialog, setShowLinksDialog] = useState(false);
   const [profileLinks, setProfileLinks] = useState<ProfileLink[]>([]);
   const [newLink, setNewLink] = useState({ title: '', url: '' });
 
@@ -219,17 +216,16 @@ const Profile = () => {
   // Sync form state with profile data
   useEffect(() => {
     if (profile) {
-      setDisplayName(profile.display_name || '');
-      setBio(profile.bio || '');
       const radius = profile.preferences?.discovery_radius ?? 5000;
       setDiscoveryRadius([radius]);
       
-      // Sync settings form including phone
+      // Sync settings form including phone and bio
       setSettingsForm({
         fullName: profile.display_name || '',
         username: profile.username || '',
         email: profile.email || user?.email || '',
-        phone: profile.phone?.toString() || ''
+        phone: profile.phone?.toString() || '',
+        bio: profile.bio || ''
       });
       
       // Sync profile links
@@ -237,9 +233,16 @@ const Profile = () => {
     }
   }, [profile, user?.email]);
 
-  // Profile Settings Update Mutation
+  // Profile Settings Update Mutation (Unified)
   const updateProfileSettingsMutation = useMutation({
-    mutationFn: async (updates: { fullName?: string; username?: string; email?: string; phone?: string }) => {
+    mutationFn: async (updates: { 
+      fullName?: string; 
+      username?: string; 
+      email?: string; 
+      phone?: string;
+      bio?: string;
+      links?: ProfileLink[]
+    }) => {
       const dbUpdates: any = {
         updated_at: new Date().toISOString(),
       };
@@ -275,14 +278,13 @@ const Profile = () => {
         dbUpdates.username = trimmedUsername;
       }
 
-      // Updated Email Logic: Only attempt Auth update if email has actually changed
+      // Updated Email Logic
       if (updates.email !== undefined) {
         const trimmedEmail = updates.email.trim().toLowerCase();
         if (!trimmedEmail) throw new Error('Email cannot be empty');
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(trimmedEmail)) throw new Error('Please enter a valid email address');
         
-        // Check if email is different from current
         if (trimmedEmail !== user?.email?.toLowerCase()) {
           const { error: authError } = await supabase.auth.updateUser({ 
             email: trimmedEmail 
@@ -292,10 +294,9 @@ const Profile = () => {
         }
       }
 
-      // New Phone Logic
+      // Phone Logic
       if (updates.phone !== undefined) {
         const trimmedPhone = updates.phone.trim();
-        // Allow empty phone number to clear it, otherwise validate
         if (trimmedPhone) {
           const phoneRegex = /^\+?[0-9]{10,15}$/;
           if (!phoneRegex.test(trimmedPhone)) {
@@ -305,6 +306,21 @@ const Profile = () => {
         dbUpdates.phone = trimmedPhone;
       }
 
+      // Bio Logic
+      if (updates.bio !== undefined) {
+        dbUpdates.bio = updates.bio.trim();
+      }
+
+      // Links Logic (Preferences)
+      if (updates.links !== undefined) {
+        // Fetch current preferences first to merge
+        const currentPrefs = profile?.preferences || {};
+        dbUpdates.preferences = {
+          ...currentPrefs,
+          links: updates.links
+        };
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update(dbUpdates)
@@ -314,17 +330,23 @@ const Profile = () => {
       return dbUpdates;
     },
     onSuccess: (updates) => {
-      toast.success('Profile settings updated successfully!');
+      toast.success('Profile updated successfully!');
       setShowProfileSettings(false);
       
       // Optimistic update
       queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
         if (!oldData) return oldData;
+        
+        const newPrefs = updates.preferences 
+          ? updates.preferences 
+          : oldData.profile.preferences;
+
         return {
           ...oldData,
           profile: {
             ...oldData.profile,
-            ...updates
+            ...updates,
+            preferences: newPrefs
           }
         };
       });
@@ -332,13 +354,13 @@ const Profile = () => {
       queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update profile settings');
+      toast.error(error.message || 'Failed to update profile');
     }
   });
 
-  // Enhanced profile update mutation
+  // Radius update mutation (separate from settings)
   const updateProfileMutation = useMutation({
-    mutationFn: async (updates: { displayName?: string; bio?: string; preferences?: any }) => {
+    mutationFn: async (updates: { preferences?: any }) => {
       const currentPrefs = profile?.preferences || {};
       const newPrefs = { ...currentPrefs, ...updates.preferences };
 
@@ -347,16 +369,6 @@ const Profile = () => {
         preferences: newPrefs,
       };
 
-      if (updates.displayName !== undefined) {
-        const trimmedName = updates.displayName.trim();
-        if (!trimmedName) throw new Error('Display name cannot be empty');
-        dbUpdates.display_name = trimmedName;
-      }
-      
-      if (updates.bio !== undefined) {
-        dbUpdates.bio = updates.bio.trim();
-      }
-
       const { error } = await supabase
         .from('profiles')
         .update(dbUpdates)
@@ -366,9 +378,6 @@ const Profile = () => {
       return dbUpdates;
     },
     onSuccess: (updates) => {
-      toast.success('Profile updated successfully');
-      setIsEditing(false);
-      
       // Optimistic update
       queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
         if (!oldData) return oldData;
@@ -380,7 +389,6 @@ const Profile = () => {
           }
         };
       });
-      
       queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
     },
     onError: (error: Error) => {
@@ -517,11 +525,8 @@ const Profile = () => {
           }
         };
       });
-
-      // Only reload if enabling (to restart LocationContext)
-      if (newState) {
-        setTimeout(() => window.location.reload(), 500);
-      }
+      
+      // Removed refresh logic here as requested
     },
     onError: (error: any) => {
       console.error('❌ Failed to toggle location:', error);
@@ -614,16 +619,6 @@ const Profile = () => {
     }
   }, [signOut, navigate]);
 
-  const handleReferralCopy = useCallback(() => {
-    const refCode = `AHM-${user?.id.slice(0, 6).toUpperCase()}`;
-    const refLink = `${window.location.origin}/ahmia?ref=${refCode}`;
-    navigator.clipboard.writeText(refLink).then(() => {
-      toast.success("Referral link copied!");
-    }).catch(() => {
-      toast.error("Failed to copy link");
-    });
-  }, [user?.id]);
-
   const saveRadius = useCallback(() => {
     console.log('🔵 saveRadius called with:', discoveryRadius[0]);
     updateProfileMutation.mutate({ 
@@ -649,9 +644,11 @@ const Profile = () => {
       fullName: settingsForm.fullName,
       username: settingsForm.username,
       email: settingsForm.email,
-      phone: settingsForm.phone // Added phone to submit
+      phone: settingsForm.phone,
+      bio: settingsForm.bio,
+      links: profileLinks
     });
-  }, [settingsForm, updateProfileSettingsMutation]);
+  }, [settingsForm, profileLinks, updateProfileSettingsMutation]);
 
   // Links management functions
   const getLinkIcon = (url: string) => {
@@ -690,17 +687,6 @@ const Profile = () => {
   const removeLink = useCallback((linkId: string) => {
     setProfileLinks(prev => prev.filter(l => l.id !== linkId));
   }, []);
-
-  const saveLinks = useCallback(() => {
-    updateProfileMutation.mutate({ 
-      preferences: { links: profileLinks }
-    }, {
-      onSuccess: () => {
-        toast.success('Links saved successfully!');
-        setShowLinksDialog(false);
-      }
-    });
-  }, [profileLinks, updateProfileMutation]);
 
   // Memoized calculations
   const profileCompletion = useMemo(() => {
@@ -777,13 +763,9 @@ const Profile = () => {
                 variant="ghost" 
                 size="sm" 
                 className="text-white hover:bg-white/20 transition-all rounded-full px-4 font-semibold"
-                onClick={() => setIsEditing(!isEditing)}
+                onClick={() => setShowProfileSettings(true)}
               >
-                {isEditing ? (
-                  <><X className="w-4 h-4 mr-2" /> Cancel</>
-                ) : (
-                  <><Edit3 className="w-4 h-4 mr-2" /> Edit</>
-                )}
+                <Edit3 className="w-4 h-4 mr-2" /> Edit
               </Button>
             </div>
           </div>
@@ -794,10 +776,10 @@ const Profile = () => {
                 <AvatarImage 
                   src={avatarPreview || profile?.avatar_url || ''} 
                   className="object-cover" 
-                  alt={`${displayName}'s avatar`}
+                  alt={`${profile?.display_name}'s avatar`}
                 />
                 <AvatarFallback className="bg-white/20 text-white text-4xl font-bold backdrop-blur-md">
-                  {displayName.slice(0, 2).toUpperCase() || '?'}
+                  {profile?.display_name?.slice(0, 2).toUpperCase() || '?'}
                 </AvatarFallback>
               </Avatar>
               
@@ -819,42 +801,11 @@ const Profile = () => {
             </div>
             
             <div className="flex-1 min-w-0 space-y-2">
-              {isEditing ? (
-                <Input 
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="bg-white/15 border-white/30 text-white placeholder:text-white/60 h-11 rounded-xl focus-visible:ring-white/50 font-semibold"
-                  placeholder="Display Name"
-                  maxLength={MAX_NAME_LENGTH}
-                  aria-label="Display name"
-                />
-              ) : (
-                <>
-                {/* Premium Badge beside name */}
-                <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-bold truncate tracking-tight">
-                    {profile?.display_name || 'User'}
-                  </h2>
-                  {/*
-                  {hasPremiumBadge && (
-                    <div className="relative group">
-                      <svg 
-                        viewBox="0 0 24 24" 
-                        className="w-5 h-5 text-blue-400" 
-                        fill="currentColor"
-                      >
-                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                        <circle cx="12" cy="12" r="3" fill="white" />
-                      </svg>
-                      {/* Tooltip /}
-                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-black/90 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        Verified Premium
-                      </div>
-                    </div> 
-                  )} */}
-                </div> 
-                </>
-              )}
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold truncate tracking-tight">
+                  {profile?.display_name || 'User'}
+                </h2>
+              </div> 
               <p className="text-white/90 text-sm truncate font-medium flex items-center gap-2">
                 {user?.email}
               </p>
@@ -920,71 +871,6 @@ const Profile = () => {
           </CardContent>
         </Card>
 
-        {/* PROFILE LINKS - Instagram-style */}
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2 px-5 pt-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Link2 className="w-4 h-4 text-primary" />
-                My Links
-              </CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => setShowLinksDialog(true)}
-              >
-                <Edit3 className="w-3 h-3 mr-1" />
-                Edit
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="px-5 pb-4">
-            {profileLinks.length === 0 ? (
-              <div 
-                className="text-center py-6 border-2 border-dashed border-muted rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-all"
-                onClick={() => setShowLinksDialog(true)}
-              >
-                <Link2 className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Add links to share</p>
-                <p className="text-xs text-muted-foreground/70 mt-1">Website, social profiles, etc.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {profileLinks.slice(0, 5).map((link) => {
-                  const LinkIcon = getLinkIcon(link.url);
-                  return (
-                    <a
-                      key={link.id}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-all group"
-                    >
-                      <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
-                        <LinkIcon className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{link.title}</p>
-                        <p className="text-xs text-muted-foreground truncate">{link.url.replace(/^https?:\/\//, '')}</p>
-                      </div>
-                      <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                    </a>
-                  );
-                })}
-                {profileLinks.length > 5 && (
-                  <button 
-                    className="w-full text-xs text-primary font-medium py-2"
-                    onClick={() => setShowLinksDialog(true)}
-                  >
-                    +{profileLinks.length - 5} more links
-                  </button>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         {/* STATS GRID */}
         <div className="grid grid-cols-3 gap-3">
           {statsList.map((stat, index) => {
@@ -1007,85 +893,6 @@ const Profile = () => {
             );
           })}
         </div> 
-
-        {/* BIO SECTION */}
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-3 px-5 pt-5">
-            <CardTitle className="text-lg font-bold flex items-center gap-2">
-              <Heart className="w-5 h-5 text-primary" />
-              About Me
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-5 pb-5">
-            {isEditing ? (
-              <div className="space-y-3">
-                <Textarea 
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Write a short bio about yourself..."
-                  className="resize-none bg-muted/50 min-h-[120px] focus-visible:ring-primary"
-                  maxLength={MAX_BIO_LENGTH}
-                  aria-label="Bio"
-                />
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{bio.length}/{MAX_BIO_LENGTH} characters</span>
-                </div>
-                <Button 
-                  className="w-full gradient-primary text-white shadow-md font-semibold" 
-                  onClick={() => updateProfileMutation.mutate({ displayName, bio })}
-                  disabled={updateProfileMutation.isPending || !displayName.trim()}
-                >
-                  {updateProfileMutation.isPending ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</>
-                  ) : (
-                    <><Check className="mr-2 h-4 w-4" /> Save Changes</>
-                  )}
-                </Button>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap min-h-[60px]">
-                {profile?.bio || "No bio yet. Tap edit to tell us about yourself and connect with like-minded people!"}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* REFERRAL CARD */}
-        {/*
-        <Card className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white border-0 shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full -ml-16 -mb-16 blur-2xl" />
-          
-          <CardContent className="p-6 relative z-10">
-            <div className="flex items-start gap-4 mb-4">
-              <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shrink-0">
-                <Gift className="w-6 h-6 text-yellow-300" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-lg mb-1">Invite & Earn</h3>
-                <p className="text-xs text-white/90 leading-relaxed">
-                  Share your referral link. When friends join, you both get 7 days of Premium access!
-                </p>
-              </div>
-            </div> 
-            
-            <div className="flex gap-2">
-              <div className="bg-white/15 border border-white/30 backdrop-blur-sm rounded-xl px-4 py-3 flex-1 flex items-center justify-between">
-                <span className="text-xs font-mono text-white truncate">
-                  ahmia/ref/{user?.id.slice(0,6).toUpperCase()}
-                </span>
-              </div>
-              <Button 
-                size="sm" 
-                variant="secondary" 
-                className="text-indigo-700 font-bold shrink-0 shadow-md hover:shadow-lg transition-all px-6"
-                onClick={handleReferralCopy}
-              >
-                <Copy className="w-4 h-4 mr-2" /> Copy
-              </Button>
-            </div>
-          </CardContent>
-        </Card> */}
 
         {/* SETTINGS SECTION */}
         <div className="space-y-3">
@@ -1211,7 +1018,7 @@ const Profile = () => {
           </h3>
           <Card className="border-0 shadow-md overflow-hidden">
             <div className="divide-y divide-border/50">
-              {/* Profile Settings Button - NEW */}
+              {/* Profile Settings Button */}
               <div 
                 className="p-5 flex items-center gap-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all group"
                 onClick={() => setShowProfileSettings(true)}
@@ -1224,7 +1031,7 @@ const Profile = () => {
                 </div>
                 <div className="flex-1">
                   <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">Profile Settings</span>
-                  <p className="text-xs text-blue-700/80 dark:text-blue-300/70">Update your name, username & email</p>
+                  <p className="text-xs text-blue-700/80 dark:text-blue-300/70">Update your name, bio, links & email</p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-blue-600 group-hover:translate-x-1 transition-transform" />
               </div>
@@ -1277,9 +1084,9 @@ const Profile = () => {
         </div>
       </div>
 
-      {/* Profile Settings Dialog - NEW */}
+      {/* Profile Settings Dialog */}
       <Dialog open={showProfileSettings} onOpenChange={setShowProfileSettings}>
-        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto">
+        <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Settings className="w-5 h-5 text-primary" />
@@ -1330,8 +1137,89 @@ const Profile = () => {
                 className="h-11 font-mono"
               />
               <p className="text-xs text-muted-foreground">
-                Lowercase letters, numbers, and underscores only • {settingsForm.username.length}/{MAX_USERNAME_LENGTH} characters
+                Lowercase letters, numbers, and underscores only
               </p>
+            </div>
+
+            {/* Bio - MOVED HERE */}
+            <div className="space-y-2">
+              <Label htmlFor="settings-bio" className="flex items-center gap-2">
+                <Heart className="w-4 h-4 text-muted-foreground" />
+                About Me
+              </Label>
+              <Textarea 
+                id="settings-bio"
+                value={settingsForm.bio}
+                onChange={(e) => setSettingsForm(prev => ({ ...prev, bio: e.target.value }))}
+                placeholder="Write a short bio about yourself..."
+                className="resize-none min-h-[100px]"
+                maxLength={MAX_BIO_LENGTH}
+              />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{settingsForm.bio.length}/{MAX_BIO_LENGTH} characters</span>
+              </div>
+            </div>
+
+            {/* Links - MOVED HERE */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Link2 className="w-4 h-4 text-muted-foreground" />
+                My Links
+              </Label>
+              
+              <div className="space-y-3 p-3 bg-muted/30 rounded-lg border border-border/50">
+                {/* Add new link inputs */}
+                <div className="space-y-2">
+                  <Input
+                    placeholder="Link Title (e.g., Website)"
+                    value={newLink.title}
+                    onChange={(e) => setNewLink(prev => ({ ...prev, title: e.target.value }))}
+                    className="h-9 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="https://example.com"
+                      value={newLink.url}
+                      onChange={(e) => setNewLink(prev => ({ ...prev, url: e.target.value }))}
+                      className="h-9 text-sm flex-1"
+                    />
+                    <Button 
+                      onClick={addLink}
+                      size="sm"
+                      variant="secondary"
+                      disabled={!newLink.title.trim() || !newLink.url.trim()}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Existing links list */}
+                {profileLinks.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-border/50">
+                    {profileLinks.map((link) => {
+                      const LinkIcon = getLinkIcon(link.url);
+                      return (
+                        <div key={link.id} className="flex items-center gap-2 p-2 rounded bg-background border">
+                          <LinkIcon className="w-3 h-3 text-muted-foreground" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{link.title}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">{link.url}</p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                            onClick={() => removeLink(link.id)}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Email */}
@@ -1354,7 +1242,7 @@ const Profile = () => {
               </p>
             </div>
 
-            {/* Phone Number - ADDED */}
+            {/* Phone Number */}
             <div className="space-y-2">
               <Label htmlFor="settings-phone" className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-muted-foreground" />
@@ -1368,9 +1256,6 @@ const Profile = () => {
                 onChange={(e) => setSettingsForm(prev => ({ ...prev, phone: e.target.value }))}
                 className="h-11"
               />
-              <p className="text-xs text-muted-foreground">
-                Enter a valid phone number (10-15 digits). Optional.
-              </p>
             </div>
           </div>
 
@@ -1396,117 +1281,6 @@ const Profile = () => {
                 <>
                   <Check className="w-4 h-4 mr-2" />
                   Save Changes
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Profile Links Dialog */}
-      <Dialog open={showLinksDialog} onOpenChange={setShowLinksDialog}>
-        <DialogContent className="sm:max-w-[500px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <Link2 className="w-5 h-5 text-primary" />
-              Manage Links
-            </DialogTitle>
-            <DialogDescription>
-              Add links to your website, social profiles, or any other URL you want to share.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto py-4 space-y-4">
-            {/* Add new link form */}
-            <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
-              <div className="space-y-2">
-                <Label htmlFor="link-title" className="text-sm font-medium">Link Title</Label>
-                <Input
-                  id="link-title"
-                  placeholder="e.g., My Website, Instagram"
-                  value={newLink.title}
-                  onChange={(e) => setNewLink(prev => ({ ...prev, title: e.target.value }))}
-                  maxLength={50}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="link-url" className="text-sm font-medium">URL</Label>
-                <Input
-                  id="link-url"
-                  placeholder="https://example.com"
-                  value={newLink.url}
-                  onChange={(e) => setNewLink(prev => ({ ...prev, url: e.target.value }))}
-                />
-              </div>
-              <Button 
-                onClick={addLink}
-                className="w-full"
-                disabled={!newLink.title.trim() || !newLink.url.trim()}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Link
-              </Button>
-            </div>
-
-            {/* Existing links list */}
-            {profileLinks.length > 0 && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-muted-foreground">Your Links ({profileLinks.length})</Label>
-                <div className="space-y-2 max-h-[250px] overflow-y-auto">
-                  {profileLinks.map((link) => {
-                    const LinkIcon = getLinkIcon(link.url);
-                    return (
-                      <div
-                        key={link.id}
-                        className="flex items-center gap-3 p-3 rounded-lg bg-background border group"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <LinkIcon className="w-4 h-4 text-primary" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{link.title}</p>
-                          <p className="text-xs text-muted-foreground truncate">{link.url.replace(/^https?:\/\//, '')}</p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => removeLink(link.id)}
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="gap-2 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowLinksDialog(false);
-                setProfileLinks(profile?.preferences?.links || []);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={saveLinks}
-              disabled={updateProfileMutation.isPending}
-              className="gradient-primary text-white"
-            >
-              {updateProfileMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  Save Links
                 </>
               )}
             </Button>
