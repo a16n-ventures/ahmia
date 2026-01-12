@@ -1391,7 +1391,10 @@ export default function Messages() {
   );
 }
 
-Messages.displayName = 'Messages';text-center space-y-3">
+    if (loadingMessages) {
+      return (
+        <div className="fixed inset-0 z-[100] bg-background flex flex-col h-[100dvh] items-center justify-center">
+          <div className="text-center space-y-3">
             <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
             <p className="text-sm text-muted-foreground">Loading messages...</p>
           </div>
