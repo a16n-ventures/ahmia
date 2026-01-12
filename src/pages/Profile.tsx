@@ -751,16 +751,6 @@ const Profile = () => {
             <div className="flex items-center gap-1">
               <Button 
                 variant="ghost" 
-                size="icon" 
-                className="text-white hover:bg-white/20 rounded-full"
-                onClick={() => refetch()}
-                disabled={isRefetching}
-                aria-label="Refresh profile"
-              >
-                <RefreshCw className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`} />
-              </Button>
-              <Button 
-                variant="ghost" 
                 size="sm" 
                 className="text-white hover:bg-white/20 transition-all rounded-full px-4 font-semibold"
                 onClick={() => setShowProfileSettings(true)}

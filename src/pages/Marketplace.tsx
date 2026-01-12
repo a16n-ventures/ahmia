@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, MapPin, Phone, Truck, Clock, Store as StoreIcon, Tag, Loader2, Plus } from 'lucide-react';
+import { Search, MapPin, Phone, Truck, Clock, Store as StoreIcon, Tag, Loader2, Plus, Pencil, Edit } from 'lucide-react';
 import { StoreItem, Store, STORE_CATEGORIES, DELIVERY_MODES } from '@/types/marketplace';
 import StoreFormDialog from '@/components/StoreFormDialog';
 import ItemFormDialog from '@/components/ItemFormDialog';
@@ -17,6 +17,14 @@ export default function Marketplace() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
   const [selectedItem, setSelectedItem] = useState<(StoreItem & { store: Store }) | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Fetch user ID on mount
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id || null);
+    });
+  }, []);
 
   // Fetch items with store info
   const { data: items = [], isLoading } = useQuery({
@@ -58,6 +66,9 @@ export default function Marketplace() {
       minimumFractionDigits: 0
     }).format(price);
   };
+
+  // Check if current user is the owner of the selected item's store
+  const isOwner = currentUserId && selectedItem?.store?.owner_id === currentUserId;
 
   return (
     <div className="container-mobile py-4 space-y-4">
@@ -182,7 +193,20 @@ export default function Marketplace() {
           {selectedItem && (
             <>
               <DialogHeader>
-                <DialogTitle>{selectedItem.name}</DialogTitle>
+                <div className="flex items-center justify-between pr-8">
+                  <DialogTitle>{selectedItem.name}</DialogTitle>
+                  {isOwner && (
+                    <ItemFormDialog
+                      editingItem={selectedItem}
+                      onSuccess={() => setSelectedItem(null)}
+                      trigger={
+                        <Button variant="outline" size="sm" className="h-8">
+                          <Edit className="w-3.5 h-3.5 mr-1.5" /> Edit Item
+                        </Button>
+                      }
+                    />
+                  )}
+                </div>
               </DialogHeader>
 
               <div className="space-y-4">
@@ -224,17 +248,30 @@ export default function Marketplace() {
                 {/* Store Info */}
                 <Card className="bg-muted/50">
                   <CardContent className="p-3 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="w-10 h-10">
-                        <AvatarImage src={selectedItem.store?.logo_url || undefined} />
-                        <AvatarFallback>
-                          {selectedItem.store?.name?.[0] || 'S'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">{selectedItem.store?.name}</p>
-                        <p className="text-xs text-muted-foreground">{selectedItem.store?.category}</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="w-10 h-10">
+                          <AvatarImage src={selectedItem.store?.logo_url || undefined} />
+                          <AvatarFallback>
+                            {selectedItem.store?.name?.[0] || 'S'}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium">{selectedItem.store?.name}</p>
+                          <p className="text-xs text-muted-foreground">{selectedItem.store?.category}</p>
+                        </div>
                       </div>
+                      {isOwner && (
+                        <StoreFormDialog
+                          editingStore={selectedItem.store}
+                          onSuccess={() => setSelectedItem(null)}
+                          trigger={
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                          }
+                        />
+                      )}
                     </div>
 
                     {selectedItem.store?.location && (
