@@ -198,7 +198,7 @@ const MapPage = () => {
     
     console.log(`🎯 Filtering friends within ${discoveryRadiusKm}km radius`);
     
-    return nearbyFriendsRaw
+    return (nearbyFriendsRaw
       .map((loc: any) => {
         const dist = distanceKm(location.latitude, location.longitude, loc.latitude, loc.longitude);
         
@@ -231,7 +231,7 @@ const MapPage = () => {
           is_premium: isPremium
         };
       })
-      .filter(Boolean) as FriendOnMap[]
+      .filter(Boolean) as FriendOnMap[])
       // ✅ SORT BY DISTANCE (Closest first)
       .sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
   }, [nearbyFriendsRaw, friendsPresence, location, discoveryRadiusKm, premiumStatus]);
@@ -250,7 +250,7 @@ const MapPage = () => {
         
       if (!data) return [];
 
-      return data.map((e: any) => {
+      return (data.map((e: any) => {
         const eLat = e.latitude || 6.5244; 
         const eLng = e.longitude || 3.3792;
         const dist = distanceKm(location.latitude, location.longitude, eLat, eLng);
@@ -275,7 +275,7 @@ const MapPage = () => {
           distanceKm: Number(dist.toFixed(1))
         };
       })
-      .filter(Boolean)
+      .filter(Boolean))
       // ✅ SORT BY DISTANCE (Closest first)
       .sort((a: any, b: any) => (a.distanceKm || 0) - (b.distanceKm || 0));
     },
