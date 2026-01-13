@@ -11,7 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useNearbyNotifications } from "@/hooks/useNearbyNotifications";
+import { useRealtimeNotifications } from "@/hooks/useRealtimeNotifications";
 
 // --- Types ---
 type NotificationType = 'nearby_user' | 'friend_request' | 'event_invite' | 'message' | 'location_share' | 'story_reply';
