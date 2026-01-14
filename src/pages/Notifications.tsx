@@ -39,7 +39,7 @@ export default function Notifications() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { markAsRead } = useNearbyNotifications(user?.id);
+  const { markAsRead } = useRealtimeNotifications(user?.id);
 
   // Fetch all notifications from the new table + legacy sources
   const { data: notifications = [], isLoading } = useQuery({
