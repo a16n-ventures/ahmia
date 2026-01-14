@@ -2205,6 +2205,47 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       make_user_admin: { Args: { target_user_id: string }; Returns: undefined }
+      match_content_smart: {
+        Args: {
+          match_threshold: number
+          query_embedding: string
+          travel_radius_km: number
+          user_lat?: number
+          user_long?: number
+        }
+        Returns: {
+          boost_multiplier: number | null
+          category: string | null
+          created_at: string
+          creator_id: string
+          description: string | null
+          embedding: string | null
+          end_date: string | null
+          event_type: string | null
+          event_views_30d: number | null
+          id: string
+          image_url: string | null
+          is_boosted: boolean | null
+          is_public: boolean | null
+          latitude: number | null
+          location: string | null
+          longitude: number | null
+          max_attendees: number | null
+          meeting_link: string | null
+          requires_approval: boolean
+          start_date: string
+          ticket_price: number | null
+          title: string
+          travel_category: string | null
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "events"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       match_events_smart: {
         Args: {
           match_count: number

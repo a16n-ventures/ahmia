@@ -21,7 +21,7 @@ const MainLayout = () => {
   const [isPremium, setIsPremium] = useState(false); 
 
   // Global real-time notifications with toast alerts
-  useRealtimeNotifications();
+  useRealtimeNotifications(user?.id);
 
   // Navigation Configuration
   const tabs = [
