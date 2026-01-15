@@ -368,35 +368,27 @@ const EventDetail = () => {
   });
   
   const { data: existingInvites = [] } = useQuery<string[]>({
-  queryKey: ['event-invites', eventId],
-  queryFn: async () => {
-    if (!eventId) return [];
-    // Use consistent table name - check your database schema
-    const { data } = await supabase
-      .from('event_invitations') // or 'event_invites' - match your schema
-      .select('invitee_id') // or 'receiver_id' - match your schema
-      .eq('event_id', eventId)
-      .in('status', ['pending', 'accepted']);
-    return data?.map(inv => inv.invitee_id) || [];
-  },
-  enabled: !!eventId && showInviteDialog
-});
-
-const invitedFriendIds = existingInvites;
-
-const filteredFriends = useMemo(() => {
-  return friends.filter(f => 
-    f.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-}, [friends, searchQuery]);
-
-  const handleSendInvites = () => {
-    if (selectedFriends.size === 0) {
-      toast.error('Please select at least one friend');
-      return;
-    }
-    sendInvitations.mutate(Array.from(selectedFriends));
-  };
+    queryKey: ['event-invites', eventId],
+    queryFn: async () => {
+      if (!eventId) return [];
+      // Use consistent table name - check your database schema
+      const { data } = await supabase
+        .from('event_invitations') // or 'event_invites' - match your schema
+        .select('invitee_id') // or 'receiver_id' - match your schema
+        .eq('event_id', eventId)
+        .in('status', ['pending', 'accepted']);
+      return data?.map(inv => inv.invitee_id) || [];
+    },
+    enabled: !!eventId && showInviteDialog
+  });
+  
+  const invitedFriendIds = existingInvites;
+  
+  const filteredFriends = useMemo(() => {
+    return friends.filter(f => 
+      (f.display_name || "").toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [friends, searchQuery]);
 
   const getShareLink = () => {
     return `${window.location.origin}/app/events/${eventId}`;
@@ -601,7 +593,14 @@ const filteredFriends = useMemo(() => {
     }
   }); 
   
-  const sendInvitations = inviteFriendsMutation;
+  const handleSendInvites = () => {
+    if (selectedFriends.size === 0) {
+      toast.error('Please select at least one friend');
+      return;
+    }
+    // Use the mutation directly
+    inviteFriendsMutation.mutate(Array.from(selectedFriends));
+  };
 
   // Video Call Functions
   const startVideoCall = async () => {
