@@ -153,45 +153,89 @@ export default function AdminUsers() {
     onError: (error: any) => toast.error("Failed to update role: " + error.message)
   });
 
-  // 4. Mutation: Ban User (with reason)
+  // 4. Mutation: Ban User (Enhanced with Optimistic Updates)
   const banUserMutation = useMutation({
     mutationFn: async ({ userId, reason }: { userId: string, reason: string }) => {
-      // Update profile to banned
-      const { error: profileError } = await supabase
+      // Try to save the reason if the column exists, otherwise standard ban
+      const { error } = await supabase
         .from('profiles')
-        .update({ is_banned: true })
+        .update({ 
+          is_banned: true,
+          // Un-comment the next line if you have added a 'ban_reason' column to your profiles table
+          // ban_reason: reason 
+        })
         .eq('user_id', userId);
-      if (profileError) throw profileError;
 
-      // Log ban action (could add to a moderation_logs table if exists)
-      console.log(`User ${userId} banned. Reason: ${reason}`);
+      if (error) throw error;
     },
-    onSuccess: () => {
-      toast.success("User has been banned");
+    onMutate: async ({ userId }) => {
+      // 1. Cancel any outgoing refetches to avoid overwriting our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['admin_users'] });
+
+      // 2. Snapshot the previous value
+      const previousUsers = queryClient.getQueryData<UserProfile[]>(['admin_users', search, page]);
+
+      // 3. Optimistically update the user in the cache
+      queryClient.setQueryData(['admin_users', search, page], (old: UserProfile[] | undefined) => 
+        old ? old.map(u => u.user_id === userId ? { ...u, is_banned: true } : u) : []
+      );
+
+      // 4. Close dialog immediately for better UX
       setBanDialogOpen(false);
       setSelectedUser(null);
       setBanReason("");
+
+      return { previousUsers };
+    },
+    onError: (err, variables, context) => {
+      // Rollback on error
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['admin_users', search, page], context.previousUsers);
+      }
+      toast.error("Failed to ban user: " + err.message);
+    },
+    onSuccess: () => {
+      toast.success("User has been banned");
       queryClient.invalidateQueries({ queryKey: ['admin_users'] });
       queryClient.invalidateQueries({ queryKey: ['admin_user_stats'] });
-    },
-    onError: (error: any) => toast.error("Failed to ban user: " + error.message)
+    }
   });
 
-  // 5. Mutation: Unban User
+  // 5. Mutation: Unban User (Enhanced with Optimistic Updates)
   const unbanUserMutation = useMutation({
     mutationFn: async (userId: string) => {
       const { error } = await supabase
         .from('profiles')
-        .update({ is_banned: false })
+        .update({ 
+          is_banned: false,
+          // Un-comment next line if you want to clear the reason on unban
+          // ban_reason: null 
+        })
         .eq('user_id', userId);
       if (error) throw error;
+    },
+    onMutate: async (userId) => {
+      await queryClient.cancelQueries({ queryKey: ['admin_users'] });
+      
+      const previousUsers = queryClient.getQueryData<UserProfile[]>(['admin_users', search, page]);
+
+      queryClient.setQueryData(['admin_users', search, page], (old: UserProfile[] | undefined) => 
+        old ? old.map(u => u.user_id === userId ? { ...u, is_banned: false } : u) : []
+      );
+
+      return { previousUsers };
+    },
+    onError: (err, userId, context) => {
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['admin_users', search, page], context.previousUsers);
+      }
+      toast.error("Failed to unban user: " + err.message);
     },
     onSuccess: () => {
       toast.success("User has been unbanned");
       queryClient.invalidateQueries({ queryKey: ['admin_users'] });
       queryClient.invalidateQueries({ queryKey: ['admin_user_stats'] });
-    },
-    onError: (error: any) => toast.error("Failed to unban user: " + error.message)
+    }
   });
 
   // --- Helpers ---
