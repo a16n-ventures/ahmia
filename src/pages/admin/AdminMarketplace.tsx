@@ -21,98 +21,116 @@ export default function AdminMarketplace() {
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [editingItem, setEditingItem] = useState<StoreItem | null>(null);
 
-  // Fetch stores
+  // --- QUERIES ---
   const { data: stores = [], isLoading: storesLoading } = useQuery({
     queryKey: ['admin_stores'],
     queryFn: async () => {
-      const { data, error } = await (supabase.from('stores') as any)
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
+      const { data, error } = await supabase.from('stores').select('*').order('created_at', { ascending: false });
+      if (error) { console.error("Error fetching stores:", error); throw error; }
       return data as Store[];
     }
   });
 
-  // Fetch items
   const { data: items = [], isLoading: itemsLoading } = useQuery({
     queryKey: ['admin_items'],
     queryFn: async () => {
-      const { data, error } = await (supabase.from('store_items') as any)
+      const { data, error } = await supabase.from('store_items')
         .select(`*, store:stores!store_id(name, category)`)
         .order('created_at', { ascending: false });
-      if (error) throw error;
+      if (error) { console.error("Error fetching items:", error); throw error; }
       return data as (StoreItem & { store: Pick<Store, 'name' | 'category'> })[];
     }
   });
 
-  // Store mutations
+  // --- NUCLEAR MUTATIONS (OPTIMISTIC UPDATES) ---
+
+  // 1. Delete Store
   const deleteStoreMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await (supabase.from('stores') as any)
-        .delete()
-        .eq('id', id);
+      const { error } = await supabase.from('stores').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_stores'] });
-      toast.success('Store deleted');
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['admin_stores'] });
+      const previous = queryClient.getQueryData(['admin_stores']);
+      queryClient.setQueryData(['admin_stores'], (old: Store[] | undefined) => old ? old.filter(s => s.id !== id) : []);
+      return { previous };
     },
-    onError: (error: any) => toast.error(`Failed to delete store: ${error.message}`)
+    onError: (err, id, context) => {
+      console.error("Delete store failed:", err);
+      if (context?.previous) queryClient.setQueryData(['admin_stores'], context.previous);
+      toast.error(`Delete failed: ${err.message}`);
+    },
+    onSuccess: () => toast.success('Store deleted')
   });
 
+  // 2. Toggle Store Status
   const toggleStoreStatusMutation = useMutation({
     mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
-      const { error } = await (supabase.from('stores') as any)
-        .update({ is_active })
-        .eq('id', id)
-        .select(); // Added .select() to ensure return and RLS validation
+      // Direct update, no .select() to avoid RLS strictness
+      const { error } = await supabase.from('stores').update({ is_active }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_stores'] });
-      toast.success('Store status updated');
+    onMutate: async ({ id, is_active }) => {
+      // Cancel refetches
+      await queryClient.cancelQueries({ queryKey: ['admin_stores'] });
+      // Snapshot previous value
+      const previousStores = queryClient.getQueryData<Store[]>(['admin_stores']);
+      // Optimistically update
+      queryClient.setQueryData<Store[]>(['admin_stores'], (old) => 
+        old ? old.map(s => s.id === id ? { ...s, is_active } : s) : []
+      );
+      return { previousStores };
     },
-    onError: (error: any) => {
-      toast.error(`Failed to update store: ${error.message}`);
-      // Invalidate to revert UI state if optimistic update failed
-      queryClient.invalidateQueries({ queryKey: ['admin_stores'] });
-    }
+    onError: (err, variables, context) => {
+      console.error("Toggle store failed:", err);
+      // Rollback
+      if (context?.previousStores) queryClient.setQueryData(['admin_stores'], context.previousStores);
+      toast.error(`Update failed: ${err.message}`);
+    },
+    onSuccess: () => toast.success('Store updated')
   });
 
-  // Item mutations
+  // 3. Delete Item
   const deleteItemMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await (supabase.from('store_items') as any)
-        .delete()
-        .eq('id', id);
+      const { error } = await supabase.from('store_items').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_items'] });
-      queryClient.invalidateQueries({ queryKey: ['marketplace_items'] });
-      toast.success('Item deleted');
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['admin_items'] });
+      const previous = queryClient.getQueryData(['admin_items']);
+      queryClient.setQueryData(['admin_items'], (old: any[] | undefined) => old ? old.filter(i => i.id !== id) : []);
+      return { previous };
     },
-    onError: (error: any) => toast.error(`Failed to delete item: ${error.message}`)
+    onError: (err, id, context) => {
+      console.error("Delete item failed:", err);
+      if (context?.previous) queryClient.setQueryData(['admin_items'], context.previous);
+      toast.error(`Delete failed: ${err.message}`);
+    },
+    onSuccess: () => toast.success('Item deleted')
   });
 
+  // 4. Toggle Item Availability
   const toggleItemAvailabilityMutation = useMutation({
     mutationFn: async ({ id, is_available }: { id: string; is_available: boolean }) => {
-      const { error } = await (supabase.from('store_items') as any)
-        .update({ is_available })
-        .eq('id', id)
-        .select(); // Added .select() to ensure return and RLS validation
+      const { error } = await supabase.from('store_items').update({ is_available }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin_items'] });
-      queryClient.invalidateQueries({ queryKey: ['marketplace_items'] });
-      toast.success('Item availability updated');
+    onMutate: async ({ id, is_available }) => {
+      await queryClient.cancelQueries({ queryKey: ['admin_items'] });
+      const previousItems = queryClient.getQueryData<any[]>(['admin_items']);
+      queryClient.setQueryData<any[]>(['admin_items'], (old) => 
+        old ? old.map(i => i.id === id ? { ...i, is_available } : i) : []
+      );
+      return { previousItems };
     },
-    onError: (error: any) => {
-      toast.error(`Failed to update item: ${error.message}`);
-      // Invalidate to revert UI state if optimistic update failed
-      queryClient.invalidateQueries({ queryKey: ['admin_items'] });
-    }
+    onError: (err, variables, context) => {
+      console.error("Toggle item failed:", err);
+      if (context?.previousItems) queryClient.setQueryData(['admin_items'], context.previousItems);
+      toast.error(`Update failed: ${err.message}`);
+    },
+    onSuccess: () => toast.success('Item updated')
   });
 
   const formatPrice = (price: number) => {
@@ -127,12 +145,12 @@ export default function AdminMarketplace() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Marketplace</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Marketplace Admin</h2>
           <p className="text-muted-foreground">Manage stores and items</p>
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -231,7 +249,9 @@ export default function AdminMarketplace() {
                           editingStore={store} 
                           trigger={<Button variant="ghost" size="icon"><Edit className="w-4 h-4" /></Button>} 
                         />
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteStoreMutation.mutate(store.id)}><Trash2 className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteStoreMutation.mutate(store.id)}>
+                            {deleteStoreMutation.isPending && deleteStoreMutation.variables === store.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -299,7 +319,9 @@ export default function AdminMarketplace() {
                           editingItem={item} 
                           trigger={<Button variant="ghost" size="icon"><Edit className="w-4 h-4" /></Button>} 
                         />
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteItemMutation.mutate(item.id)}><Trash2 className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteItemMutation.mutate(item.id)}>
+                             {deleteItemMutation.isPending && deleteItemMutation.variables === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
