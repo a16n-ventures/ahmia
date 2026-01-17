@@ -28,9 +28,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-
-    // Attempt AI gateway connection for premium users
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    
+    const nigerianKeywords = ['owambe', 'party', 'tech', 'lagos', 'abuja', 'vibes', 'cruise', 'wedding'];
+      if (nigerianKeywords.some(k => event.title.toLowerCase().includes(k))) {
+          matchScore += 15; // Local Relevance Boost
+      }
 
     // --- FETCH DATA ---
     const [profileRes, friendsRes, adsRes] = await Promise.all([
@@ -139,9 +141,9 @@ serve(async (req) => {
         // Location proximity boost
         if (user_lat && user_long && event.latitude && event.longitude) {
           const distance = calculateDistance(user_lat, user_long, event.latitude, event.longitude);
-          if (distance < 10) matchScore += 30;
-          else if (distance < 50) matchScore += 15;
-          else if (distance < 100) matchScore += 5;
+              if (distance < 5) matchScore += 40;
+                else if (distance < 15) matchScore += 20;
+                else matchScore -= 10; // Penalize far events heavily
         }
         
         // Interest matching
@@ -154,7 +156,7 @@ serve(async (req) => {
         
         // Popularity boost
         const attendeeCount = event.event_attendees?.[0]?.count || 0;
-        matchScore += Math.min(attendeeCount * 0.5, 15);
+        matchScore += Math.min(attendeeCount * 1.5, 40);
         
         // Boosted events get priority
         if (event.is_boosted) matchScore += 20;
@@ -227,8 +229,7 @@ serve(async (req) => {
     const adInterval = 6;
 
     feedData.forEach((item, index) => {
-      // Insert ad at intervals
-      if (index > 0 && index % adInterval === 0 && processedAds[adIndex]) {
+      if (!profile.is_premium && index > 0 && index % adInterval === 0 && processedAds[adIndex]) {
         finalFeed.push(processedAds[adIndex]);
         adIndex = (adIndex + 1) % processedAds.length;
       }
@@ -236,27 +237,28 @@ serve(async (req) => {
     });
 
     // --- AI AGGREGATION FOR PREMIUM USERS ---
+    // --- AI AGGREGATION FOR PREMIUM USERS (OPENAI) ---
     let aiInsights = null;
-    if (profile.is_premium && lovableApiKey && locationFilter) {
+    const openAiKey = Deno.env.get('OPENAI_API_KEY'); // Ensure this is set in your Supabase Secrets
+
+    if (profile.is_premium && openAiKey && locationFilter) {
       try {
-        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
+            'Authorization': `Bearer ${openAiKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: 'google/gemini-3-flash-preview',
+            model: 'gpt-4o-mini', // Or 'gpt-4o' / 'gpt-3.5-turbo'
             messages: [{
-              role: 'user',
-              content: `Based on these events and communities in ${locationFilter}, provide a brief 2-sentence summary of what's happening:
-              
-Events: ${eventsData.slice(0, 5).map(e => e.title).join(', ')}
-Communities: ${communitiesData.slice(0, 5).map(c => c.name).join(', ')}
-
-Be concise and highlight the most interesting opportunities.`
+              role: 'system',
+              content: `You are a hype-man for ${locationFilter}, Nigeria. 
+                Look at these events: ${eventsData.slice(0, 5).map(e => e.title).join(', ')}.
+                Give a 2-sentence "Vibe Check". Tell me where the action is. 
+                Keep it slang-heavy and fun (use words like 'Owambe', 'Detty December'). Don't be formal, make it sound like a text from a friend.`
             }],
-            max_tokens: 100
+            max_tokens: 150
           })
         });
 
@@ -265,7 +267,7 @@ Be concise and highlight the most interesting opportunities.`
           aiInsights = aiData.choices?.[0]?.message?.content || null;
         }
       } catch (aiError) {
-        console.error('AI aggregation failed:', aiError);
+        console.error('OpenAI aggregation failed:', aiError);
       }
     }
 
