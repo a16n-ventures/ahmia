@@ -88,7 +88,7 @@ const VerifiedBadge = ({ userId }: { userId?: string }) => {
     const checkPremium = async () => {
       // Check for active subscription OR active premium feature package
       const { data: sub } = await supabase.from('subscriptions')
-        .select('status').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+        .select('status').eq('user_id', userId).eq('status', 'active').maybeSingle();
       const { data: feat } = await supabase.from('premium_features')
         .select('is_active').eq('user_id', user.id).gt('expires_at', new Date().toISOString()).maybeSingle();
       
