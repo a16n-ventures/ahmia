@@ -81,33 +81,24 @@ interface Event {
 
 // --- SMART VERIFIED BADGE ---
 const VerifiedBadge = ({ userId }: { userId?: string }) => {
-  const [isVerified, setIsVerified] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
-    // FIX: Check the userId prop (the author), not the 'user' (you)
-    if (!userId) return; 
-
+    if (!user) return;
     const checkPremium = async () => {
-      // Check if the AUTHOR of the post is premium
+      // Check for active subscription OR active premium feature package
       const { data: sub } = await supabase.from('subscriptions')
-        .select('status')
-        .eq('user_id', userId) // Use userId prop
-        .eq('status', 'active')
-        .maybeSingle();
-
+        .select('status').eq('user_id', user.id).eq('status', 'active').maybeSingle();
       const { data: feat } = await supabase.from('premium_features')
-        .select('is_active')
-        .eq('user_id', userId) // Use userId prop
-        .gt('expires_at', new Date().toISOString())
-        .maybeSingle();
+        .select('is_active').eq('user_id', user.id).gt('expires_at', new Date().toISOString()).maybeSingle();
       
-      setIsVerified(!!sub || !!feat);
+      setIsPremium(!!sub || !!feat);
     };
     checkPremium();
-  }, [userId]);
+  }, [user]);
 
-  if (!isVerified) return null;
-  
+  if (!isPremium) return null;
+
   return (
     <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 ml-1" viewBox="0 0 22 22" fill="currentColor">
       <path d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.854-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.688-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.634.433 1.218.877 1.688.47.443 1.054.747 1.687.878.633.132 1.29.084 1.897-.136.274.586.705 1.084 1.246 1.439.54.354 1.17.551 1.816.569.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.239 1.266.296 1.903.164.636-.132 1.22-.447 1.68-.907.46-.46.776-1.044.908-1.681s.075-1.299-.165-1.903c.586-.274 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z" />
@@ -600,8 +591,8 @@ const Feed = () => {
     };
     fetchMyFriends();
 
-    const channel = supabase.channel('social-feed')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'social_posts' }, () => {
+    const channel = ('social-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'social_posts' }, () => {
          fetchSmartFeed(); 
       })
       .subscribe();
@@ -652,11 +643,19 @@ const Feed = () => {
       .select(`*, profiles (display_name, avatar_url, user_id), post_likes (user_id)`)
       .order('created_at', { ascending: false })
       .limit(30);
-
+    
     if (!error && posts) {
-      const formattedPosts = posts.map((p: any) => ({
+      let finalPosts = posts;
+    
+      // NUCLEAR FIX: Filter ads in fallback too
+      if (isPremium) {
+         finalPosts = finalPosts.filter(p => p.post_type !== 'ad');
+      }
+    
+      const formattedPosts = finalPosts.map((p: any) => ({
           ...p,
-          is_liked_by_user: p.post_likes && p.post_likes.some((l: any) => l.user_id === user?.id)
+          // Fix: Ensure we strictly check if the ARRAY of likes contains the user ID
+          is_liked_by_user: p.post_likes && Array.isArray(p.post_likes) && p.post_likes.some((l: any) => l.user_id === user?.id)
       }));
       setFeedPosts(formattedPosts as Post[]);
     }
@@ -1032,19 +1031,37 @@ const Feed = () => {
   };
 
   const handleLikePost = async (post: Post) => {
-    const isLiked = post.is_liked_by_user;
+  if (!user) return;
+
+    // 1. Get current state specifically
+    const wasLiked = post.is_liked_by_user;
+    
+    // 2. Optimistic Update (Immediate UI Switch)
     setFeedPosts(prev => prev.map(p => p.id === post.id ? { 
         ...p, 
-        likes_count: isLiked ? p.likes_count - 1 : p.likes_count + 1,
-        is_liked_by_user: !isLiked
+        likes_count: wasLiked ? Math.max(0, p.likes_count - 1) : p.likes_count + 1,
+        is_liked_by_user: !wasLiked
     } : p));
-
-    if (isLiked) {
-        await supabase.from('post_likes').delete().match({ post_id: post.id, user_id: user?.id });
-        await supabase.rpc('decrement_post_likes', { post_id: post.id });
-    } else {
-        await supabase.from('post_likes').insert({ post_id: post.id, user_id: user?.id });
-        await supabase.rpc('increment_post_likes', { post_id: post.id });
+  
+    try {
+      if (wasLiked) {
+          // UNLIKE: Remove record first, then decrement count
+          const { error } = await supabase.from('post_likes').delete().match({ post_id: post.id, user_id: user.id });
+          if (!error) await supabase.rpc('decrement_post_likes', { post_id: post.id });
+      } else {
+          // LIKE: Insert record first. If conflict (already liked), it fails gracefully.
+          const { error } = await supabase.from('post_likes').insert({ post_id: post.id, user_id: user.id });
+          // Only increment count if insert succeeded (prevent double counting)
+          if (!error) await supabase.rpc('increment_post_likes', { post_id: post.id });
+      }
+    } catch (err) {
+      console.error("Like failed, reverting UI", err);
+      // Revert UI if DB failed
+      setFeedPosts(prev => prev.map(p => p.id === post.id ? { 
+          ...p, 
+          likes_count: wasLiked ? p.likes_count + 1 : Math.max(0, p.likes_count - 1),
+          is_liked_by_user: wasLiked
+      } : p));
     }
   };
 
