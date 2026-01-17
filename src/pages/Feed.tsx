@@ -479,7 +479,7 @@ function CommentItemUI({ comment, currentUserId, isLiked, postId, onLike, onRepl
   );
 }
 
-// --- STORY VIEWER --- (Use Instagram-style component)
+// --- STORY VIEWER --- //
 import { InstagramStoryViewer } from '@/components/feed/InstagramStoryViewer';
 
 function StoryViewer({ user, onClose, onStoryChange }: { user: Profile; onClose: () => void; onStoryChange?: () => void }) {
@@ -549,6 +549,8 @@ const Feed = () => {
   
   // Profile Preview
   const [previewProfile, setPreviewProfile] = useState<any | null>(null);
+  
+  const [aiInsights, setAiInsights] = useState<string | null>(null);
 
   // Search & Spotlight States
   const [searchQuery, setSearchQuery] = useState("");
@@ -739,6 +741,8 @@ const Feed = () => {
         if (isPremium) {
           rawPosts = rawPosts.filter((p: any) => p.post_type !== 'ad');
         }
+        
+        setAiInsights(response.ai_insights || null);
         
         const postIds = rawPosts.map((p: any) => p.id);
 
@@ -1584,6 +1588,26 @@ const Feed = () => {
 
             {/* FEED CONTENT */}
             <TabsContent value="feed" className="space-y-4">
+                
+                {isPremium && aiInsights && (
+                  <Card className="border-amber-200/50 bg-gradient-to-r from-amber-50/50 to-orange-50/50 shadow-sm mb-4 overflow-hidden">
+                    <CardContent className="p-4 flex gap-3">
+                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center shrink-0 shadow-sm">
+                        <Sparkles className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-bold text-sm text-amber-900 flex items-center gap-2">
+                           The Vibe Check 
+                           <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] h-5">Premium</Badge>
+                        </h3>
+                        <p className="text-sm text-amber-800/80 mt-1 leading-relaxed">
+                          {aiInsights}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Simplified Post Trigger */}
                 <Card className="border-0 shadow-sm bg-card/50 cursor-pointer hover:bg-card/80 transition-colors" onClick={() => openCreateModal('post')}>
                   <CardContent className="p-4 flex items-center gap-3">
