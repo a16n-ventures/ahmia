@@ -84,7 +84,7 @@ const VerifiedBadge = ({ userId }: { userId?: string }) => {
   const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     const checkPremium = async () => {
       // Check for active subscription OR active premium feature package
       const { data: sub } = await supabase.from('subscriptions')
@@ -591,7 +591,7 @@ const Feed = () => {
     };
     fetchMyFriends();
 
-    const channel = ('social-feed')
+    const channel = supabase.channel('social-feed')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'social_posts' }, () => {
          fetchSmartFeed(); 
       })
