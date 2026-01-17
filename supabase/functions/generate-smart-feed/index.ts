@@ -203,7 +203,7 @@ serve(async (req) => {
       if (creatorHasBoost) {
         if (interestMatch) {
            // INTELLIGENT SUGGESTION: Match found + Paid Boost = EXPLOSIVE VISIBILITY
-           matchScore += 500; // Guarantee top slot
+           matchScore += 100; // Guarantee top slot
         } else {
            // Paid boost but no interest match? Smaller boost (Don't spam irrelevant users)
            matchScore += 50; 
@@ -285,7 +285,7 @@ serve(async (req) => {
     let aiInsights = null;
     const openAiKey = Deno.env.get('OPENAI_API_KEY'); 
 
-    if (openAiKey && locationFilter) {
+    if (isViewerPremium && openAiKey && locationFilter) {
       try {
          const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
