@@ -29,19 +29,21 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // --- FETCH DATA ---
-    const [profileRes, friendsRes, adsRes] = await Promise.all([
+    // --- FETCH DATA (FIXED SYNTAX) ---
+    // 1. Fetch Profile & Friends first
+    const [profileRes, friendsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('user_id', user_id).single(),
-      supabase.from('friendships').select('addressee_id, requester_id').eq('status', 'accepted').or(`requester_id.eq.${user_id},addressee_id.eq.${user_id}`),
+      supabase.from('friendships').select('addressee_id, requester_id').eq('status', 'accepted').or(`requester_id.eq.${user_id},addressee_id.eq.${user_id}`)
+    ]);
 
-const { data: rawAds } = await supabase
+    // 2. Fetch User Ads separately (This was breaking your Promise.all before)
+    const { data: rawAds } = await supabase
       .from('user_ads')
       .select('*')
-      .eq('status', 'active') // Only active ads
+      .eq('status', 'active') 
       .limit(10);
 
     const profile = profileRes.data || { is_premium: false, interests: [] };
-    const rawAds = adsRes.data || [];
     const friendIds = friendsRes.data?.map((f: any) => 
       f.requester_id === user_id ? f.addressee_id : f.requester_id
     ) || [];
@@ -51,7 +53,6 @@ const { data: rawAds } = await supabase
     let communitiesData: any[] = [];
 
     // --- LOCATION-BASED AGGREGATION ---
-    // Build location filter for events and communities
     let locationFilter = '';
     if (city) {
       locationFilter = city;
@@ -59,18 +60,14 @@ const { data: rawAds } = await supabase
       locationFilter = location_name;
     }
 
-    // Fetch Events - prioritize by location and recency
+    // Fetch Events
     const eventsQuery = supabase
       .from('events')
-      .select(`
-        *,
-        event_attendees(count)
-      `)
+      .select(`*, event_attendees(count)`)
       .gt('start_date', new Date().toISOString())
       .order('start_date', { ascending: true })
       .limit(30);
 
-    // Apply location filter if available
     if (locationFilter) {
       eventsQuery.ilike('location', `%${locationFilter}%`);
     }
@@ -80,22 +77,16 @@ const { data: rawAds } = await supabase
     // Fetch Communities
     const communitiesQuery = supabase
       .from('communities')
-      .select(`
-        *,
-        community_members!inner(user_id, role)
-      `)
+      .select(`*, community_members!inner(user_id, role)`)
       .order('member_count', { ascending: false })
       .limit(20);
 
     const { data: communities } = await communitiesQuery;
 
-    // Fetch Posts with proper profile joins
+    // Fetch Posts (Relaxed Join to prevent errors)
     const { data: posts, error: postsError } = await supabase
       .from('social_posts')
-      .select(`
-        *,
-        profiles (display_name, avatar_url, user_id)
-      `)
+      .select(`*, profiles (display_name, avatar_url, user_id)`)
       .order('created_at', { ascending: false })
       .limit(50);
       
@@ -107,15 +98,11 @@ const { data: rawAds } = await supabase
     if (posts) {
       feedData = posts.map((post: any) => {
         let score = 0;
-        
-        // Boost friends' posts
         if (friendIds.includes(post.user_id)) score += 30;
         
-        // Recency boost (decay over time)
         const hoursOld = (Date.now() - new Date(post.created_at).getTime()) / (1000 * 60 * 60);
-        score -= Math.min(hoursOld * 0.5, 20); // Max 20 point penalty
+        score -= Math.min(hoursOld * 0.5, 20);
         
-        // Engagement boost
         score += (post.likes_count || 0) * 0.5;
         score += (post.comments_count || 0) * 1;
         
@@ -130,43 +117,33 @@ const { data: rawAds } = await supabase
 
     // --- PROCESS EVENTS ---
     if (events) {
-      // Check user's attendance status
-      const { data: userAttendance } = await supabase
-        .from('event_attendees')
-        .select('event_id')
-        .eq('user_id', user_id);
-
+      const { data: userAttendance } = await supabase.from('event_attendees').select('event_id').eq('user_id', user_id);
       const attendingEventIds = new Set(userAttendance?.map(a => a.event_id) || []);
 
       eventsData = events.map((event: any) => {
-        let matchScore = 50; // Base score
+        let matchScore = 50; 
         
+        // --- NIGERIAN KEYWORDS LOGIC (CORRECTLY PLACED) ---
         const nigerianKeywords = ['owambe', 'party', 'tech', 'lagos', 'abuja', 'vibes', 'cruise', 'wedding'];
-          if (nigerianKeywords.some(k => event.title.toLowerCase().includes(k))) {
-              matchScore += 15; // Local Relevance Boost
-          }
+        if (nigerianKeywords.some(k => event.title.toLowerCase().includes(k))) {
+            matchScore += 15; 
+        }
         
-        // Location proximity boost
         if (user_lat && user_long && event.latitude && event.longitude) {
           const distance = calculateDistance(user_lat, user_long, event.latitude, event.longitude);
-              if (distance < 5) matchScore += 40;
-                else if (distance < 15) matchScore += 20;
-                else matchScore -= 10; // Penalize far events heavily
+          if (distance < 5) matchScore += 40;
+          else if (distance < 15) matchScore += 20;
+          else matchScore -= 10;
         }
         
-        // Interest matching
         if (profile.interests && event.category) {
           const userInterests = profile.interests.map((i: string) => i.toLowerCase());
-          if (userInterests.includes(event.category.toLowerCase())) {
-            matchScore += 25;
-          }
+          if (userInterests.includes(event.category.toLowerCase())) matchScore += 25;
         }
         
-        // Popularity boost
         const attendeeCount = event.event_attendees?.[0]?.count || 0;
         matchScore += Math.min(attendeeCount * 1.5, 40);
         
-        // Boosted events get priority
         if (event.is_boosted) matchScore += 20;
         
         return {
@@ -182,21 +159,13 @@ const { data: rawAds } = await supabase
 
     // --- PROCESS COMMUNITIES ---
     if (communities) {
-      // Check user's membership
-      const { data: userMemberships } = await supabase
-        .from('community_members')
-        .select('community_id, role')
-        .eq('user_id', user_id);
-
+      const { data: userMemberships } = await supabase.from('community_members').select('community_id, role').eq('user_id', user_id);
       const membershipMap = new Map(userMemberships?.map(m => [m.community_id, m.role]) || []);
 
       communitiesData = communities.map((community: any) => {
         let matchScore = 40;
-        
-        // Member count popularity
         matchScore += Math.min((community.member_count || 0) * 0.3, 20);
         
-        // User is already a member - show first
         if (membershipMap.has(community.id)) {
           matchScore += 30;
         }
@@ -212,12 +181,10 @@ const { data: rawAds } = await supabase
     }
 
     // --- ENHANCED AD SYSTEM ---
-    // Process ads with different placements and targeting
     const processedAds = (rawAds || []).map((ad: any) => ({
       id: `sponsored-${ad.id}`,
       type: 'ad',
       post_type: 'ad',
-      // User Ads table uses 'content', not 'description'
       content: ad.content || ad.description || 'Sponsored Content', 
       image_url: ad.image_url,
       location: 'Sponsored',
@@ -226,7 +193,7 @@ const { data: rawAds } = await supabase
       created_at: new Date().toISOString(),
       profiles: { 
         display_name: ad.title || 'Sponsored', 
-        avatar_url: null, // Could use app logo or ad specific avatar
+        avatar_url: null,
         user_id: 'sponsor'
       },
       is_sponsored: true
@@ -235,10 +202,9 @@ const { data: rawAds } = await supabase
     // --- INJECT ADS INTO FEED ---
     const finalFeed: any[] = [];
     let adIndex = 0;
-    const adInterval = 6; // Inject ad every 6 posts
+    const adInterval = 6; 
 
     feedData.forEach((item, index) => {
-      // ONLY inject if user is NOT premium AND we have ads available
       if (!profile.is_premium && index > 0 && index % adInterval === 0 && processedAds[adIndex]) {
         finalFeed.push(processedAds[adIndex]);
         adIndex = (adIndex + 1) % processedAds.length;
@@ -246,9 +212,9 @@ const { data: rawAds } = await supabase
       finalFeed.push(item);
     });
 
-    // --- AI AGGREGATION FOR PREMIUM USERS (OPENAI) ---
+    // --- AI INSIGHTS (OPENAI) ---
     let aiInsights = null;
-    const openAiKey = Deno.env.get('OPENAI_API_KEY'); // Ensure this is set in your Supabase Secrets
+    const openAiKey = Deno.env.get('OPENAI_API_KEY'); 
 
     if (profile.is_premium && openAiKey && locationFilter) {
       try {
@@ -259,7 +225,7 @@ const { data: rawAds } = await supabase
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini', // Or 'gpt-4o' / 'gpt-3.5-turbo'
+            model: 'gpt-4o-mini',
             messages: [{
               role: 'system',
               content: `You are a hype-man for ${locationFilter}, Nigeria. 
@@ -305,15 +271,11 @@ const { data: rawAds } = await supabase
   }
 });
 
-// Haversine distance calculation
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
+  const R = 6371; 
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
