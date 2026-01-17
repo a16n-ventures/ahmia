@@ -283,8 +283,13 @@ serve(async (req) => {
 
     // 6. AI INSIGHTS (Viewer Premium Benefit)
     let aiInsights = null;
-    const openAiKey = Deno.env.get('OPENAI_API_KEY'); 
-
+    const openAiKey = Deno.env.get('OPENAI_API_KEY');
+console.log("🔍 DEBUG VARIABLES:", {
+  hasKey: !!openAiKey, // Should be TRUE. If false, your secret is missing.
+  location: locationFilter, // Should be 'Abuja' or your city.
+  isPremium: isViewerPremium // Likely FALSE for your test user.
+});
+    
     if (isViewerPremium && openAiKey && locationFilter) {
       try {
          const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
