@@ -724,11 +724,68 @@ const Feed = () => {
     }
   };
 
+// Shared utility: Gets location and city, returns them as data (no UI side effects)
+const fetchCurrentLocation = (): Promise<{ lat: number; long: number; city: string | null; formattedAddress: string }> => {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation not supported"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        try {
+          // Reuse your existing Nominatim logic
+          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+          const data = await response.json();
+          const address = data.address;
+          
+          // Logic from your original file
+          const city = address.city || address.town || address.village || address.hamlet || address.state; 
+          const country = address.country;
+          const formattedAddress = city && country ? `${city}, ${country}` : data.display_name.split(',')[0];
+
+          resolve({ lat: latitude, long: longitude, city, formattedAddress });
+        } catch (error) {
+          // If reverse geocoding fails, return raw coords
+          resolve({ 
+            lat: latitude, 
+            long: longitude, 
+            city: null, 
+            formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` 
+          });
+        }
+      },
+      (err) => reject(err)
+    );
+  });
+};
+      
   const fetchSmartFeed = async () => {
     setLoading(true);
+    let payload: any = { user_id: user?.id };
+
+    try {
+      // 2. REUSE THE SHARED LOGIC
+      const locData = await fetchCurrentLocation();
+      
+      // Merge location into payload
+      payload = {
+        ...payload,
+        user_lat: locData.lat,
+        user_long: locData.long,
+        city: locData.city 
+      };
+      
+      // Optional: If you want the feed to auto-update the "Create Post" location state too
+       setLocationData(locData.formattedAddress) 
+
+    } catch (e) {
+      console.log("Location access denied or failed, loading standard feed.");
+  }
     try {
       const { data: response, error } = await supabase.functions.invoke('generate-smart-feed', {
-        body: { user_id: user?.id }
+        body: payload 
       });
 
       if (error) throw error;
@@ -876,29 +933,15 @@ const Feed = () => {
       setShowTagList(false);
   };
 
-  const getLocation = () => {
-      if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-              async (pos) => {
-                  const { latitude, longitude } = pos.coords;
-                  try {
-                      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-                      const data = await response.json();
-                      const address = data.address;
-                      const city = address.city || address.town || address.village || address.hamlet;
-                      const country = address.country;
-                      const locationName = city && country ? `${city}, ${country}` : data.display_name.split(',')[0]; 
-                      setLocationData(locationName);
-                      toast.success("Location added");
-                  } catch (error) {
-                      setLocationData(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
-                      toast.success("Location coordinates added");
-                  }
-              },
-              (err) => {
-                  toast.error("Could not get location");
-              }
-          );
+  const getLocation = async () => {
+      try {
+          const locData = await fetchCurrentLocation();
+          setLocationData(locData.formattedAddress); // Update State
+          toast.success("Location added"); // Keep the UI feedback
+      } catch (error) {
+          toast.error("Could not get location");
+      }
+  };
       } else {
           toast.error("Geolocation not supported");
       }
