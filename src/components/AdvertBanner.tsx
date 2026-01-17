@@ -105,7 +105,7 @@ export const AdvertBanner = () => {
   const currentAd = adverts[currentIndex];
 
   return (
-    <Card className="fixed bottom-16 left-2 right-2 z-40 mb-5 border-primary/20 shadow-xl bg-card/95 backdrop-blur-md overflow-hidden">
+    <Card className="fixed bottom-16 z-40 mb-5 border-primary/20 shadow-xl bg-card/95 backdrop-blur-md overflow-hidden">
       <div className="relative">
         {/* Close button */}
         <button
