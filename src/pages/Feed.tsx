@@ -95,7 +95,7 @@ const VerifiedBadge = ({ userId }: { userId?: string }) => {
       setIsPremium(!!sub || !!feat);
     };
     checkPremium();
-  }, [user]);
+  }, [userId]);
 
   if (!isPremium) return null;
 
