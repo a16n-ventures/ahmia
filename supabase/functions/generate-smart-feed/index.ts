@@ -38,8 +38,12 @@ serve(async (req) => {
     const [profileRes, friendsRes, adsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('user_id', user_id).single(),
       supabase.from('friendships').select('addressee_id, requester_id').eq('status', 'accepted').or(`requester_id.eq.${user_id},addressee_id.eq.${user_id}`),
-      supabase.from('advertisements').select('*').eq('is_active', true).limit(10)
-    ]);
+
+const { data: rawAds } = await supabase
+      .from('user_ads')
+      .select('*')
+      .eq('status', 'active') // Only active ads
+      .limit(10);
 
     const profile = profileRes.data || { is_premium: false, interests: [] };
     const rawAds = adsRes.data || [];
@@ -91,14 +95,18 @@ serve(async (req) => {
     const { data: communities } = await communitiesQuery;
 
     // Fetch Posts with proper profile joins
-    const { data: posts } = await supabase
+    const { data: posts, error: postsError } = await supabase
       .from('social_posts')
       .select(`
         *,
-        profiles!social_posts_user_id_fkey(display_name, avatar_url, user_id)
+        profiles (display_name, avatar_url, user_id)
       `)
       .order('created_at', { ascending: false })
       .limit(50);
+      
+    if (postsError) {
+      console.error("Error fetching posts:", postsError);
+    }
 
     // --- PROCESS POSTS ---
     if (posts) {
@@ -205,30 +213,32 @@ serve(async (req) => {
 
     // --- ENHANCED AD SYSTEM ---
     // Process ads with different placements and targeting
-    const processedAds = rawAds.map((ad: any) => ({
-      id: `ad-${ad.id}`,
+    const processedAds = (rawAds || []).map((ad: any) => ({
+      id: `sponsored-${ad.id}`,
       type: 'ad',
       post_type: 'ad',
-      title: ad.title,
-      content: ad.description,
+      // User Ads table uses 'content', not 'description'
+      content: ad.content || ad.description || 'Sponsored Content', 
       image_url: ad.image_url,
-      link_url: ad.link_url,
-      placement: ad.placement,
+      location: 'Sponsored',
+      likes_count: 0,
+      comments_count: 0,
+      created_at: new Date().toISOString(),
       profiles: { 
         display_name: ad.title || 'Sponsored', 
-        avatar_url: ad.image_url,
-        user_id: 'ad'
+        avatar_url: null, // Could use app logo or ad specific avatar
+        user_id: 'sponsor'
       },
-      created_at: new Date().toISOString(),
       is_sponsored: true
     }));
 
-    // Intersperse ads into feed (every 5-7 posts)
+    // --- INJECT ADS INTO FEED ---
     const finalFeed: any[] = [];
     let adIndex = 0;
-    const adInterval = 6;
+    const adInterval = 6; // Inject ad every 6 posts
 
     feedData.forEach((item, index) => {
+      // ONLY inject if user is NOT premium AND we have ads available
       if (!profile.is_premium && index > 0 && index % adInterval === 0 && processedAds[adIndex]) {
         finalFeed.push(processedAds[adIndex]);
         adIndex = (adIndex + 1) % processedAds.length;
@@ -236,7 +246,6 @@ serve(async (req) => {
       finalFeed.push(item);
     });
 
-    // --- AI AGGREGATION FOR PREMIUM USERS ---
     // --- AI AGGREGATION FOR PREMIUM USERS (OPENAI) ---
     let aiInsights = null;
     const openAiKey = Deno.env.get('OPENAI_API_KEY'); // Ensure this is set in your Supabase Secrets
