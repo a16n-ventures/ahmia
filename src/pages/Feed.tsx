@@ -84,18 +84,21 @@ const VerifiedBadge = ({ userId }: { userId?: string }) => {
   const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) return; // FIX 1: Check userId, not user
+
     const checkPremium = async () => {
-      // Check for active subscription OR active premium feature package
+      // FIX 2: Use userId (the author), NOT user.id (you)
       const { data: sub } = await supabase.from('subscriptions')
-        .select('status').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+        .select('status').eq('user_id', userId).eq('status', 'active').maybeSingle();
+      
+      // FIX 3: Use userId here too
       const { data: feat } = await supabase.from('premium_features')
-        .select('is_active').eq('user_id', user.id).gt('expires_at', new Date().toISOString()).maybeSingle();
+        .select('is_active').eq('user_id', userId).gt('expires_at', new Date().toISOString()).maybeSingle();
       
       setIsPremium(!!sub || !!feat);
     };
     checkPremium();
-  }, [user]);
+  }, [userId]); // FIX 4: Depend on userId
 
   if (!isPremium) return null;
 
