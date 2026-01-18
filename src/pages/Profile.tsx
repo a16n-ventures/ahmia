@@ -268,7 +268,8 @@ const Profile = () => {
 
           {/* Social Stats */}
           <div className="flex gap-8 mt-6 pb-4 border-b border-dashed border-border/60">
-            <div className="text-center cursor-pointer hover:opacity-70 transition-opacity">
+            <div className="text-center cursor-pointer hover:opacity-70 transition-opacity"
+                onClick={() => navigate('/app/friends')}>
               <span className="block font-bold text-lg">{profile.friends_count || 0}</span>
               <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Friends</span>
             </div>
