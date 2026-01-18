@@ -341,31 +341,32 @@ const MapPage = () => {
               </div>
 
               <div className="flex justify-between items-center">
-                <div className="bg-background/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex shadow-lg">
-                  <button 
-                    onClick={() => setActiveView('friends')}
-                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'friends' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
+                <div className="w-9" />
+                  <div className="bg-background/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex shadow-lg">
+                    <button 
+                      onClick={() => setActiveView('friends')}
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'friends' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
+                    >
+                      Friends
+                    </button>
+                    <button 
+                      onClick={() => setActiveView('events')}
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'events' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
+                    >
+                      Events
+                    </button>
+                  </div>
+  
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-9 w-9 rounded-full bg-background/60 backdrop-blur-md shadow-sm border border-white/10"
+                    onClick={() => setMapStyle(prev => prev === 'standard' ? 'satellite' : 'standard')}
                   >
-                    Friends
-                  </button>
-                  <button 
-                    onClick={() => setActiveView('events')}
-                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'events' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
-                  >
-                    Events
-                  </button>
+                    {mapStyle === 'standard' ? <Globe className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
+                  </Button>
                 </div>
               </div>
-
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-9 w-9 rounded-full bg-background/60 backdrop-blur-md shadow-sm border border-white/10"
-                  onClick={() => setMapStyle(prev => prev === 'standard' ? 'satellite' : 'standard')}
-                >
-                  {mapStyle === 'standard' ? <Globe className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
-                </Button>
-              
             </div>
           </div>
         )}
