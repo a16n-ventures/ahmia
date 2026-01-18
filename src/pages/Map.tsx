@@ -341,7 +341,6 @@ const MapPage = () => {
               </div>
 
               <div className="flex justify-between items-center w-full">
-                <div className="w-9" />
                   <div className="bg-background/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex shadow-lg">
                     <button 
                       onClick={() => setActiveView('friends')}
@@ -365,7 +364,6 @@ const MapPage = () => {
                   >
                     {mapStyle === 'standard' ? <Globe className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
                   </Button>
-                </div>
               </div>
             </div>
           </div>
