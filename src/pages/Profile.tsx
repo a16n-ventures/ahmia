@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -7,14 +7,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Settings, MapPin, Calendar, Grid, Ticket, 
   LogOut, Sparkles, QrCode, Share2,
-  ChevronRight, Crown, Loader2, Edit2
+  ChevronRight, Crown, Loader2, Edit2, Shield
 } from 'lucide-react';
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger 
 } from "@/components/ui/dialog";
-import { Switch } from '@/components/ui/switch';
-import { Slider } from '@/components/ui/slider';
-import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -36,21 +33,42 @@ const Profile = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('tickets');
 
+  // --- 0. AUTH GUARD ---
+  useEffect(() => {
+    if (!user) {
+      console.log("No user found in Profile, redirecting...");
+      navigate('/auth');
+    }
+  }, [user, navigate]);
+
   // --- 1. DATA FETCHING ---
-  const { data: profile, isLoading } = useQuery({
+  const { data: profile, isLoading, error } = useQuery({
     queryKey: ['profile-main', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
+      console.log("Fetching profile for:", user.id);
+      
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      if (error) {
+        console.error("Profile fetch error:", error);
+        throw error;
+      }
       return data as UserProfile;
-    }
+    },
+    enabled: !!user?.id
   });
 
   const { data: myTickets = [] } = useQuery({
     queryKey: ['my-tickets', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      const { data } = await supabase
+      // Fetch events I'm confirmed for
+      const { data, error } = await supabase
         .from('event_attendees')
         .select(`
           status,
@@ -60,6 +78,7 @@ const Profile = () => {
         .eq('status', 'confirmed')
         .gte('event.start_date', new Date().toISOString());
       
+      if (error) console.error("Tickets error:", error);
       return data?.map((d: any) => d.event) || [];
     }
   });
@@ -70,15 +89,27 @@ const Profile = () => {
     navigate('/auth');
   };
 
-  const updatePreference = (key: string, value: any) => {
-    toast.success("Preference saved");
-  };
-
-  // --- LOADING STATE (Prevents Blank Screen) ---
-  if (isLoading || !profile) {
+  // --- LOADING STATE ---
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-xs text-muted-foreground">Loading Profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- ERROR STATE ---
+  if (error || !profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4 text-center">
+        <div>
+          <h3 className="font-bold text-lg mb-2">Could not load profile</h3>
+          <p className="text-muted-foreground text-sm mb-4">Please try refreshing.</p>
+          <Button onClick={() => window.location.reload()}>Refresh</Button>
+        </div>
       </div>
     );
   }
@@ -95,7 +126,7 @@ const Profile = () => {
         {/* Cover Image Placeholder */}
         <div className="h-36 bg-gradient-to-r from-primary/10 via-purple-500/10 to-orange-500/10 w-full" />
         
-        {/* Settings Dialog (Replaced Sheet with Dialog for safety) */}
+        {/* Settings Dialog (Safe Version) */}
         <div className="absolute top-4 right-4">
           <Dialog>
             <DialogTrigger asChild>
@@ -124,7 +155,7 @@ const Profile = () => {
                     <Button variant="outline" size="sm" onClick={() => navigate('/app/premium')}>Manage</Button>
                   </div>
 
-                  <div className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-lg cursor-pointer transition-colors">
+                  <div className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-lg cursor-pointer transition-colors" onClick={() => toast.info("Edit Profile Coming Soon")}>
                      <div className="flex items-center gap-3">
                       <div className="p-2 bg-muted rounded-lg"><Edit2 className="w-4 h-4" /></div>
                       <p className="font-medium text-sm">Edit Profile</p>
@@ -133,22 +164,23 @@ const Profile = () => {
                   </div>
                 </div>
 
-                {/* Preferences Section */}
+                {/* Preferences Section (Simplified to avoid crashes) */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Discovery</h3>
-                  <div className="space-y-4 px-1">
-                    <div className="flex justify-between text-sm">
-                      <Label>Max Distance</Label>
-                      <span className="text-muted-foreground font-mono">20km</span>
-                    </div>
-                    <Slider defaultValue={[20]} max={100} step={1} />
+                  
+                  <div className="flex items-center justify-between p-2">
+                    <span className="font-medium text-sm">Max Distance</span>
+                    <Badge variant="outline">20km</Badge>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="flex flex-col gap-1">
-                      <span>Ghost Mode</span>
-                      <span className="font-normal text-xs text-muted-foreground">Hide location on map</span>
-                    </Label>
-                    <Switch onCheckedChange={(v) => updatePreference('ghost_mode', v)} />
+
+                  <div className="flex items-center justify-between p-2">
+                    <div className="flex flex-col">
+                      <span className="font-medium text-sm">Ghost Mode</span>
+                      <span className="text-xs text-muted-foreground">Hide location on map</span>
+                    </div>
+                    <Badge variant={profile.is_premium ? "default" : "secondary"}>
+                      {profile.is_premium ? "OFF" : "OFF"}
+                    </Badge>
                   </div>
                 </div>
 
@@ -267,7 +299,7 @@ const Profile = () => {
             {/* Placeholder for future photo feature */}
             {[1,2,3,4,5,6].map((i) => (
               <div key={i} className="aspect-square bg-muted/30 relative group cursor-pointer overflow-hidden">
-                <img src={`https://picsum.photos/seed/${i + user!.id}/400/400`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                <img src={`https://picsum.photos/seed/${i + (user?.id || 'guest')}/400/400`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                 <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
             ))}
