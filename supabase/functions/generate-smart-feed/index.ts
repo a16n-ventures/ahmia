@@ -293,6 +293,11 @@ console.log("🔍 DEBUG VARIABLES:", {
     
     if (isViewerPremium && groqApiKey && locationFilter) {
       try {
+         // Helper to format events with descriptions safely
+         const eventContext = eventsData.slice(0, 5)
+            .map(e => `Event: ${e.title}. Details: ${e.description?.substring(0, 150) || 'No details'}`)
+            .join('\n');
+        
          const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -303,9 +308,11 @@ console.log("🔍 DEBUG VARIABLES:", {
             model: 'llama-3.3-70b-versatile',
             messages: [{
               role: 'system',
-              content: `You are a hype-man for ${locationFilter}, Nigeria. 
-                Look at these events: ${eventsData.slice(0, 5).map(e => e.title).join(', ')}.
-                Give a 2-sentence "Vibe Check". Tell me where the action is.`
+              content: `You are a high-energy hype-man for ${locationFilter}, Nigeria. Here is the lineup of events happening soon: ${eventContext}
+                
+                Task: Read the "Details" for each event above. 
+                Generate a 2-sentence "Vibe Check" that specifically mentions the coolest activity found in the descriptions. 
+                Do not list the events. Just hype up the specific vibes (e.g., "Afro-beats", "Pool party", "Tech networking").`
             }],
             max_tokens: 150
           })
