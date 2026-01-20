@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -7,15 +7,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Settings, MapPin, Calendar, Grid, Ticket, 
   LogOut, Sparkles, QrCode, Share2,
-  ChevronRight, Crown, Loader2, Edit2, AlertCircle, AtSign, Mail, User, Phone, Heart, Check, Trash2, 
+  ChevronRight, Crown, Loader2, Edit2, AlertCircle, AtSign, Mail, User, Phone, Heart, Check, Trash2, Camera, Copy, Gift
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle 
 } from "@/components/ui/alert-dialog";
 import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger 
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger 
 } from "@/components/ui/dialog";
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -25,6 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useReferrals } from '@/hooks/useReferrals';
 
 // --- TYPES ---
 interface UserPreferences {
@@ -159,7 +162,7 @@ const Profile = () => {
   
     // Profile Settings Dialog State
   const [showProfileSettings, setShowProfileSettings] = useState(false);
-  const [newLink, setNewLink] = useState({ title: '', url: '' }); 
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [settingsForm, setSettingsForm] = useState({
     display_name: '',
     username: '',
@@ -167,20 +170,9 @@ const Profile = () => {
     bio: ''
   });
 
-  // Query with optimized settings
-  const { data, isLoading, refetch, isRefetching, error } = useQuery<CombinedProfile, Error>({
-    queryKey: ['profile', user?.id],
-    queryFn: () => fetchProfileData(user!.id),
-    enabled: !!user,
-    staleTime: STALE_TIME,
-    refetchInterval: REFETCH_INTERVAL,
-    retry: 2,
-    retryDelay: 1000,
-  });
-
   // --- 1. DATA FETCHING ---
-  const { data: profile, isLoading, error } = useQuery({
-    queryKey: ['profile-main', user?.id],
+  const { data: profile, isLoading, error } = useQuery<UserProfile, Error>({
+    queryKey: ['profile', user?.id], // Use consistent key
     queryFn: async () => {
       if (!user?.id) throw new Error('No user');
       
@@ -196,7 +188,9 @@ const Profile = () => {
       return data as UserProfile;
     },
     enabled: !!user?.id,
-    retry: 1,
+    staleTime: STALE_TIME,
+    refetchInterval: REFETCH_INTERVAL,
+    retry: 2,
   });
 
   // Sync local radius state with fetched profile data
@@ -291,20 +285,12 @@ const Profile = () => {
       setShowProfileSettings(false);
       
       // Optimistic update
-      queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
+      queryClient.setQueryData(['profile', user!.id], (oldData: UserProfile | undefined) => {
         if (!oldData) return oldData;
-        
-        const newPrefs = updates.preferences 
-          ? updates.preferences 
-          : oldData.profile.preferences;
-
         return {
           ...oldData,
-          profile: {
-            ...oldData.profile,
-            ...updates,
-            preferences: newPrefs
-          }
+          ...updates,
+          preferences: updates.preferences || oldData.preferences
         };
       });
       
@@ -367,8 +353,6 @@ const Profile = () => {
         if (!oldData) return oldData;
         return {
           ...oldData,
-          profile: {
-            ...oldData.profile,
             avatar_url: newAvatarUrl
           }
         };
@@ -470,8 +454,8 @@ const Profile = () => {
       [key]: value
     };
 
-    // Optimistically update cache
-    queryClient.setQueryData(['profile-main', user.id], (old: UserProfile | undefined) => {
+// ✅ FIXED - Use correct query key
+    queryClient.setQueryData(['profile', user.id], (old: UserProfile | undefined) => {
       if (!old) return old;
       return {
         ...old,
@@ -486,13 +470,13 @@ const Profile = () => {
     
     if (error) {
       toast.error('Failed to save preference');
-      queryClient.invalidateQueries({ queryKey: ['profile-main'] }); // Revert on error
+      // ✅ FIXED - Use correct query key
+      queryClient.invalidateQueries({ queryKey: ['profile', user.id] });
       return;
     }
     
-    // Success feedback
     if (key !== 'discovery_radius') {
-        toast.success("Preference updated");
+      toast.success("Preference updated");
     }
   };
 
