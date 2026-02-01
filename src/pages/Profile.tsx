@@ -660,7 +660,7 @@ const Profile = () => {
                   className="object-cover" 
                   alt={`${profile?.display_name}'s avatar`}
                 />
-              <AvatarFallback className="text-2xl bg-muted text-muted-foreground">{profile?.display_name?.slice(0, 2).toUpperCase() || '?'}</AvatarFallback>
+              <AvatarFallback className="text-2xl bg-muted text-muted-foreground">{displayName.slice(0, 2).toUpperCase() || '?'}</AvatarFallback>
             </Avatar>
             <label className="absolute bottom-0 right-0 w-10 h-10 bg-white text-primary rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:scale-110 transition-transform z-10 border-4 border-primary">
                 {uploadAvatarMutation.isPending ? (
