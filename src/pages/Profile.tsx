@@ -45,6 +45,7 @@ interface UserProfile {
   is_premium?: boolean;
   friends_count?: number;
   preferences?: UserPreferences;
+  phone?: string | null;
 }
 
 // --- CONSTANTS ---
@@ -86,7 +87,7 @@ const ReferralSection = () => {
   if (!referralSettings?.enabled) return null;
 
   return (
-    <div className="p-5 space-y-4 border-t border-border/50">
+    <div className="pt-4 space-y-4 border-t border-border/50">
       <div className="flex items-center gap-2 text-xs text-muted-foreground font-semibold uppercase tracking-wider">
         <Gift className="w-3.5 h-3.5" />
         Invite Friends & Earn
@@ -167,7 +168,8 @@ const Profile = () => {
     display_name: '',
     username: '',
     email: '',
-    bio: ''
+    bio: '',
+    phone: '' // Added missing field
   });
 
   // --- 1. DATA FETCHING ---
@@ -197,13 +199,17 @@ const Profile = () => {
   useEffect(() => {
     if (profile?.preferences?.discovery_radius) {
       setLocalRadius(profile.preferences.discovery_radius / 1000); // Convert meters to km
+    }
+    
+    // Always sync form data when profile is loaded
+    if (profile) {
       setSettingsForm({
         display_name: profile.display_name || '',
         username: profile.username || '',
         email: profile.email || user?.email || '',
-        bio: profile.bio || ''
+        bio: profile.bio || '',
+        phone: profile.phone || ''
       });
-      
     }
   }, [profile, user?.email]); 
   
@@ -270,6 +276,11 @@ const Profile = () => {
      // Bio Logic
       if (updates.bio !== undefined) {
         dbUpdates.bio = updates.bio.trim();
+      }
+
+      // Phone Logic
+      if (updates.phone !== undefined) {
+        dbUpdates.phone = updates.phone.trim();
       }
       
       const { error } = await supabase
@@ -543,7 +554,7 @@ const Profile = () => {
                 <Settings className="w-5 h-5 text-foreground" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Settings</DialogTitle>
               </DialogHeader>
@@ -569,7 +580,7 @@ const Profile = () => {
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="text-white hover:bg-white/20 transition-all rounded-full px-4 font-semibold"
+                        className="text-foreground hover:bg-transparent p-0 font-semibold"
                         onClick={() => setShowProfileSettings(true)}
                       >
                         <Edit2 className="w-4 h-4 mr-2" /> Edit Profile
@@ -613,11 +624,25 @@ const Profile = () => {
                     />
                   </div>
                 </div>
+                
+                {/* Referrals Section (ADDED) */}
+                <ReferralSection />
 
-                <div className="pt-4 border-t">
-                  <Button variant="destructive" className="w-full" onClick={handleLogout}>
+                {/* Actions & Danger Zone */}
+                <div className="pt-2 border-t space-y-3">
+                  <Button variant="outline" className="w-full justify-start" onClick={handleLogout}>
                     <LogOut className="w-4 h-4 mr-2" /> Log Out
                   </Button>
+                  
+                  <div className="pt-2">
+                    <Button 
+                      variant="ghost" 
+                      className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/10" 
+                      onClick={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete Account
+                    </Button>
+                  </div>
                 </div>
               </div>
             </DialogContent>
@@ -850,6 +875,22 @@ const Profile = () => {
                 <AlertCircle className="w-3 h-3" />
                 Changing your email will require verification
               </p>
+            </div>
+            
+             {/* Phone (Added) */}
+             <div className="space-y-2">
+              <Label htmlFor="settings-phone" className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-muted-foreground" />
+                Phone Number
+              </Label>
+              <Input
+                id="settings-phone"
+                type="tel"
+                placeholder="+234..."
+                value={settingsForm.phone}
+                onChange={(e) => setSettingsForm(prev => ({ ...prev, phone: e.target.value }))}
+                className="h-11"
+              />
             </div>
           </div>
 

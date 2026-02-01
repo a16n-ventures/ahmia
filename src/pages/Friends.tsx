@@ -62,7 +62,7 @@ const Friends = () => {
   const [activeTab, setActiveTab] = useState('circle');
   const [isImportOpen, setIsImportOpen] = useState(false);
 
-  // --- 1. FETCH DATA ---
+  // --- 1. DATA FETCHING ---
 
   // A. Fetch My Friends (Confirmed)
   const { data: friends = [], isLoading: loadingFriends, error: friendsError } = useQuery({
@@ -80,7 +80,9 @@ const Friends = () => {
         .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
         .eq('status', 'accepted');
 
-      // ✅ FIX: Filter out null profiles to prevent crashes if a user was deleted
+      if (error) throw error;
+
+      // Filter out null profiles to prevent crashes if a user was deleted
       return data
         .map((f: any) => {
           // Identify the other person (could be null if deleted)
@@ -97,14 +99,14 @@ const Friends = () => {
             avatar_url: profile.avatar_url,
             friendship_id: f.id,
             is_contact: false
-          };
+          } as Friend;
         })
-        .filter(Boolean); // Remove null entries
+        .filter((f): f is Friend => f !== null);
     },
     enabled: !!user
   });
   
-  // Add this after the query
+  // Handle query errors
   useEffect(() => {
     if (friendsError) {
       console.error('Friends query error:', friendsError);
@@ -130,12 +132,12 @@ const Friends = () => {
   
       const contactUserIds = myContacts.map(c => c.matched_user_id);
       
-      // ✅ FIX: Fetch friends inside this query instead of depending on external state
+      // 2. Fetch existing friends to exclude them
       const { data: existingFriends } = await supabase
         .from('friendships')
         .select('requester_id, addressee_id')
-        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-        .eq('status', 'accepted');
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
+        // Note: We check ALL friendships (pending or accepted) to avoid duplicate requests
       
       const friendIds = existingFriends?.map((f: any) => 
         f.requester_id === user.id ? f.addressee_id : f.requester_id
@@ -154,31 +156,31 @@ const Friends = () => {
       return (profiles || []).map((p: any) => ({
         ...p,
         is_contact: true,
+        // Prefer the contact name saved in phone, fallback to profile name
         display_name: myContacts.find(c => c.matched_user_id === p.user_id)?.name || p.display_name
       }));
     },
-    enabled: !!user, // ✅ Only depend on user
+    enabled: !!user,
   });
 
   // C. Fetch Smart Suggestions (Nearby & Mutuals)
-  const { data: suggestions = [], isLoading: loadingSuggestions } = useQuery({
+  const { data: suggestions = [] } = useQuery({
     queryKey: ['friend_suggestions', user?.id, location?.latitude],
     queryFn: async () => {
       if (!user) return [];
       
       try {
-        // Fetch friends INSIDE this query
+        // Fetch friends INSIDE this query for exclusion
         const { data: existingFriends } = await supabase
           .from('friendships')
           .select('requester_id, addressee_id')
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-          .eq('status', 'accepted');
+          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
         
         const friendIds = existingFriends?.map((f: any) => 
           f.requester_id === user.id ? f.addressee_id : f.requester_id
         ) || [];
         
-        // Try RPC first
+        // 1. Try RPC (Database Function) first
         if (location) {
           const { data: rpcData, error } = await supabase.rpc('suggest_nearby_friends', {
             requesting_user_id: user.id,
@@ -199,7 +201,7 @@ const Friends = () => {
           }
         }
   
-        // Fallback: Random profiles
+        // 2. Fallback: Random profiles not currently friends
         let query = supabase
           .from('profiles')
           .select('user_id, display_name, username, avatar_url')
@@ -215,7 +217,7 @@ const Friends = () => {
         return (randomData || []).map((p: any) => ({
           ...p,
           distance_km: null,
-          mutual_count: Math.floor(Math.random() * 3)
+          mutual_count: Math.floor(Math.random() * 3) // Placeholder for UI
         }));
       } catch (e) {
         console.error("Suggestion fetch failed", e);
@@ -238,7 +240,9 @@ const Friends = () => {
         `)
         .eq('addressee_id', user.id)
         .eq('status', 'pending');
-      return data as Request[];
+      
+      // Type assertion with safety check
+      return (data || []).filter(r => r.requester) as unknown as Request[];
     },
     enabled: !!user
   });
@@ -256,10 +260,14 @@ const Friends = () => {
     },
     onSuccess: () => {
         toast.success("Friend request sent!");
-        queryClient.invalidateQueries({ queryKey: ['friend_suggestions'] }); // Refresh suggestions
+        // Refresh all relevant lists
+        queryClient.invalidateQueries({ queryKey: ['friend_suggestions'] });
         queryClient.invalidateQueries({ queryKey: ['app_contacts'] });
+        queryClient.invalidateQueries({ queryKey: ['friend_requests'] });
     },
-    onError: () => toast.error("Could not send request")
+    onError: (err: Error) => {
+      toast.error(err.message || "Could not send request");
+    }
   });
 
   const handleAccept = useMutation({
@@ -271,18 +279,21 @@ const Friends = () => {
       toast.success("Friend added!");
       queryClient.invalidateQueries({ queryKey: ['friend_requests'] });
       queryClient.invalidateQueries({ queryKey: ['my_friends_page'] });
+      queryClient.invalidateQueries({ queryKey: ['friend_suggestions'] }); // Remove from suggestions if there
     },
-    onError: () => toast.error("Failed")
+    onError: () => toast.error("Failed to accept request")
   });
 
   const handleDecline = useMutation({
     mutationFn: async (friendshipId: string) => {
-        await supabase.from('friendships').delete().eq('id', friendshipId);
+        const { error } = await supabase.from('friendships').delete().eq('id', friendshipId);
+        if (error) throw error;
     },
     onSuccess: () => {
         toast.success("Request removed");
         queryClient.invalidateQueries({ queryKey: ['friend_requests'] });
-    }
+    },
+    onError: () => toast.error("Failed to remove request")
   });
 
   // Combined list for display (Friends + Contacts)
@@ -334,7 +345,7 @@ const Friends = () => {
             <TabsTrigger value="requests" className="rounded-lg relative">
               Requests
               {requests.length > 0 && (
-                <Badge className="ml-2 h-5 w-5 rounded-full px-0 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white">
+                <Badge className="ml-2 h-5 w-5 rounded-full px-0 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white animate-pulse">
                   {requests.length}
                 </Badge>
               )}
@@ -344,20 +355,20 @@ const Friends = () => {
           {/* MY CIRCLE TAB */}
           <TabsContent value="circle" className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
             
-            {/* 1. SUGGESTIONS (If friends < 10 or always show lightly) */}
+            {/* 1. SUGGESTIONS (Only show if suggestions exist) */}
             {suggestions.length > 0 && (
                 <div className="mb-6">
                     <div className="flex items-center justify-between mb-3 px-1">
                         <h3 className="font-semibold text-sm text-muted-foreground flex items-center gap-1">
-                            <Sparkles className="w-3 h-3 text-amber-500" /> People nearby
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> People nearby
                         </h3>
                     </div>
                     <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">
                         {suggestions.map((s) => (
-                            <div key={s.user_id} className="min-w-[140px] w-[140px] p-3 rounded-xl border bg-card flex flex-col items-center text-center shadow-sm relative">
-                                <Avatar className="h-14 w-14 mb-2 border-2 border-background shadow-sm">
+                            <div key={s.user_id} className="min-w-[140px] w-[140px] p-3 rounded-xl border bg-card/50 flex flex-col items-center text-center shadow-sm relative group hover:border-primary/30 transition-all">
+                                <Avatar className="h-14 w-14 mb-2 border-2 border-background shadow-sm group-hover:scale-105 transition-transform">
                                     <AvatarImage src={s.avatar_url || undefined} />
-                                    <AvatarFallback>{s.display_name[0]}</AvatarFallback>
+                                    <AvatarFallback>{s.display_name?.[0] || '?'}</AvatarFallback>
                                 </Avatar>
                                 <h4 className="font-bold text-sm truncate w-full">{s.display_name}</h4>
                                 {s.distance_km ? (
@@ -373,8 +384,9 @@ const Friends = () => {
                                     size="sm" 
                                     className="w-full h-8 text-xs rounded-lg"
                                     onClick={() => handleConnect.mutate(s.user_id)}
+                                    disabled={handleConnect.isPending}
                                 >
-                                    Connect
+                                    {handleConnect.isPending ? 'Sent' : 'Connect'}
                                 </Button>
                             </div>
                         ))}
@@ -413,23 +425,29 @@ const Friends = () => {
                 </div>
 
                 {filteredList.map(friend => (
-                  <div key={friend.user_id} className="flex items-center gap-3 p-3 bg-card rounded-xl border shadow-sm group">
+                  <div key={friend.user_id} className="flex items-center gap-3 p-3 bg-card rounded-xl border shadow-sm group hover:shadow-md transition-shadow">
                     <Avatar className="h-12 w-12 cursor-pointer" onClick={() => navigate(`/app/profile?id=${friend.user_id}`)}>
                       <AvatarImage src={friend.avatar_url || undefined} />
-                      <AvatarFallback>{friend.display_name[0]}</AvatarFallback>
+                      <AvatarFallback>{friend.display_name?.[0] || '?'}</AvatarFallback>
                     </Avatar>
                     
                     <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/app/profile?id=${friend.user_id}`)}>
                       <h4 className="font-semibold text-sm truncate flex items-center gap-2">
                           {friend.display_name}
-                          {friend.is_contact && <Badge variant="secondary" className="text-[10px] h-4 px-1">From Contacts</Badge>}
+                          {friend.is_contact && <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-muted text-muted-foreground">From Contacts</Badge>}
                       </h4>
                       <p className="text-xs text-muted-foreground truncate">@{friend.username}</p>
                     </div>
 
                     <div className="flex items-center gap-1">
                       {friend.is_contact ? (
-                          <Button size="sm" variant="secondary" className="h-8 px-3" onClick={() => handleConnect.mutate(friend.user_id)}>
+                          <Button 
+                            size="sm" 
+                            variant="secondary" 
+                            className="h-8 px-3" 
+                            onClick={() => handleConnect.mutate(friend.user_id)}
+                            disabled={handleConnect.isPending}
+                          >
                               <UserPlus className="w-4 h-4 mr-1.5" /> Add
                           </Button>
                       ) : (
@@ -472,7 +490,7 @@ const Friends = () => {
             {loadingRequests ? (
               <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
             ) : requests.length === 0 ? (
-              <div className="text-center py-16 bg-muted/20 rounded-2xl border-2 border-dashed">
+              <div className="text-center py-16 bg-muted/20 rounded-2xl border-2 border-dashed border-muted">
                 <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
                   <UserPlus className="w-8 h-8 text-muted-foreground/30" />
                 </div>
@@ -492,7 +510,7 @@ const Friends = () => {
                 <div key={req.id} className="flex items-center gap-3 p-4 bg-card rounded-xl border shadow-sm">
                   <Avatar className="h-12 w-12">
                     <AvatarImage src={req.requester.avatar_url || undefined} />
-                    <AvatarFallback>{req.requester.display_name[0]}</AvatarFallback>
+                    <AvatarFallback>{req.requester.display_name?.[0] || '?'}</AvatarFallback>
                   </Avatar>
                   
                   <div className="flex-1 min-w-0">
@@ -506,6 +524,7 @@ const Friends = () => {
                       variant="outline" 
                       className="h-9 w-9 p-0 rounded-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
                       onClick={() => handleDecline.mutate(req.id)}
+                      disabled={handleDecline.isPending}
                     >
                       <X className="w-5 h-5" />
                     </Button>
@@ -513,6 +532,7 @@ const Friends = () => {
                       size="sm" 
                       className="h-9 w-9 p-0 rounded-full bg-green-600 hover:bg-green-700 text-white shadow-sm"
                       onClick={() => handleAccept.mutate(req.id)}
+                      disabled={handleAccept.isPending}
                     >
                       <Check className="w-5 h-5" />
                     </Button>
