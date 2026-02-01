@@ -476,12 +476,12 @@ const Profile = () => {
     const { error } = await supabase
       .from('profiles')
       .update({ preferences: newPreferences })
-      .eq('user_id', user.id);
+      .eq('user_id', user?.id);
     
     if (error) {
       toast.error('Failed to save preference');
       // ✅ FIXED - Use correct query key
-      queryClient.invalidateQueries({ queryKey: ['profile', user.id] });
+      queryClient.invalidateQueries({ queryKey: ['profile', user?.id] });
       return;
     }
     
