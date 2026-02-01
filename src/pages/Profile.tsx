@@ -197,6 +197,10 @@ const Profile = () => {
 
   // Sync local radius state with fetched profile data
   useEffect(() => {
+    if (!user) {
+      navigate('/auth');
+    }
+    
     if (profile?.preferences?.discovery_radius) {
       setLocalRadius(profile.preferences.discovery_radius / 1000); // Convert meters to km
     }
@@ -211,7 +215,7 @@ const Profile = () => {
         phone: profile.phone || ''
       });
     }
-  }, [profile, user?.email]); 
+  }, [user, profile, user?.email, navigate]); 
   
     // Profile Settings Update Mutation (Unified)
   const updateProfileSettingsMutation = useMutation({
@@ -491,10 +495,8 @@ const Profile = () => {
   };
 
   // --- 3. LOADING & ERROR STATES ---
-  if (!user) {
-    navigate('/auth');
-    return null;
-  }
+  // If user is missing, show nothing (or a loader) while the useEffect redirects
+  if (!user) return null; 
 
   if (isLoading) {
     return (
