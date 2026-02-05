@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Settings, MapPin, Calendar, Grid, Ticket, 
+import {
+  Settings, MapPin, Calendar, Grid, Ticket,
   LogOut, Sparkles, QrCode, Share2,
   ChevronRight, Crown, Loader2, Edit2, AlertCircle, AtSign, Mail, User, Phone, Heart, Check, Trash2, Camera, Copy, Gift
 } from 'lucide-react';
@@ -14,10 +14,10 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogHeader, AlertDialogTitle 
+  AlertDialogHeader, AlertDialogTitle
 } from "@/components/ui/alert-dialog";
-import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger 
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter
 } from "@/components/ui/dialog";
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -31,9 +31,9 @@ import { useReferrals } from '@/hooks/useReferrals';
 
 // --- TYPES ---
 interface UserPreferences {
-  discovery_radius?: number; 
+  discovery_radius?: number;
   ghost_mode?: boolean;
-  [key: string]: any; 
+  [key: string]: any;
 }
 
 interface UserProfile {
@@ -74,13 +74,13 @@ const getAvatarPath = (url: string): string | null => {
 };
 
 const ReferralSection = () => {
-  const { 
-    referralCode, 
-    referralSettings, 
-    stats, 
-    isLoading, 
-    copyReferralCode, 
-    shareInvite 
+  const {
+    referralCode,
+    referralSettings,
+    stats,
+    isLoading,
+    copyReferralCode,
+    shareInvite
   } = useReferrals();
 
   // Don't render if referrals are disabled
@@ -92,7 +92,7 @@ const ReferralSection = () => {
         <Gift className="w-3.5 h-3.5" />
         Invite Friends & Earn
       </div>
-      
+
       {/* Referral Code Card */}
       <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-xl p-4 border border-primary/20">
         <div className="flex items-center justify-between mb-3">
@@ -105,18 +105,18 @@ const ReferralSection = () => {
             )}
           </div>
           <div className="flex gap-2">
-            <Button 
-              size="icon" 
-              variant="outline" 
+            <Button
+              size="icon"
+              variant="outline"
               className="h-9 w-9 rounded-full"
               onClick={copyReferralCode}
               disabled={!referralCode}
             >
               <Copy className="w-4 h-4" />
             </Button>
-            <Button 
-              size="icon" 
-              variant="default" 
+            <Button
+              size="icon"
+              variant="default"
               className="h-9 w-9 rounded-full"
               onClick={shareInvite}
               disabled={!referralCode}
@@ -125,19 +125,19 @@ const ReferralSection = () => {
             </Button>
           </div>
         </div>
-        
+
         {/* Stats */}
         <div className="grid grid-cols-3 gap-2 pt-3 border-t border-primary/10">
           <div className="text-center">
-            <p className="text-lg font-bold text-foreground">{stats.total_referrals}</p>
+            <p className="text-lg font-bold text-foreground">{stats?.total_referrals ?? 0}</p>
             <p className="text-[10px] text-muted-foreground">Invited</p>
           </div>
           <div className="text-center">
-            <p className="text-lg font-bold text-green-600">{stats.completed_referrals}</p>
+            <p className="text-lg font-bold text-green-600">{stats?.completed_referrals ?? 0}</p>
             <p className="text-[10px] text-muted-foreground">Joined</p>
           </div>
           <div className="text-center">
-            <p className="text-lg font-bold text-primary">₦{stats.total_earnings.toLocaleString()}</p>
+            <p className="text-lg font-bold text-primary">₦{(stats?.total_earnings ?? 0).toLocaleString()}</p>
             <p className="text-[10px] text-muted-foreground">Earned</p>
           </div>
         </div>
@@ -155,13 +155,13 @@ const Profile = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('tickets');
-  
+
   // Local state for smooth slider dragging
   const [localRadius, setLocalRadius] = useState<number>(25);
-  
+
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  
-    // Profile Settings Dialog State
+
+  // Profile Settings Dialog State
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [settingsForm, setSettingsForm] = useState({
@@ -177,16 +177,16 @@ const Profile = () => {
     queryKey: ['profile', user?.id], // Use consistent key
     queryFn: async () => {
       if (!user?.id) throw new Error('No user');
-      
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
-      
+
       if (error) throw error;
       if (!data) throw new Error('Profile not found');
-      
+
       return data as UserProfile;
     },
     enabled: !!user?.id,
@@ -199,7 +199,7 @@ const Profile = () => {
   useEffect(() => {
     if (!user) {
       const timer = setTimeout(() => {
-         navigate('/auth');
+        navigate('/auth');
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -212,7 +212,7 @@ const Profile = () => {
       if (profile.preferences?.discovery_radius) {
         setLocalRadius(profile.preferences.discovery_radius / 1000); // Convert meters to km
       }
-      
+
       // Always sync form data when profile is loaded
       setSettingsForm({
         display_name: profile.display_name || '',
@@ -222,14 +222,14 @@ const Profile = () => {
         phone: profile.phone || ''
       });
     }
-  }, [profile, user?.email]); 
-  
-    // Profile Settings Update Mutation (Unified)
+  }, [profile, user?.email]);
+
+  // Profile Settings Update Mutation (Unified)
   const updateProfileSettingsMutation = useMutation({
-    mutationFn: async (updates: { 
-      display_name?: string; 
-      username?: string; 
-      email?: string; 
+    mutationFn: async (updates: {
+      display_name?: string;
+      username?: string;
+      email?: string;
       phone?: string;
       bio?: string;
     }) => {
@@ -244,7 +244,7 @@ const Profile = () => {
         if (trimmedName.length > MAX_NAME_LENGTH) throw new Error(`Full name must be less than ${MAX_NAME_LENGTH} characters`);
         dbUpdates.display_name = trimmedName;
       }
-      
+
       if (updates.username !== undefined) {
         const trimmedUsername = updates.username.trim().toLowerCase();
         if (!trimmedUsername) throw new Error('Username cannot be empty');
@@ -253,7 +253,7 @@ const Profile = () => {
         if (!/^[a-z0-9_]+$/.test(trimmedUsername)) {
           throw new Error('Username can only contain lowercase letters, numbers, and underscores');
         }
-        
+
         // Check username uniqueness
         const { data: existingUser, error: checkError } = await supabase
           .from('profiles')
@@ -261,10 +261,10 @@ const Profile = () => {
           .eq('username', trimmedUsername)
           .neq('user_id', user!.id)
           .maybeSingle();
-        
-        if (checkError && checkError.code !== 'PGRST116') throw checkError;
+
+        if (checkError && (checkError as any).code !== 'PGRST116') throw checkError;
         if (existingUser) throw new Error('Username is already taken');
-        
+
         dbUpdates.username = trimmedUsername;
       }
 
@@ -274,17 +274,17 @@ const Profile = () => {
         if (!trimmedEmail) throw new Error('Email cannot be empty');
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(trimmedEmail)) throw new Error('Please enter a valid email address');
-        
+
         if (trimmedEmail !== user?.email?.toLowerCase()) {
-          const { error: authError } = await supabase.auth.updateUser({ 
-            email: trimmedEmail 
+          const { error: authError } = await supabase.auth.updateUser({
+            email: trimmedEmail
           });
           if (authError) throw authError;
           dbUpdates.email = trimmedEmail;
         }
       }
-      
-     // Bio Logic
+
+      // Bio Logic
       if (updates.bio !== undefined) {
         dbUpdates.bio = updates.bio.trim();
       }
@@ -293,19 +293,19 @@ const Profile = () => {
       if (updates.phone !== undefined) {
         dbUpdates.phone = updates.phone.trim();
       }
-      
+
       const { error } = await supabase
         .from('profiles')
         .update(dbUpdates)
         .eq('user_id', user!.id);
-        
+
       if (error) throw error;
       return dbUpdates;
     },
     onSuccess: (updates) => {
       toast.success('Profile updated successfully!');
       setShowProfileSettings(false);
-      
+
       // Optimistic update
       queryClient.setQueryData(['profile', user!.id], (oldData: UserProfile | undefined) => {
         if (!oldData) return oldData;
@@ -315,15 +315,15 @@ const Profile = () => {
           preferences: updates.preferences || oldData.preferences
         };
       });
-      
+
       queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update profile');
+      toast.error((error && error.message) || 'Failed to update profile');
     }
   });
-  
-    // Enhanced avatar upload mutation with proper error handling
+
+  // Enhanced avatar upload mutation with proper error handling
   const uploadAvatarMutation = useMutation({
     mutationFn: async (file: File) => {
       const validation = validateImageFile(file);
@@ -333,7 +333,7 @@ const Profile = () => {
 
       const fileExt = file.name.split('.').pop()?.toLowerCase();
       const fileName = `${user!.id}/${Date.now()}.${fileExt}`;
-      
+
       // Delete old avatar if exists
       if (profile?.avatar_url) {
         const oldPath = getAvatarPath(profile.avatar_url);
@@ -341,54 +341,64 @@ const Profile = () => {
           await supabase.storage.from('avatars').remove([oldPath]);
         }
       }
-      
+
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(fileName, file, { 
+        .upload(fileName, file, {
           upsert: true,
-          contentType: file.type 
+          contentType: file.type
         });
-      
+
       if (uploadError) throw uploadError;
-      
+
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(fileName);
-      
+
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ 
+        .update({
           avatar_url: publicUrl,
           updated_at: new Date().toISOString()
         })
         .eq('user_id', user!.id);
-      
+
       if (updateError) throw updateError;
-      
+
       return publicUrl;
     },
     onSuccess: (newAvatarUrl) => {
       toast.success('Avatar updated successfully!');
-      
+
+      // Revoke previous preview URL if any
+      if (avatarPreview) {
+        try { URL.revokeObjectURL(avatarPreview); } catch (e) { /* noop */ }
+      }
+
       // Immediate cache update for instant UI feedback
       queryClient.setQueryData(['profile', user!.id], (oldData: any) => {
         if (!oldData) return oldData;
         return {
           ...oldData,
-            avatar_url: newAvatarUrl
+          avatar_url: newAvatarUrl
         };
       });
-      
+
       setAvatarPreview(null);
       queryClient.invalidateQueries({ queryKey: ['profile', user!.id] });
     },
     onError: (error: any) => {
-      toast.error(error.message || 'Upload failed');
+      toast.error((error && error.message) || 'Upload failed');
+
+      // Revoke preview url to avoid leaks
+      if (avatarPreview) {
+        try { URL.revokeObjectURL(avatarPreview); } catch (e) { /* noop */ }
+      }
       setAvatarPreview(null);
     }
   });
-  
-    // Delete account mutation with cascade handling
+
+  // Delete account mutation with cascade handling
   const deleteAccountMutation = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.rpc('delete_user');
@@ -400,12 +410,12 @@ const Profile = () => {
       toast.success('Account deleted successfully');
     },
     onError: (error: any) => {
-      toast.error(error.message || 'Failed to delete account');
+      toast.error((error && error.message) || 'Failed to delete account');
     }
   });
 
   // Handlers
-  const handleAvatarSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarSelect = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -419,8 +429,7 @@ const Profile = () => {
     setAvatarPreview(previewUrl);
     uploadAvatarMutation.mutate(file);
 
-    // Cleanup
-    return () => URL.revokeObjectURL(previewUrl);
+    // note: cleanup of preview URL is handled in the mutation callbacks (onSuccess/onError)
   }, [uploadAvatarMutation]);
 
   const handleProfileSettingsSave = useCallback(() => {
@@ -437,22 +446,22 @@ const Profile = () => {
     queryKey: ['my-tickets', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      
+
       const { data: attendances, error: attError } = await supabase
         .from('event_attendees')
         .select('event_id')
         .eq('user_id', user.id)
         .eq('status', 'confirmed');
-      
+
       if (attError || !attendances?.length) return [];
-      
+
       const { data: events, error: eventsError } = await supabase
         .from('events')
         .select('id, title, start_date, location, image_url')
-        .in('id', attendances.map(a => a.event_id))
+        .in('id', attendances.map((a: any) => a.event_id))
         .gte('start_date', new Date().toISOString())
         .order('start_date', { ascending: true });
-      
+
       if (eventsError) return [];
       return events || [];
     },
@@ -467,7 +476,7 @@ const Profile = () => {
 
   const updatePreference = async (key: string, value: any) => {
     if (!user?.id || !profile) return;
-    
+
     // Create new preferences object merging existing ones safely
     const currentPrefs = (profile.preferences || {}) as UserPreferences;
     const newPreferences = {
@@ -475,7 +484,7 @@ const Profile = () => {
       [key]: value
     };
 
-    // ✅ FIXED - Use correct query key
+    // Optimistic cache update
     queryClient.setQueryData(['profile', user.id], (old: UserProfile | undefined) => {
       if (!old) return old;
       return {
@@ -483,27 +492,26 @@ const Profile = () => {
         preferences: newPreferences
       };
     });
-    
+
     const { error } = await supabase
       .from('profiles')
       .update({ preferences: newPreferences })
       .eq('user_id', user?.id);
-    
+
     if (error) {
       toast.error('Failed to save preference');
-      // ✅ FIXED - Use correct query key
       queryClient.invalidateQueries({ queryKey: ['profile', user?.id] });
       return;
     }
-    
+
     if (key !== 'discovery_radius') {
       toast.success("Preference updated");
     }
   };
 
   // --- 3. LOADING & ERROR STATES ---
-  
-  // FIX: Combined loading check to prevent blank screen
+
+  // Combined loading check to prevent blank screen
   const isPageLoading = isProfileLoading || !user;
 
   if (isPageLoading) {
@@ -528,7 +536,7 @@ const Profile = () => {
           </div>
           <h2 className="text-xl font-bold mb-2">Failed to load profile</h2>
           <p className="text-sm text-muted-foreground mb-6">
-            {error?.message || 'Profile not found'}
+            {(error && (error as any).message) || 'Profile not found'}
           </p>
           <div className="flex gap-3 justify-center">
             <Button variant="outline" onClick={() => window.location.reload()}>
@@ -545,19 +553,18 @@ const Profile = () => {
 
   const displayName = profile.display_name || 'User';
   const username = profile.username || 'user';
-  // const initial = displayName[0]?.toUpperCase() || 'U'; // unused
-  
+
   // Safely access properties
   const isGhostMode = profile.preferences?.ghost_mode === true;
 
   return (
     <div className="min-h-screen bg-background pb-24">
-      
+
       {/* 1. HEADER (Identity) */}
       <div className="relative">
         {/* Cover Image Placeholder */}
         <div className="h-36 bg-gradient-to-r from-primary/10 via-purple-500/10 to-orange-500/10 w-full" />
-        
+
         {/* Settings Dialog (FIXED) */}
         <div className="absolute top-4 right-4">
           <Dialog>
@@ -570,12 +577,12 @@ const Profile = () => {
               <DialogHeader>
                 <DialogTitle>Settings</DialogTitle>
               </DialogHeader>
-              
+
               <div className="space-y-6 py-4">
                 {/* Account Section */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Account</h3>
-                  
+
                   <div className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-primary/10 rounded-lg text-primary"><Crown className="w-5 h-5" /></div>
@@ -588,32 +595,32 @@ const Profile = () => {
                   </div>
 
                   <div className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-lg cursor-pointer transition-colors">
-                     <div className="flex items-center gap-3">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="text-foreground hover:bg-transparent p-0 font-semibold"
                         onClick={() => setShowProfileSettings(true)}
                       >
                         <Edit2 className="w-4 h-4 mr-2" /> Edit Profile
                       </Button>
-                     </div>
-                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </div>
                 </div>
 
                 {/* Preferences Section (FIXED) */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Discovery</h3>
-                  
+
                   {/* Radius Slider */}
                   <div className="space-y-4 px-1">
                     <div className="flex justify-between text-sm">
                       <Label>Max Distance</Label>
                       <span className="text-muted-foreground font-mono">{localRadius}km</span>
                     </div>
-                    <Slider 
-                      value={[localRadius]} 
+                    <Slider
+                      value={[localRadius]}
                       max={75} // 75km max
                       min={25}
                       step={10}
@@ -630,13 +637,13 @@ const Profile = () => {
                       <span>Ghost Mode</span>
                       <span className="font-normal text-xs text-muted-foreground">Hide location on map</span>
                     </Label>
-                    <Switch 
+                    <Switch
                       checked={isGhostMode} // Controlled component
-                      onCheckedChange={(v) => updatePreference('ghost_mode', v)} 
+                      onCheckedChange={(v) => updatePreference('ghost_mode', v)}
                     />
                   </div>
                 </div>
-                
+
                 {/* Referrals Section (ADDED) */}
                 <ReferralSection />
 
@@ -645,11 +652,11 @@ const Profile = () => {
                   <Button variant="outline" className="w-full justify-start" onClick={handleLogout}>
                     <LogOut className="w-4 h-4 mr-2" /> Log Out
                   </Button>
-                  
+
                   <div className="pt-2">
-                    <Button 
-                      variant="ghost" 
-                      className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/10" 
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/10"
                       onClick={() => setShowDeleteDialog(true)}
                     >
                       <Trash2 className="w-4 h-4 mr-2" /> Delete Account
@@ -665,18 +672,18 @@ const Profile = () => {
         <div className="px-6 -mt-12 mb-6">
           <div className="relative inline-block">
             <Avatar className="w-24 h-24 border-[4px] border-background shadow-xl">
-              <AvatarImage 
-                  src={avatarPreview || profile?.avatar_url || ''} 
-                  className="object-cover" 
-                  alt={`${profile?.display_name}'s avatar`}
-                />
+              <AvatarImage
+                src={avatarPreview || profile?.avatar_url || ''}
+                className="object-cover"
+                alt={`${profile?.display_name}'s avatar`}
+              />
               <AvatarFallback className="text-2xl bg-muted text-muted-foreground">{displayName.slice(0, 2).toUpperCase() || '?'}</AvatarFallback>
             </Avatar>
 
             {/* Avatar upload button */}
             <label
               htmlFor="avatar-upload"
-              className="absolute bottom-0 right-0 w-10 h-10 bg-white dark:bg-slate-800 text-primary rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:scale-110 transition-transform z-10"
+              className="absolute bottom-0 right-0 w-10 h-10 bg-white dark:bg-slate-800 text-primary rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:scale-110 transition-transform"
             >
               {uploadAvatarMutation.isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -684,23 +691,23 @@ const Profile = () => {
                 <Camera className="w-4 h-4" />
               )}
             </label>
-            <input 
+            <input
               id="avatar-upload"
-              type="file" 
+              type="file"
               accept={ALLOWED_IMAGE_TYPES.join(',')}
-              className="hidden" 
-              onChange={handleAvatarSelect} 
+              className="hidden"
+              onChange={handleAvatarSelect}
               disabled={uploadAvatarMutation.isLoading}
               aria-label="Upload avatar"
             />
 
             {profile.is_premium && (
-              <div className="absolute bottom-0 right-0 translate-y-6 translate-x-[-2.25rem] bg-gradient-to-r from-amber-400 to-orange-500 text-white p-1.5 rounded-full border-[3px] border-background">
+              <div className="absolute bottom-0 right-0 translate-y-6 translate-x-[-2.25rem] bg-gradient-to-r from-amber-400 to-orange-500 text-white p-1.5 rounded-full border-[3px] border-background/10">
                 <Sparkles className="w-3.5 h-3.5" />
               </div>
             )}
           </div>
-          
+
           <div className="mt-4 flex justify-between items-start">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -710,7 +717,7 @@ const Profile = () => {
               <p className="text-muted-foreground text-sm font-medium">@{username}</p>
               {profile.bio && <p className="text-sm mt-3 text-foreground/80 leading-relaxed max-w-xs">{profile.bio}</p>}
             </div>
-            
+
             <Button size="sm" variant="outline" className="rounded-full gap-2 h-9 px-4 shadow-sm bg-background">
               <Share2 className="w-4 h-4" /> Share
             </Button>
@@ -719,7 +726,7 @@ const Profile = () => {
           {/* Social Stats */}
           <div className="flex gap-8 mt-6 pb-4 border-b border-dashed border-border/60">
             <div className="text-center cursor-pointer hover:opacity-70 transition-opacity"
-                onClick={() => navigate('/app/friends')}>
+              onClick={() => navigate('/app/friends')}>
               <span className="block font-bold text-lg">{profile.friends_count || 0}</span>
               <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Friends</span>
             </div>
@@ -738,14 +745,14 @@ const Profile = () => {
       {/* 2. CONTENT TABS */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full bg-transparent border-b rounded-none h-12 px-6 gap-8 justify-start">
-          <TabsTrigger 
-            value="tickets" 
+          <TabsTrigger
+            value="tickets"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary px-0 pb-3 pt-2 text-muted-foreground transition-all"
           >
             <Ticket className="w-4 h-4 mr-2" /> My Tickets
           </TabsTrigger>
-          <TabsTrigger 
-            value="moments" 
+          <TabsTrigger
+            value="moments"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary px-0 pb-3 pt-2 text-muted-foreground transition-all"
           >
             <Grid className="w-4 h-4 mr-2" /> Moments
@@ -755,7 +762,7 @@ const Profile = () => {
         {/* A. MY TICKETS (Wallet View) */}
         <TabsContent value="tickets" className="p-4 space-y-4 min-h-[300px]">
           {myTickets.length > 0 ? (
-            myTickets.map((event: any) => (
+            (myTickets as any[]).map((event: any) => (
               <Card
                 key={event.id}
                 className="overflow-hidden border-l-[6px] border-l-primary shadow-sm hover:shadow-md transition-shadow cursor-pointer bg-card/50"
@@ -764,7 +771,7 @@ const Profile = () => {
                 <div className="flex">
                   <div className="flex-1 p-4">
                     <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="outline" className="text-[10px] text-green-600 bg-green-50 border-green-200">CONFIRMED</Badge>
+                      <Badge variant="outline" className="text-[10px] text-green-600 bg-green-50 border-green-200">CONFIRMED</Badge>
                     </div>
                     <h3 className="font-bold truncate text-base">{event.title}</h3>
                     <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
@@ -803,7 +810,7 @@ const Profile = () => {
           </div>
         </TabsContent>
       </Tabs>
-      
+
       {/* Profile Settings Dialog */}
       <Dialog open={showProfileSettings} onOpenChange={setShowProfileSettings}>
         <DialogContent className="sm:max-w-[480px] max-w-[calc(100vw-2rem)] my-auto mx-auto max-h-[85vh] overflow-y-auto">
@@ -849,9 +856,9 @@ const Profile = () => {
                 type="text"
                 placeholder="username_1234"
                 value={settingsForm.username}
-                onChange={(e) => setSettingsForm(prev => ({ 
-                  ...prev, 
-                  username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') 
+                onChange={(e) => setSettingsForm(prev => ({
+                  ...prev,
+                  username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')
                 }))}
                 maxLength={MAX_USERNAME_LENGTH}
                 className="h-11 font-mono"
@@ -867,7 +874,7 @@ const Profile = () => {
                 <Heart className="w-4 h-4 text-muted-foreground" />
                 About Me
               </Label>
-              <Textarea 
+              <Textarea
                 id="settings-bio"
                 value={settingsForm.bio}
                 onChange={(e) => setSettingsForm(prev => ({ ...prev, bio: e.target.value }))}
@@ -899,7 +906,7 @@ const Profile = () => {
                 Changing your email will require verification
               </p>
             </div>
-            
+
              {/* Phone (Added) */}
              <div className="space-y-2">
               <Label htmlFor="settings-phone" className="flex items-center gap-2">
@@ -957,13 +964,13 @@ const Profile = () => {
               <AlertDialogTitle className="text-xl">Delete Account?</AlertDialogTitle>
             </div>
             <AlertDialogDescription className="text-base leading-relaxed">
-              This action cannot be undone. This will permanently delete your account, remove all your data, 
+              This action cannot be undone. This will permanently delete your account, remove all your data,
               and you'll lose access to all your events, messages, and connections.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               className="bg-red-600 hover:bg-red-700 text-white"
               onClick={() => deleteAccountMutation.mutate()}
               disabled={deleteAccountMutation.isLoading}
