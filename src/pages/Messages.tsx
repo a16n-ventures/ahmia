@@ -68,7 +68,7 @@ export default function Messages() {
   useEffect(() => {
     if (showNewEventModal) {
       setShowNewEventModal(false);
-      navigate('/app/events/create');
+      navigate('/app/create-event');
     }
   }, [showNewEventModal, navigate]);
 
