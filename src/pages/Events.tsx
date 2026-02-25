@@ -575,13 +575,13 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
     <div className="container-mobile py-4 space-y-6 pb-24">
       <div className="flex items-center justify-between px-1">
         <h1 className="text-2xl font-bold tracking-tight">Events</h1>
-        <Button 
+  {/* <Button 
           onClick={() => navigate('/create-event')} 
           size="sm" 
           className="gradient-primary text-white rounded-full shadow-md gap-1"
         >
           <Plus className="w-4 h-4" /> Create
-        </Button>
+        </Button> */}
       </div>
 
       <div className="relative">
