@@ -862,14 +862,6 @@ navigate('/app/events')}>
           </TabsTrigger>
           
           <TabsTrigger
-            value="events"
-            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary px-0 pb-3 pt-2 text-muted-foreground transition-all"
-            onClick={() => navigate('/app/events')}
-          >
-            <Calendar className="w-4 h-4 mr-2" /> Events
-          </TabsTrigger>
-
-          <TabsTrigger
             value="moments"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary px-0 pb-3 pt-2 text-muted-foreground transition-all"
           >
@@ -915,16 +907,7 @@ navigate('/app/events')}>
           )}
         </TabsContent>
 
-        {/* B. EVENTS TAB - redirects to /app/events */}
-        <TabsContent value="events" className="p-4 space-y-4 min-h-[300px]">
-          <div className="text-center py-8">
-            <Calendar className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground mb-3">Manage all your events in one place</p>
-            <Button onClick={() => navigate('/app/events')}>Go to Events</Button>
-          </div>
-        </TabsContent>
-
-        {/* C. MOMENTS (Grid View) */}
+        {/* B. MOMENTS (Grid View) */}
         <TabsContent value="moments" className="p-1 min-h-[300px]">
           <div className="grid grid-cols-3 gap-1">
             {/* Placeholder for future photo feature */}
