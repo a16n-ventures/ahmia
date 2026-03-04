@@ -1,11 +1,60 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { InterestSelector } from "@/components/onboarding/InterestSelector";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 export default function Onboarding() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  // Apply pending referral code after signup
+  useEffect(() => {
+    const applyReferral = async () => {
+      if (!user?.id) return;
+      const code = localStorage.getItem('pending_referral_code');
+      if (!code) return;
+
+      try {
+        // Find referrer
+        const { data: referrer } = await supabase
+          .from('profiles')
+          .select('user_id')
+          .eq('referral_code', code.toUpperCase())
+          .single();
+
+        if (referrer && referrer.user_id !== user.id) {
+          // Check if already referred
+          const { data: existing } = await supabase
+            .from('referrals')
+            .select('id')
+            .eq('referred_id', user.id)
+            .maybeSingle();
+
+          if (!existing) {
+            await supabase.from('referrals').insert({
+              referrer_id: referrer.user_id,
+              referred_id: user.id,
+              referral_code: code.toUpperCase(),
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+            });
+            toast.success("Referral code applied! 🎉");
+          }
+        }
+      } catch (e) {
+        console.error('Referral apply error:', e);
+      } finally {
+        localStorage.removeItem('pending_referral_code');
+      }
+    };
+
+    applyReferral();
+  }, [user?.id]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -13,7 +62,7 @@ export default function Onboarding() {
       <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Back button (optional, in case they want to skip for now) */}
+      {/* Back button */}
       <Button 
         variant="ghost" 
         className="absolute top-4 left-4 z-10" 
@@ -26,7 +75,6 @@ export default function Onboarding() {
         <CardContent className="p-0">
           <InterestSelector 
             onComplete={() => {
-              // Redirect to the Discover page with the 'foryou' tab active
               navigate('/app/feed', { replace: true});
             }}
           />
