@@ -652,25 +652,34 @@ function ChatView({ selectedChat, setSelectedChat, messageInput, setMessageInput
   );
 }
 
-// --- Chat Input with Payment Gate ---
+// --- Chat Input with Payment Gate (Admin/Creator bypass) ---
 function ChatInputArea({ selectedChat, messageInput, setMessageInput, sendMessage }: { 
   selectedChat: ChatItem; messageInput: string; setMessageInput: (v: string) => void; sendMessage: any 
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Check if user has paid for paid events/communities
+  // Check if user has paid OR is admin/creator (bypass payment)
   const { data: hasPaid, isLoading: checkingPayment } = useQuery({
     queryKey: ['chat-payment-check', selectedChat.id, selectedChat.type, user?.id],
     queryFn: async () => {
       if (!user) return true;
       
+      // Check if user is platform admin (always bypass)
+      const { data: adminRole } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .in('role', ['admin', 'super_admin'])
+        .maybeSingle();
+      if (adminRole) return true;
+
       if (selectedChat.type === 'event') {
-        // Check if event is paid
-        const { data: event } = await supabase.from('events').select('ticket_price').eq('id', selectedChat.id).single();
-        if (!event?.ticket_price || event.ticket_price <= 0) return true; // Free event
+        const { data: event } = await supabase.from('events').select('ticket_price, creator_id').eq('id', selectedChat.id).single();
+        if (!event?.ticket_price || event.ticket_price <= 0) return true;
+        // Event creator bypasses payment
+        if (event.creator_id === user.id) return true;
         
-        // Check if user paid
         const { data: payment } = await supabase.from('payments')
           .select('id').eq('user_id', user.id)
           .ilike('tx_ref', `%event-${selectedChat.id}%`)
@@ -679,11 +688,15 @@ function ChatInputArea({ selectedChat, messageInput, setMessageInput, sendMessag
       }
       
       if (selectedChat.type === 'community') {
-        // Check if community is premium
-        const { data: comm } = await supabase.from('communities').select('is_premium, join_fee').eq('id', selectedChat.id).single();
-        if (!comm?.is_premium || !comm?.join_fee || comm.join_fee <= 0) return true; // Free community
+        const { data: comm } = await supabase.from('communities').select('is_premium, join_fee, creator_id').eq('id', selectedChat.id).single();
+        if (!comm?.is_premium || !comm?.join_fee || comm.join_fee <= 0) return true;
+        // Community creator bypasses payment
+        if (comm.creator_id === user.id) return true;
+        // Community admins/mods bypass payment
+        const { data: membership } = await supabase.from('community_members')
+          .select('role').eq('community_id', selectedChat.id).eq('user_id', user.id).maybeSingle();
+        if (membership?.role === 'admin' || membership?.role === 'moderator') return true;
         
-        // Check if user paid
         const { data: payment } = await supabase.from('payments')
           .select('id').eq('user_id', user.id)
           .ilike('tx_ref', `%community-${selectedChat.id}%`)
@@ -691,7 +704,7 @@ function ChatInputArea({ selectedChat, messageInput, setMessageInput, sendMessag
         return !!payment;
       }
       
-      return true; // DMs always allowed
+      return true;
     },
     enabled: !!user && !!selectedChat,
   });
