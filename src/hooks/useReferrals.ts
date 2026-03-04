@@ -173,7 +173,7 @@ export function useReferrals() {
   // Generate share link
   const getShareLink = () => {
     if (!referralCode) return '';
-    return `${window.location.origin}/signup?ref=${referralCode}`;
+    return `${window.location.origin}/ahmia?ref=${referralCode}`;
   };
 
   // Copy referral code

@@ -19,17 +19,23 @@ const Index = () => {
   const navigate = useNavigate();
   const currentYear = new Date().getFullYear(); 
 
-    useEffect(() => {
-    // 1. Wait for Auth to finish loading
-    if (loading) return;
+  // Handle referral code from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get('ref');
+    if (refCode) {
+      // Store referral code for after signup
+      localStorage.setItem('pending_referral_code', refCode);
+      setAuthMode('signup');
+      setShowAuth(true);
+    }
+  }, []);
 
-    // 2. If user IS logged in, send them to the app
+  useEffect(() => {
+    if (loading) return;
     if (user) {
       navigate("/app", { replace: true });
     }
-
-    // 3. If user is NOT logged in, do nothing. 
-    // They will stay on this page (Index.tsx) which renders the Landing Page.
   }, [user, loading, navigate]);
   
   // --- FIX END ---

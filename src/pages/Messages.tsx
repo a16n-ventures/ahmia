@@ -27,6 +27,10 @@ import { useScrollToBottom } from '@/hooks/useScrollToBottom';
 import { useChatRealtime } from '@/hooks/useChatRealtime';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { TypingIndicator } from '@/components/messages/TypingIndicator';
+import { useMessageReactions } from '@/hooks/useMessageReactions';
+import { CommunitySettingsDialog } from '@/components/messages/CommunitySettingsDialog';
+import { CommunityModerationDialog } from '@/components/messages/CommunityModerationDialog';
+import { Settings, Shield } from 'lucide-react';
 
 // --- TYPES ---
 type ChatType = 'dm' | 'community' | 'event';
@@ -457,84 +461,16 @@ export default function Messages() {
       </div>
 
       {/* RIGHT SIDEBAR (Active Chat) */}
-      <div className={`flex-1 flex flex-col bg-background h-full ${!selectedChat ? 'hidden md:flex' : 'flex'}`}>
-        {selectedChat ? (
-          <>
-            {/* CHAT HEADER */}
-            <div className="h-16 border-b flex items-center justify-between px-4 bg-background/80 backdrop-blur-md sticky top-0 z-20">
-              <div className="flex items-center gap-3">
-                <Button variant="ghost" size="icon" className="md:hidden -ml-2" onClick={() => setSelectedChat(null)}>
-                  <ArrowLeft className="w-5 h-5" />
-                </Button>
-                <Avatar className="h-10 w-10 border">
-                  <AvatarImage src={selectedChat.avatar} />
-                  <AvatarFallback>{selectedChat.name[0]}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <h2 className="font-bold text-sm">{selectedChat.name}</h2>
-                  {selectedChat.type === 'event' ? (
-                     <p className="text-xs text-primary flex items-center gap-1">
-                        <Calendar className="w-3 h-3" /> Vibe Check Chat
-                     </p>
-                  ) : (
-                     <p className="text-xs text-muted-foreground">
-                        {selectedChat.type === 'community' ? 'Community' : 'Online'}
-                     </p>
-                  )}
-                </div>
-              </div>
-
-              {/* CLYX ACTION BUTTON (Decide -> Do) */}
-              {selectedChat.type === 'event' && (
-                 <Button size="sm" variant="secondary" className="gap-2 rounded-full" onClick={() => navigate('/app/feed')}>
-                    <Ticket className="w-4 h-4" /> View Event
-                 </Button>
-              )}
-              {selectedChat.type === 'community' && (
-                 <Button size="icon" variant="ghost" onClick={() => navigate(`/app/messages?type=community&id=${selectedChat.id}&settings=true`)}>
-                   <Info className="w-5 h-5" />
-                 </Button>
-              )}
-            </div>
-
-            {/* MESSAGES AREA */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-muted/5 to-background" ref={scrollRef}>
-               {messages.map((msg: any, i: number) => (
-                  <MessageBubble 
-                    key={msg.id} 
-                    msg={msg} 
-                    prevMsg={i > 0 ? messages[i-1] : null}
-                    isComm={selectedChat.type !== 'dm'}
-                    canModerate={false}
-                    onDelete={() => {}}
-                    onReply={() => {}}
-                    onEdit={async () => {}}
-                    scrollToId={() => {}}
-                  />
-               ))}
-               {messages.length === 0 && (
-                  <div className="h-full flex flex-col items-center justify-center opacity-40">
-                     <MessageSquare className="w-12 h-12 mb-2" />
-                     <p>Start the vibe...</p>
-                  </div>
-               )}
-            </div>
-
-            {/* INPUT AREA */}
-            <ChatInputArea selectedChat={selectedChat} messageInput={messageInput} setMessageInput={setMessageInput} sendMessage={sendMessage} />
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
-            <div className="w-20 h-20 bg-muted/30 rounded-full flex items-center justify-center mb-6">
-              <MessageSquare className="w-10 h-10 opacity-20" />
-            </div>
-            <h3 className="text-xl font-bold mb-2">Select a Conversation</h3>
-            <p className="max-w-xs mx-auto">
-              Join a <strong>Vibe Check</strong> from an event, chat with a community, or DM a friend.
-            </p>
-          </div>
-        )}
-      </div>
+      <ChatView 
+        selectedChat={selectedChat}
+        setSelectedChat={setSelectedChat}
+        messageInput={messageInput}
+        setMessageInput={setMessageInput}
+        sendMessage={sendMessage}
+        messages={messages}
+        scrollRef={scrollRef}
+        user={user}
+      />
 
       {/* --- MODALS --- */}
       
@@ -556,31 +492,194 @@ export default function Messages() {
          setShowNewGroupModal(false);
       }} />
 
-      {/* 3. NEW EVENT - handled via useEffect redirect */}
-
     </div>
   );
 }
 
-// --- Chat Input with Payment Gate ---
+// --- ChatView: Extracted to use hooks at top level ---
+function ChatView({ selectedChat, setSelectedChat, messageInput, setMessageInput, sendMessage, messages, scrollRef, user }: {
+  selectedChat: ChatItem | null; setSelectedChat: (c: ChatItem | null) => void;
+  messageInput: string; setMessageInput: (v: string) => void; sendMessage: any;
+  messages: any[]; scrollRef: any; user: any;
+}) {
+  const navigate = useNavigate();
+  const [showSettings, setShowSettings] = useState(false);
+  const [showModeration, setShowModeration] = useState(false);
+
+  // Message reactions
+  const messageIds = useMemo(() => messages.map((m: any) => m.id), [messages]);
+  const { reactions, addReaction } = useMessageReactions(
+    messageIds,
+    user?.id,
+    selectedChat?.type === 'community'
+  );
+
+  // Community metadata
+  const { data: communityMeta } = useQuery({
+    queryKey: ['community_meta_chat', selectedChat?.id],
+    queryFn: async () => {
+      if (!selectedChat || selectedChat.type !== 'community') return null;
+      const [{ data: comm }, { data: membership }] = await Promise.all([
+        supabase.from('communities').select('*').eq('id', selectedChat.id).single(),
+        supabase.from('community_members').select('role').eq('community_id', selectedChat.id).eq('user_id', user?.id).maybeSingle()
+      ]);
+      return { ...comm, my_role: membership?.role || 'none' };
+    },
+    enabled: !!selectedChat && selectedChat.type === 'community' && !!user,
+  });
+
+  const myCommRole = communityMeta?.my_role || 'none';
+  const canModerate = myCommRole === 'admin' || myCommRole === 'moderator';
+
+  if (!selectedChat) {
+    return (
+      <div className={`flex-1 flex flex-col bg-background h-full hidden md:flex`}>
+        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
+          <div className="w-20 h-20 bg-muted/30 rounded-full flex items-center justify-center mb-6">
+            <MessageSquare className="w-10 h-10 opacity-20" />
+          </div>
+          <h3 className="text-xl font-bold mb-2">Select a Conversation</h3>
+          <p className="max-w-xs mx-auto">
+            Join a <strong>Vibe Check</strong> from an event, chat with a community, or DM a friend.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex-1 flex flex-col bg-background h-full ${!selectedChat ? 'hidden md:flex' : 'flex'}`}>
+      {/* CHAT HEADER */}
+      <div className="h-16 border-b flex items-center justify-between px-4 bg-background/80 backdrop-blur-md sticky top-0 z-20">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="md:hidden -ml-2" onClick={() => setSelectedChat(null)}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <Avatar className="h-10 w-10 border">
+            <AvatarImage src={selectedChat.avatar} />
+            <AvatarFallback>{selectedChat.name[0]}</AvatarFallback>
+          </Avatar>
+          <div>
+            <h2 className="font-bold text-sm">{selectedChat.name}</h2>
+            {selectedChat.type === 'event' ? (
+               <p className="text-xs text-primary flex items-center gap-1">
+                  <Calendar className="w-3 h-3" /> Vibe Check Chat
+               </p>
+            ) : (
+               <p className="text-xs text-muted-foreground">
+                  {selectedChat.type === 'community' ? 'Community' : 'Online'}
+               </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {selectedChat.type === 'event' && (
+             <Button size="sm" variant="secondary" className="gap-2 rounded-full" onClick={() => navigate('/app/feed')}>
+                <Ticket className="w-4 h-4" /> View Event
+             </Button>
+          )}
+          {selectedChat.type === 'community' && canModerate && (
+            <Button size="icon" variant="ghost" onClick={() => setShowModeration(true)}>
+              <Shield className="w-5 h-5" />
+            </Button>
+          )}
+          {selectedChat.type === 'community' && canModerate && (
+            <Button size="icon" variant="ghost" onClick={() => setShowSettings(true)}>
+              <Settings className="w-5 h-5" />
+            </Button>
+          )}
+          {selectedChat.type === 'community' && !canModerate && (
+            <Button size="icon" variant="ghost" onClick={() => setShowSettings(true)}>
+              <Info className="w-5 h-5" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* MESSAGES AREA */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-muted/5 to-background" ref={scrollRef}>
+         {messages.map((msg: any, i: number) => {
+           const msgReactions = reactions[msg.id] || [];
+           return (
+             <MessageBubble 
+               key={msg.id} 
+               msg={msg} 
+               prevMsg={i > 0 ? messages[i-1] : null}
+               isComm={selectedChat.type !== 'dm'}
+               canModerate={canModerate}
+               onDelete={() => {}}
+               onReply={() => {}}
+               onEdit={async () => {}}
+               scrollToId={() => {}}
+               onReact={(msgId: string, emoji: string) => addReaction({ messageId: msgId, emoji })}
+               reactions={msgReactions}
+             />
+           );
+         })}
+         {messages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center opacity-40">
+               <MessageSquare className="w-12 h-12 mb-2" />
+               <p>Start the vibe...</p>
+            </div>
+         )}
+      </div>
+
+      {/* INPUT AREA */}
+      <ChatInputArea selectedChat={selectedChat} messageInput={messageInput} setMessageInput={setMessageInput} sendMessage={sendMessage} />
+
+      {/* COMMUNITY SETTINGS DIALOG */}
+      {selectedChat.type === 'community' && communityMeta && (
+        <>
+          <CommunitySettingsDialog
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+            communityId={selectedChat.id}
+            currentName={communityMeta.name || selectedChat.name}
+            currentDesc={communityMeta.description || ''}
+            currentCoverUrl={communityMeta.cover_url}
+          />
+          <CommunityModerationDialog
+            isOpen={showModeration}
+            onClose={() => setShowModeration(false)}
+            communityId={selectedChat.id}
+            communityName={selectedChat.name}
+            myRole={myCommRole as any}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// --- Chat Input with Payment Gate (Admin/Creator bypass) ---
 function ChatInputArea({ selectedChat, messageInput, setMessageInput, sendMessage }: { 
   selectedChat: ChatItem; messageInput: string; setMessageInput: (v: string) => void; sendMessage: any 
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Check if user has paid for paid events/communities
+  // Check if user has paid OR is admin/creator (bypass payment)
   const { data: hasPaid, isLoading: checkingPayment } = useQuery({
     queryKey: ['chat-payment-check', selectedChat.id, selectedChat.type, user?.id],
     queryFn: async () => {
       if (!user) return true;
       
+      // Check if user is platform admin (always bypass)
+      const { data: adminRole } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .in('role', ['admin', 'super_admin'])
+        .maybeSingle();
+      if (adminRole) return true;
+
       if (selectedChat.type === 'event') {
-        // Check if event is paid
-        const { data: event } = await supabase.from('events').select('ticket_price').eq('id', selectedChat.id).single();
-        if (!event?.ticket_price || event.ticket_price <= 0) return true; // Free event
+        const { data: event } = await supabase.from('events').select('ticket_price, creator_id').eq('id', selectedChat.id).single();
+        if (!event?.ticket_price || event.ticket_price <= 0) return true;
+        // Event creator bypasses payment
+        if (event.creator_id === user.id) return true;
         
-        // Check if user paid
         const { data: payment } = await supabase.from('payments')
           .select('id').eq('user_id', user.id)
           .ilike('tx_ref', `%event-${selectedChat.id}%`)
@@ -589,11 +688,15 @@ function ChatInputArea({ selectedChat, messageInput, setMessageInput, sendMessag
       }
       
       if (selectedChat.type === 'community') {
-        // Check if community is premium
-        const { data: comm } = await supabase.from('communities').select('is_premium, join_fee').eq('id', selectedChat.id).single();
-        if (!comm?.is_premium || !comm?.join_fee || comm.join_fee <= 0) return true; // Free community
+        const { data: comm } = await supabase.from('communities').select('is_premium, join_fee, creator_id').eq('id', selectedChat.id).single();
+        if (!comm?.is_premium || !comm?.join_fee || comm.join_fee <= 0) return true;
+        // Community creator bypasses payment
+        if (comm.creator_id === user.id) return true;
+        // Community admins/mods bypass payment
+        const { data: membership } = await supabase.from('community_members')
+          .select('role').eq('community_id', selectedChat.id).eq('user_id', user.id).maybeSingle();
+        if (membership?.role === 'admin' || membership?.role === 'moderator') return true;
         
-        // Check if user paid
         const { data: payment } = await supabase.from('payments')
           .select('id').eq('user_id', user.id)
           .ilike('tx_ref', `%community-${selectedChat.id}%`)
@@ -601,7 +704,7 @@ function ChatInputArea({ selectedChat, messageInput, setMessageInput, sendMessag
         return !!payment;
       }
       
-      return true; // DMs always allowed
+      return true;
     },
     enabled: !!user && !!selectedChat,
   });

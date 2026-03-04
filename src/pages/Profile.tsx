@@ -849,10 +849,6 @@ navigate('/app/events')}>
                 <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Views</span>
               </div>
             )}
-            <div className="text-center cursor-pointer hover:opacity-70 transition-opacity">
-              <span className="block font-bold text-lg">84</span>
-              <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Score</span>
-            </div>
           </div>
         </div>
       </div>
@@ -867,12 +863,6 @@ navigate('/app/events')}>
             <Ticket className="w-4 h-4 mr-2" /> My Tickets
           </TabsTrigger>
           
-          <TabsTrigger
-            value="moments"
-            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary px-0 pb-3 pt-2 text-muted-foreground transition-all"
-          >
-            <Grid className="w-4 h-4 mr-2" /> Moments
-          </TabsTrigger>
           {profile.is_premium && (
             <TabsTrigger
               value="analytics"
@@ -921,17 +911,6 @@ navigate('/app/events')}>
           )}
         </TabsContent>
 
-        {/* B. MOMENTS (Grid View) */}
-        <TabsContent value="moments" className="p-1 min-h-[300px]">
-          <div className="grid grid-cols-3 gap-1">
-            {[1,2,3,4,5,6].map((i) => (
-              <div key={i} className="aspect-square bg-muted/30 relative group cursor-pointer overflow-hidden">
-                <img src={`https://picsum.photos/seed/${i + (user?.id || '')}/400/400`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="moment" />
-                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            ))}
-          </div>
-        </TabsContent>
 
         {/* C. PREMIUM INSIGHTS (Analytics for premium users) */}
         {profile.is_premium && (
