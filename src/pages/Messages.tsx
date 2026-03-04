@@ -27,6 +27,10 @@ import { useScrollToBottom } from '@/hooks/useScrollToBottom';
 import { useChatRealtime } from '@/hooks/useChatRealtime';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { TypingIndicator } from '@/components/messages/TypingIndicator';
+import { useMessageReactions } from '@/hooks/useMessageReactions';
+import { CommunitySettingsDialog } from '@/components/messages/CommunitySettingsDialog';
+import { CommunityModerationDialog } from '@/components/messages/CommunityModerationDialog';
+import { Settings, Shield } from 'lucide-react';
 
 // --- TYPES ---
 type ChatType = 'dm' | 'community' | 'event';
