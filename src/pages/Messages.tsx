@@ -268,7 +268,7 @@ export default function Messages() {
       // For event chats, fetch sender profiles separately
       let profileMap = new Map<string, any>();
       if (selectedChat.type === 'event' && data?.length) {
-        const userIds = [...new Set(data.map((m: any) => m.user_id))];
+        const userIds = [...new Set(data.map((m: any) => m.user_id))] as string[];
         const { data: profiles } = await supabase
           .from('profiles')
           .select('user_id, display_name, avatar_url')
