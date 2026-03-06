@@ -256,25 +256,40 @@ export default function Messages() {
           .select(`*, sender:profiles!sender_id(*)`)
           .eq('community_id', selectedChat.id);
       } else {
-        // NEW: Event Chats table
+        // Event Chats - no FK to profiles, so fetch separately
         query = supabase.from('event_chats')
-          .select(`*, sender:profiles!user_id(*)`) // Note: user_id is sender in event_chats schema
+          .select('*')
           .eq('event_id', selectedChat.id);
       }
 
       const { data, error } = await query.order('created_at', { ascending: true });
       if (error) console.error(error);
       
-      return (data || []).map((m: any) => ({
-        id: m.id,
-        content: m.content || m.message, // handle schema diffs
-        sender_id: m.sender_id || m.user_id,
-        sender_name: m.sender?.display_name || 'User',
-        sender_avatar: m.sender?.avatar_url,
-        created_at: m.created_at,
-        is_me: (m.sender_id || m.user_id) === user.id,
-        image_url: m.image_url
-      }));
+      // For event chats, fetch sender profiles separately
+      let profileMap = new Map<string, any>();
+      if (selectedChat.type === 'event' && data?.length) {
+        const userIds = [...new Set(data.map((m: any) => m.user_id))] as string[];
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, display_name, avatar_url')
+          .in('user_id', userIds);
+        profileMap = new Map((profiles || []).map(p => [p.user_id, p]));
+      }
+      
+      return (data || []).map((m: any) => {
+        const senderId = m.sender_id || m.user_id;
+        const profile = profileMap.get(senderId);
+        return {
+          id: m.id,
+          content: m.content || m.message,
+          sender_id: senderId,
+          sender_name: m.sender?.display_name || profile?.display_name || 'User',
+          sender_avatar: m.sender?.avatar_url || profile?.avatar_url,
+          created_at: m.created_at,
+          is_me: senderId === user.id,
+          image_url: m.image_url
+        };
+      });
     },
     enabled: !!selectedChat,
     refetchInterval: 3000 // Simple polling for realtime feel
