@@ -13,12 +13,14 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { ContactImportModal } from '@/components/ContactImportModal';
+import { FriendProfilePreview } from '@/components/friends/FriendProfilePreview';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useGeolocation } from '@/contexts/LocationContext';
+import type { Profile } from '@/hooks/useFriends';
 
 // --- TYPES ---
 interface Friend {
