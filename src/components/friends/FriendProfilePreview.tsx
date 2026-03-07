@@ -49,7 +49,7 @@ export function FriendProfilePreview({
   // Record profile view when dialog opens
   useEffect(() => {
     if (open && profile?.user_id) {
-      supabase.rpc('record_profile_view', { target_user_id: profile.user_id }).catch(() => {});
+      (supabase.rpc as any)('record_profile_view', { target_user_id: profile.user_id }).then(() => {}).catch(() => {});
     }
   }, [open, profile?.user_id]);
 

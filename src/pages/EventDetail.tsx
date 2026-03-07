@@ -161,7 +161,7 @@ const EventDetail = () => {
   // Record event view when page loads
   useEffect(() => {
     if (eventId && user?.id) {
-      supabase.rpc('record_event_view', { target_event_id: eventId }).catch(() => {});
+      (supabase.rpc as any)('record_event_view', { target_event_id: eventId }).then(() => {}).catch(() => {});
     }
   }, [eventId, user?.id]);
 
