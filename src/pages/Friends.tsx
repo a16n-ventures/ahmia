@@ -681,6 +681,30 @@ const Friends = () => {
       </div>
 
       <ContactImportModal open={isImportOpen} onOpenChange={setIsImportOpen} />
+      
+      <FriendProfilePreview
+        profile={previewProfile}
+        open={!!previewProfile}
+        onClose={() => { setPreviewProfile(null); setPreviewFriendshipId(undefined); }}
+        friendshipId={previewFriendshipId}
+        onRemoveFriend={async (fId) => {
+          const { error } = await supabase.from('friendships').delete().eq('id', fId);
+          if (error) { toast.error('Failed to remove friend'); return; }
+          toast.success('Friend removed');
+          queryClient.invalidateQueries({ queryKey: ['my_friends_page'] });
+        }}
+        onBlockUser={async (userId) => {
+          const { error } = await supabase.from('blocked_users').insert({ blocker_id: user!.id, blocked_id: userId });
+          if (error) { toast.error('Failed to block user'); return; }
+          toast.success('User blocked');
+          queryClient.invalidateQueries({ queryKey: ['my_friends_page'] });
+        }}
+        onReportUser={async (userId) => {
+          const { error } = await supabase.from('reports').insert({ reporter_id: user!.id, target_id: userId, target_type: 'user', reason: 'Reported from friends list' });
+          if (error) { toast.error('Failed to report'); return; }
+          toast.success('Report submitted');
+        }}
+      />
     </div>
   );
 };
