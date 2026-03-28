@@ -40,13 +40,14 @@ serve(async (req) => {
 
     // 2. CHECK CITY MILESTONE STATUS
     // Count profiles within 10km of ABU Zaria
-    const { count: zariaUserCount } = await supabase
+    const { count: pioneerCount } = await supabase
       .from('profiles')
       .select('*', { count: 'exact', head: true })
+      .eq('is_pioneer', true);
       // This assumes you store lat/long on profiles or use a PostGIS point
       .not('last_lat', 'is', null); 
 
-    const isCityUnlocked = (zariaUserCount || 0) >= UNLOCK_THRESHOLD;
+    const isCityUnlocked = (pioneerCount || 0) >= UNLOCK_THRESHOLD;
 
     // 3. ADAPTIVE CONTENT POOL
     let eventsQuery = supabase.from('events')
@@ -90,9 +91,9 @@ serve(async (req) => {
   location_context: locationFilter || null,
   // NEW: Milestone data for the progress bar
   milestone: {
-    current: zariaUserCount || 0,
+    current: pioneerCount || 0,
     target: 500,
-    is_unlocked: (zariaUserCount || 0) >= 500
+    is_unlocked: (pioneerCount || 0) >= 500
      }
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
