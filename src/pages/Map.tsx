@@ -162,7 +162,7 @@ const MapPage = () => {
   if (!location) return [];
   
   // 1. Detect if ABU Zaria is currently in "Stealth Mode"
-  const isCityLocked = events.length > 0 && (events[0] as any).is_locked;
+  const isCityLocked = events && events.length > 0 && (events[0] as any)?.is_locked;
 
   return (nearbyFriendsRaw
     .map((loc: any) => {
