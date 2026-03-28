@@ -14,20 +14,83 @@ interface FeedRequest {
   location_name?: string;
 }
 
+const ABU_ZARIA_COORDS = { lat: 11.1500, long: 7.6500 }; // Samaru Campus center
+const UNLOCK_THRESHOLD = 500; // Target users for ABU Zaria 
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { user_id, user_lat, user_long, city, location_name } = await req.json() as FeedRequest;
+    const { user_id, user_lat, user_long, city, location_name } = await req.json() as FeedRequest; 
     
     const locationFilter = city || location_name || null;
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    ); 
+
+    // 1. CALCULATE DISTANCE TO LAUNCH ZONE (ABU Zaria)
+    // We prioritize users near Zaria; others see a "Coming Soon" state
+    const distToZaria = (user_lat && user_long) 
+      ? calculateDistance(user_lat, user_long, ABU_ZARIA_COORDS.lat, ABU_ZARIA_COORDS.long)
+      : 999;
+
+    // 2. CHECK CITY MILESTONE STATUS
+    // Count profiles within 10km of ABU Zaria
+    const { count: zariaUserCount } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      // This assumes you store lat/long on profiles or use a PostGIS point
+      .not('last_lat', 'is', null); 
+
+    const isCityUnlocked = (zariaUserCount || 0) >= UNLOCK_THRESHOLD;
+
+    // 3. ADAPTIVE CONTENT POOL
+    let eventsQuery = supabase.from('events')
+      .select(`*, event_attendees(count)`)
+      .gt('start_date', new Date().toISOString())
+      .eq('is_public', true);
+
+    // If locked, we only show "Official Ahmia/ABU" events to build hype
+    if (!isCityUnlocked) {
+      eventsQuery = eventsQuery.eq('is_official', true); 
+    } else {
+      // Once unlocked, show everything within a tight 10km radius of Zaria
+      eventsQuery = eventsQuery.ilike('location', '%Zaria%');
+    }
+
+    const { data: events } = await eventsQuery.limit(25);
+
+    // 4. ALGORITHM: "THE ZARIA BOOST"
+    const eventsData = events?.map((event: any) => {
+      let matchScore = 50;
+      
+      // Hyper-local boost for ABU Zaria locations
+      if (event.location?.toLowerCase().includes('samaru') || 
+          event.location?.toLowerCase().includes('kongo')) {
+        matchScore += 40;
+      }
+
+      return {
+        ...event,
+        match_score: Math.min(matchScore, 100),
+        is_locked: !isCityUnlocked // Tell frontend to show the "Waiting Room" UI
+      };
+    });
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      events: eventsData,
+      milestone: {
+        current: zariaUserCount || 0,
+        target: UNLOCK_THRESHOLD,
+        is_unlocked: isCityUnlocked,
+        city_name: "ABU Zaria"
+      }
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     // 1. FETCH VIEWER CONTEXT (Profile, Friends, Active Features)
     const [profileRes, friendsRes, viewerFeaturesRes] = await Promise.all([
