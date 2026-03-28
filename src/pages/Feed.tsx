@@ -88,11 +88,21 @@ const Feed = () => {
   const { unreadCount } = useRealtimeNotifications(user?.id);
   
   // Data State
-  const [events, setEvents] = useState<Event[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [aiInsights, setAiInsights] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // FIX: Use React Query for events to prevent flickering and handle updates
+  const { data: events = [], isLoading: loading, refetch: refetchEvents } = useQuery({
+    queryKey: ['smart-feed', user?.id, location?.latitude?.toFixed(3), location?.longitude?.toFixed(3)],
+    queryFn: async () => {
+      const data = await fetchSmartFeed();
+      return data || [];
+    },
+    enabled: !!user,
+    staleTime: 1000 * 60 * 5, // Keep data fresh for 5 mins to stop flickering
+  });
+  
   const { location, isLoading: locationLoading, error: locationError } = useGeolocation();
   const [locationName, setLocationName] = useState("Detecting...");
   
@@ -119,12 +129,22 @@ const Feed = () => {
     return (prefs?.discovery_radius ?? 25000) / 1000; // Default 25km
   }, [userProfile]);
 
-  // --- INITIALIZATION ---
+  // --- INITIALIZATION & REALTIME ---
   useEffect(() => {
     if (!user) return;
-    fetchSmartFeed();
     checkPremium();
-  }, [user, location?.latitude, location?.longitude]);
+
+    // FIX: Listen for new events in real-time
+    const channel = supabase
+      .channel('feed-updates')
+      .on('postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'events' }, 
+        () => refetchEvents()
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   // --- FETCH FRIENDS FOR MODAL (NUCLEAR FIX) ---
     useEffect(() => {
