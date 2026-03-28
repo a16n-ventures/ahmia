@@ -177,7 +177,7 @@ const Feed = () => {
     },
     enabled: !!user && !!location,
     staleTime: 1000 * 60 * 5, // Keep data fresh for 5 mins to stop flickering
-  });
+  }); 
   
   // UI State
   const [activeTab, setActiveTab] = useState("for_you");
@@ -489,7 +489,54 @@ const Feed = () => {
             </div>
 
             {/* CONTENT AREA */}
-            <div className="container-mobile py-2 space-y-6">
+            <div className="container-mobile py-2 space-y-6"> 
+
+              {/* NEW: WAITING ROOM / MILESTONE UI */}
+{events.length > 0 && events[0].is_locked && (
+  <div className="mx-4 mb-8 p-6 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-3xl border-2 border-dashed border-primary/30 text-center animate-in fade-in zoom-in duration-500">
+    <div className="h-16 w-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
+      <Lock className="w-8 h-8 text-primary animate-pulse" />
+    </div>
+    
+    <h2 className="text-2xl font-black mb-2 italic">ZARIA IS LOADING...</h2>
+    <p className="text-sm text-muted-foreground mb-6">
+      Ahmia goes live at ABU Zaria once <span className="text-foreground font-bold">500 Pioneers</span> join. 
+      Social features are currently in "Stealth Mode."
+    </p>
+
+    {/* Progress Bar */}
+    <div className="space-y-2 mb-6">
+      <div className="flex justify-between text-xs font-bold uppercase tracking-widest">
+        <span>{locationName} Pioneers</span>
+        <span className="text-primary">342 / 500</span> {/* Hardcoded for demo, will come from milestone object */}
+      </div>
+      <div className="h-4 w-full bg-muted rounded-full overflow-hidden border">
+        <div 
+          className="h-full bg-primary transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(var(--primary),0.5)]" 
+          style={{ width: '68%' }} 
+        />
+      </div>
+    </div>
+
+    <Button 
+      className="w-full h-12 rounded-2xl shadow-lg hover:scale-105 transition-transform font-bold"
+      onClick={() => {
+        if (navigator.share) {
+          navigator.share({
+            title: 'Join the ABU Zaria Pioneer List on Ahmia!',
+            text: 'I just joined the waiting room for Ahmia at ABU. Help us hit 500 users to unlock the city!',
+            url: window.location.origin
+          });
+        }
+      }}
+    >
+      <Users className="w-5 h-5 mr-2" /> Invite Friends to Speed Up
+    </Button>
+  </div>
+)}
+
+{/* If Locked, show "Teaser" events with blurred overlay */}
+<div className={events[0]?.is_locked ? "opacity-40 pointer-events-none grayscale" : ""}>
                 
                 {/* AI Insight (Premium VIP Section) */}
                 {isPremium && activeTab === 'for_you' && (
