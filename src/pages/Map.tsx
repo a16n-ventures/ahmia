@@ -348,7 +348,6 @@ const MapPage = () => {
         </div>
         <Badge variant="outline" className="text-[9px] border-primary/50 text-primary">LOCKED</Badge>
       </div>
-    )}
 
                   <Search className="w-5 h-5 text-muted-foreground mr-3" />
                   <Input 
