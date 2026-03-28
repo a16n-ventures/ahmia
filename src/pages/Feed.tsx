@@ -491,7 +491,7 @@ const Feed = () => {
             {/* CONTENT AREA */}
 <div className="container-mobile py-2 space-y-6"> 
     
-    {/* A. PREMIUM SECTION (AI Insights Only) */}
+    {/* A. PREMIUM SECTION */}
     {isPremium && activeTab === 'for_you' && (
         <div className="mx-4 mt-2 space-y-3">
           <div className="relative overflow-hidden bg-gradient-to-r from-amber-500/15 via-primary/10 to-purple-500/15 border border-amber-300/30 dark:border-amber-700/30 rounded-2xl p-4 shadow-sm">
@@ -523,14 +523,14 @@ const Feed = () => {
         </div>
     )}
 
-    {/* B. WAITING ROOM / MILESTONE UI (Visible to ALL users in Zaria) */}
+    {/* B. WAITING ROOM / MILESTONE UI (Zaria Support) */}
     {activeTab === 'for_you' && events.length > 0 && (events[0] as any).is_locked && (
       <div className="mx-4 mb-8 p-6 bg-gradient-to-br from-primary/10 via-background to-secondary/10 rounded-3xl border-2 border-dashed border-primary/30 text-center animate-in fade-in zoom-in duration-500">
         <div className="h-16 w-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
           <Lock className="w-8 h-8 text-primary animate-pulse" />
         </div>
         
-        <h2 className="text-2xl font-black mb-2 italic uppercase">{locationName} IS LOADING...</h2>
+        <h2 className="text-2xl font-black mb-2 italic uppercase">ZARIA IS LOADING...</h2>
         <p className="text-sm text-muted-foreground mb-6">
           Ahmia goes live once <span className="text-foreground font-bold">500 Pioneers</span> join. 
           Social features are currently in "Stealth Mode."
@@ -554,8 +554,8 @@ const Feed = () => {
           onClick={() => {
             if (navigator.share) {
               navigator.share({
-                title: `Unlock Ahmia in ${locationName}!`,
-                text: `I'm pioneer #342 in ${locationName}. Help us hit 500 to unlock the city!`,
+                title: `Unlock Ahmia in Zaria!`,
+                text: `I'm pioneer #342 in Zaria. Help us hit 500 to unlock the city!`,
                 url: window.location.origin
               });
             }
@@ -566,12 +566,12 @@ const Feed = () => {
       </div>
     )}
 
-    {/* C. EVENTS FEED (With blur if locked) */}
-    <TabsContent value={activeTab} className={`mt-0 space-y-5 px-4 min-h-[50vh] ${activeTab === 'for_you' && (events[0] as any)?.is_locked ? "opacity-50 pointer-events-none grayscale blur-[1px]" : ""}`}>
-
-                {/* EVENTS FEED */}
-                <TabsContent value={activeTab} className="mt-0 space-y-5 px-4 min-h-[50vh]">
-                    {activeTab === 'communities' ? (
+    {/* C. MAIN FEED CONTENT */}
+    <TabsContent 
+      value={activeTab} 
+      className={`mt-0 space-y-5 px-4 min-h-[50vh] transition-all ${activeTab === 'for_you' && (events[0] as any)?.is_locked ? "opacity-40 pointer-events-none grayscale blur-[1px]" : ""}`}
+    >
+      {activeTab === 'communities' ? (
                         // COMMUNITIES VIEW
                         <div className="space-y-3">
                             {loading ? (
