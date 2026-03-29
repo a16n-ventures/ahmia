@@ -91,7 +91,7 @@ const MainLayout = () => {
       {/* 2. FLOATING GLASS DOCK (The Clyx Nav) */}
       <div className="fixed bottom-6 left-4 right-4 z-50">
         <div className="container-mobile max-w-md mx-auto">
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-background/60 backdrop-blur-xl border border-white/20 shadow-2xl rounded-full h-16 flex items-center justify-around px-4 z-50">
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-background/60 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-2xl rounded-3xl h-16 flex items-center justify-around px-2 py-2 z-50">
             
             {tabs.map((tab) => {
               const Icon = tab.icon;
