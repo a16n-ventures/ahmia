@@ -280,7 +280,41 @@ const MapPage = () => {
     } as any);
     setIsGhostMode(newValue);
     toast.success(newValue ? "Ghost Mode On 👻" : "You are visible on map");
+  }; 
+  
+  useEffect(() => {
+  if (!user) return;
+
+  // Listen for changes specifically in the user_locations table
+  const channel = supabase
+    .channel('public:user_locations')
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'user_locations',
+      },
+      (payload) => {
+        const updatedLocation = payload.new;
+        
+        // Update the React Query cache so the UI re-renders instantly
+        queryClient.setQueryData(['friend-locations', friendIds], (oldData: any[] | undefined) => {
+          if (!oldData) return oldData;
+          return oldData.map((loc) => 
+            loc.user_id === updatedLocation.user_id 
+              ? { ...loc, status_bubble: updatedLocation.status_bubble } 
+              : loc
+          );
+        });
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
   };
+}, [user, friendIds, queryClient]);
 
   // --- 6. Navigation ---
   const handleGetDirections = async (destLat: number, destLng: number, destName: string) => {
@@ -563,15 +597,15 @@ const MapPage = () => {
           
           {/* 4. ADAPTIVE LIST */}
           {!isNavigating && !selectedFriend && !selectedEvent && (
-            <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide snap-x">
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide snap-x">
               
               {/* If Low Density, show the "Global Discovery" twist first */}
               {showGlobalDiscovery && (
-                <div className="flex-shrink-0 w-50 snap-start">
+                <div className="flex-shrink-0 w-44 snap-start">
                   <Card className="h-40 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/10 flex flex-col items-center justify-center p-4 text-center">
                     <Globe className="w-8 h-8 text-primary mb-2 animate-spin-slow" />
                     <h4 className="font-bold text-white text-sm">Quiet nearby?</h4>
-                    <p className="text-[10px] text-muted-foreground text-white mb-3">Join Global Groups until your area heats up.</p>
+                    <p className="text-[10px] text-muted-foreground text-white mb-3">Join Global Communities until your area heats up.</p>
                     <Button size="sm" variant="outline" className="h-8 rounded-full text-[10px]" onClick={() => navigate('/app/feed?tab=communities')}>
                       Explore Communities
                     </Button>
@@ -581,7 +615,7 @@ const MapPage = () => {
           
               {/* DEFAULT VIEW */}
               {activeView === 'friends' && (
-                <div className="flex-shrink-0 w-auto snap-end">
+                <div className="flex-shrink-0 w-44 snap-end">
                   <Button 
                     variant="outline" 
                     className="w-full h-40 rounded-3xl border-dashed border-2 flex flex-col gap-2 hover:bg-accent/50"
