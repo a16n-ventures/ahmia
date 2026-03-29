@@ -141,83 +141,6 @@ const getAvatarPath = (url: string): string | null => {
   return match ? match[1] : null;
 };
 
-const ReferralSection = () => {
-  const {
-    referralCode,
-    referralSettings,
-    stats,
-    isLoading,
-    copyReferralCode,
-    shareInvite
-  } = useReferrals();
-
-  // Don't render if referrals are disabled
-  if (!referralSettings?.enabled) return null;
-
-  return (
-    <div className="pt-4 space-y-4 border-t border-border/50">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground font-semibold uppercase tracking-wider">
-        <Gift className="w-3.5 h-3.5" />
-        Invite Friends & Earn
-      </div>
-
-      {/* Referral Code Card */}
-      <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-xl p-4 border border-primary/20">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Your Referral Code</p>
-            {isLoading ? (
-              <div className="h-6 w-24 bg-muted animate-pulse rounded" />
-            ) : (
-              <p className="text-xl font-bold text-primary tracking-wider">{referralCode || 'N/A'}</p>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="icon"
-              variant="outline"
-              className="h-9 w-9 rounded-full"
-              onClick={copyReferralCode}
-              disabled={!referralCode}
-            >
-              <Copy className="w-4 h-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="default"
-              className="h-9 w-9 rounded-full"
-              onClick={shareInvite}
-              disabled={!referralCode}
-            >
-              <Share2 className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-2 pt-3 border-t border-primary/10">
-          <div className="text-center">
-            <p className="text-lg font-bold text-foreground">{stats?.total_referrals ?? 0}</p>
-            <p className="text-[10px] text-muted-foreground">Invited</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold text-green-600">{stats?.completed_referrals ?? 0}</p>
-            <p className="text-[10px] text-muted-foreground">Joined</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold text-primary">₦{(stats?.total_earnings ?? 0).toLocaleString()}</p>
-            <p className="text-[10px] text-muted-foreground">Earned</p>
-          </div>
-        </div>
-      </div>
-
-      <p className="text-xs text-muted-foreground text-center">
-        Earn ₦{referralSettings?.reward_amount || 500} for each friend who joins using your code!
-      </p>
-    </div>
-  );
-};
-
 const AdminPortalButton = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -368,6 +291,7 @@ const ProfileViewsTab = ({ userId, isPremium }: { userId: string; isPremium: boo
 };
 
 // EventsProfileTab removed - now handled in Events page
+const { shareInvite, referralCode } = useReferrals(); 
 
 const Profile = () => {
   const { user, signOut } = useAuth();
@@ -867,9 +791,6 @@ const Profile = () => {
                   </div>
                 </div>
 
-                {/* Referrals Section (ADDED) */}
-                <ReferralSection />
-
                 {/* Admin Portal (for admin users) */}
                 <AdminPortalButton />
 
@@ -897,7 +818,7 @@ const Profile = () => {
         {/* Avatar & Info */}
         <div className="px-6 -mt-12 mb-6">
           <div className="relative inline-block">
-            <Avatar className="w-24 h-24 border-[4px] border-background shadow-xl">
+            <Avatar className="w-28 h-28 border-[6px] border-background shadow-2xl relative z-10">
               <AvatarImage
                 src={avatarPreview || profile?.avatar_url || ''}
                 className="object-cover"
@@ -940,7 +861,12 @@ const Profile = () => {
               {profile.bio && <p className="text-sm mt-3 text-foreground/80 leading-relaxed max-w-xs">{profile.bio}</p>}
             </div>
 
-            <Button size="sm" variant="outline" className="rounded-full gap-2 h-9 px-4 shadow-sm bg-background">
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="rounded-full gap-2 h-9 px-4 shadow-sm bg-background hover:bg-primary/5 active:scale-95 transition-all"
+              onClick={shareInvite} 
+            >
               <Share2 className="w-4 h-4" /> Share
             </Button>
           </div>
@@ -999,17 +925,19 @@ navigate('/app/events')}>
         <TabsContent value="tickets" className="p-4 space-y-4 min-h-[300px]">
           {myTickets.length > 0 ? (
             (myTickets as any[]).map((event: any) => (
-              <Card
+            <Card 
                 key={event.id}
-                className="overflow-hidden border-l-[6px] border-l-primary shadow-sm hover:shadow-md transition-shadow cursor-pointer bg-card/50"
+                className="overflow-hidden border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 cursor-pointer bg-card/50 group"
                 onClick={() => navigate(`/app/events/${event.id}`)}
               >
                 <div className="flex">
-                  <div className="flex-1 p-4">
+                  {/* Use a thinner, more elegant accent line */}
+                  <div className="w-1.5 bg-primary/80" /> 
+                  <div className="flex-1 p-5">
                     <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="outline" className="text-[10px] text-green-600 bg-green-50 border-green-200">CONFIRMED</Badge>
+                      <Badge className="text-[10px] font-bold bg-green-500/10 text-green-600 border-none">CONFIRMED</Badge>
                     </div>
-                    <h3 className="font-bold truncate text-base">{event.title}</h3>
+                    <h3 className="font-bold text-lg group-hover:text-primary transition-colors">{event.title}</h3>
                     <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                       <span className="flex items-center"><Calendar className="w-3.5 h-3.5 mr-1.5 text-primary" /> {new Date(event.start_date).toLocaleDateString()}</span>
                       <span className="flex items-center"><MapPin className="w-3.5 h-3.5 mr-1.5 text-primary" /> {event.location || 'TBA'}</span>
