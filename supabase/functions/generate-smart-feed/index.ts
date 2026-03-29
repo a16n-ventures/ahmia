@@ -19,6 +19,8 @@ const LAUNCH_ZONES = {
     threshold: 1000,
     schools: ["UniAbuja Main", "UniAbuja Gwagwalada", "Baze University", "Nile University"]
   },
+};
+
   /*
   KANO: {
     name: "Kano",
@@ -33,7 +35,6 @@ const LAUNCH_ZONES = {
     schools: ["UNIBEN Ugbowo", "UNIBEN Ekenwan", "Benson Idahosa University"]
   }
   */
-};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
