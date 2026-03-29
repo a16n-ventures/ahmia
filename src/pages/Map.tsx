@@ -242,7 +242,7 @@ const MapPage = () => {
       .filter(Boolean) as FriendOnMap[])
       // Sort: NEAREST FIRST
       .sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
-  }, [nearbyFriendsRaw, friendsPresence, location, discoveryRadiusKm, premiumStatus, events]); 
+  }, [nearbyFriendsRaw, friendsPresence, location, discoveryRadiusKm, premiumStatus, events]);
 
   const nearbyEventsForMap = useMemo(() => {
     return events.map((e: any) => ({
@@ -601,7 +601,7 @@ const MapPage = () => {
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide snap-x">
               
               {/* If Low Density, show the "Global Discovery" twist first */}
-              {showGlobalDiscovery && (
+              {showGlobalDiscovery ? (
                 <div className="flex-shrink-0 w-44 snap-start">
                   <Card className="h-40 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/10 flex flex-col items-center justify-center p-4 text-center">
                     <Globe className="w-8 h-8 text-primary mb-2 animate-spin-slow" />
@@ -612,24 +612,8 @@ const MapPage = () => {
                     </Button>
                   </Card>
                 </div>
-              )}
-          
-              {/* DEFAULT VIEW */}
-              {activeView === 'friends' && (
-                <div className="flex-shrink-0 w-44 snap-end">
-                  <Button 
-                    variant="outline" 
-                    className="w-full h-40 rounded-3xl border-dashed border-2 flex flex-col gap-2 hover:bg-accent/50"
-                    onClick={() => setShowContactImport(true)}
-                  >
-                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                      <UserPlus className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-medium">Invite Friends</span>
-                  </Button>
-                </div>
-              )}
-              
+              ) : (
+              <>
               {(activeView === 'friends' ? friendsMapped : events).map((item: any) => (
                 <div
                   key={item.id}
@@ -652,7 +636,24 @@ const MapPage = () => {
                     </p>
                   </div>
                 </div>
-              ))}
+              ))} 
+              
+              {/* DEFAULT VIEW */}
+              {activeView === 'friends' && (
+                <div className="flex-shrink-0 w-44 snap-end">
+                  <Button 
+                    variant="outline" 
+                    className="w-full h-40 rounded-3xl border-dashed border-2 flex flex-col gap-2 hover:bg-accent/50"
+                    onClick={() => setShowContactImport(true)}
+                  >
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      <UserPlus className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-medium">Invite Friends</span>
+                  </Button>
+                </div>
+              )}
+             </>
             </div>
           )}
         </div>
