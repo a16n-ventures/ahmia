@@ -204,6 +204,9 @@ const CreateEvent = () => {
           requires_approval: eventData.requireApproval,
           creator_id: user.id,
           image_url: imageUrl,
+          is_official: eventData.isOfficial || false, 
+          is_locked: eventData.isOfficial ? false : true, 
+          match_score: 50, // Set a baseline score for the algorithm
           event_type: eventData.eventType,
           meeting_link: generatedMeetingLink,
           recurrence_rule: eventData.recurrenceRule || null,
@@ -673,6 +676,30 @@ const CreateEvent = () => {
               </div>
             </CardContent>
           </Card>
+          
+          {/* ADMIN ONLY SECTION */}
+          {(user?.email === 'amdagas@yahoo.com') && (
+            <Card className="border-2 border-primary/50 bg-primary/5 shadow-lg">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-primary" /> Admin Superpowers
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="official">Official Ahmia Event</Label>
+                    <p className="text-[10px] text-muted-foreground">Bypasses city locks and shows globally</p>
+                  </div>
+                  <Switch
+                    id="official"
+                    checked={eventData.isOfficial}
+                    onCheckedChange={(checked) => setEventData({...eventData, isOfficial: checked})}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Submit Button */}
           <div className="grid grid-cols-2 gap-4 sticky bottom-4 z-10">
