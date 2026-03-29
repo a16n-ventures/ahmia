@@ -13,7 +13,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGeolocation } from '@/contexts/LocationContext';
 import { useFriends } from '@/hooks/useFriends';
-import { ContactImportModal } from '@/components/ContactImportModal';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import LeafletMap from '@/components/map/LeafletMap';
@@ -67,7 +66,6 @@ const MapPage = () => {
   // Local State
   const [searchQuery, setSearchQuery] = useState('');
   const [friendsPresence, setFriendsPresence] = useState<Record<string, 'online' | 'offline'>>({});
-  const [showContactImport, setShowContactImport] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendOnMap | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [isGhostMode, setIsGhostMode] = useState(false);
@@ -607,8 +605,8 @@ const MapPage = () => {
                     <Card className="h-40 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/10 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
                       <div className="absolute -right-4 -top-4 w-12 h-12 bg-primary/10 rounded-full blur-xl" />
                       <Globe className="w-8 h-8 text-primary mb-2 animate-spin-slow" />
-                      <h4 className="font-bold text-sm">Quiet nearby?</h4>
-                      <p className="text-[10px] text-muted-foreground mb-2 leading-tight">
+                      <h4 className="font-bold text-white text-sm">Quiet nearby?</h4>
+                      <p className="text-[10px] text-white mb-2 leading-tight">
                         Join 12 friends in the **Abuja Tech Hub** community.
                       </p>
                       <Button 
@@ -650,7 +648,7 @@ const MapPage = () => {
                   {/* Invite Friends Card appended to the end of the scroll */}
                   {activeView === 'friends' && (
                     <div className="flex-shrink-0 w-44 snap-end">
-                      <Button variant="outline" className="w-full h-40 rounded-3xl border-dashed border-2" onClick={() => setShowContactImport(true)}>
+                      <Button variant="outline" className="w-full h-40 rounded-3xl border-dashed border-2" onClick={() => navigate('/app/friends')}>
                         <UserPlus className="w-5 h-5" />
                         <span className="text-xs font-medium">Invite Friends</span>
                       </Button>
@@ -661,7 +659,6 @@ const MapPage = () => {
         </div>
       </div>
 
-      <ContactImportModal open={showContactImport} onOpenChange={setShowContactImport} />
     </div>
   );
 };
