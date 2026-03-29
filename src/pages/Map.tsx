@@ -93,7 +93,7 @@ const MapPage = () => {
       if (friendIds.length === 0) return [];
       const { data } = await supabase
         .from('user_locations')
-        .select('user_id, latitude, longitude, is_sharing_location, updated_at')
+        .select('user_id, latitude, longitude, is_sharing_location, status_bubble, updated_at')
         .in('user_id', friendIds);
       return data || [];
     },
@@ -313,6 +313,9 @@ const MapPage = () => {
     if (!q) return list;
     return list.filter((item: any) => (item.name || item.title).toLowerCase().includes(q));
   }, [searchQuery, friendsMapped, events, activeView]);
+  
+  const isLowDensity = friendsMapped.length < 5;
+  const showGlobalDiscovery = isLowDensity && activeView === 'friends';
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-background">
@@ -556,11 +559,27 @@ const MapPage = () => {
                 </div>
               </CardContent>
             </Card>
-          )}
-
-          {/* 4. DEFAULT LIST */}
+          )} 
+          
+          {/* 4. ADAPTIVE LIST */}
           {!isNavigating && !selectedFriend && !selectedEvent && (
             <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide snap-x">
+              
+              {/* If Low Density, show the "Global Discovery" twist first */}
+              {showGlobalDiscovery && (
+                <div className="flex-shrink-0 w-64 snap-start">
+                  <Card className="h-40 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/5 flex flex-col items-center justify-center p-4 text-center">
+                    <Globe className="w-8 h-8 text-primary mb-2 animate-spin-slow" />
+                    <h4 className="font-bold text-sm">Quiet nearby?</h4>
+                    <p className="text-[10px] text-muted-foreground mb-3">Join Global Groups until your area heats up.</p>
+                    <Button size="sm" variant="outline" className="h-8 rounded-full text-[10px]" onClick={() => navigate('/app/feed?tab=communities')}>
+                      Explore Communities
+                    </Button>
+                  </Card>
+                </div>
+              )}
+          
+              {/* DEFAULT VIEW */}
               {activeView === 'friends' && (
                 <div className="flex-shrink-0 w-36 snap-start">
                   <Button 
