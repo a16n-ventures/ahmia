@@ -830,12 +830,12 @@ const Profile = () => {
             {/* Avatar upload button */}
             <label
               htmlFor="avatar-upload"
-              className="absolute bottom-0 right-0 w-10 h-10 bg-white dark:bg-slate-800 text-primary rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:scale-110 transition-transform"
+              className="absolute bottom-0 right-0 w-10 h-10 bg-white dark:bg-slate-800 text-primary rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:scale-110 transition-transform z-20"
             >
               {uploadAvatarMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Camera className="w-4 h-4 z-12" />
+                <Camera className="w-4 h-4" />
               )}
             </label>
             <input

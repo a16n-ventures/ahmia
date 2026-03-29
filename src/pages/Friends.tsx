@@ -40,6 +40,7 @@ interface Suggestion {
   avatar_url: string | null;
   distance_km?: number;
   mutual_count?: number;
+  is_new?: boolean; 
   score?: number;
 }
 
@@ -286,11 +287,24 @@ const Friends = () => {
           }
         }
 
-        return (randomData || []).map((p: any) => ({
-          ...p,
-          distance_km: null,
-          mutual_count: mutualCounts.get(p.user_id) || 0,
-        }));
+        return (randomData || []).map((p: any) => {
+          const isNew = new Date(p.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          
+          return {
+            ...p,
+            distance_km: p.distance_km || null,
+            mutual_count: mutualCounts.get(p.user_id) || 0,
+            is_new: isNew // Inject the "New" status
+          };
+        }).sort((a, b) => {
+          // STRICT PRIORITIZATION: 
+          // 1. Closest friends first (Distance < 5km)
+          // 2. Then by Mutual Count
+          // 3. Then by "New" status
+          if ((a.distance_km || 999) < (b.distance_km || 999)) return -1;
+          if (b.mutual_count !== a.mutual_count) return b.mutual_count - a.mutual_count;
+          return a.is_new ? -1 : 1;
+        });
       } catch (e) {
         console.error("Suggestion fetch failed", e);
         return [];
@@ -482,14 +496,36 @@ const Friends = () => {
                             <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> People nearby
                         </h3>
                     </div>
-                    <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">
-                        {suggestions.map((s) => (
-                            <div key={s.user_id} className="min-w-[140px] w-[140px] p-3 rounded-xl border bg-card/50 flex flex-col items-center text-center shadow-sm relative group hover:border-primary/30 transition-all">
-                                <Avatar className="h-14 w-14 mb-2 border-2 border-background shadow-sm group-hover:scale-105 transition-transform">
-                                    <AvatarImage src={s.avatar_url || undefined} />
-                                    <AvatarFallback>{s.display_name?.[0] || '?'}</AvatarFallback>
-                                </Avatar>
-                                <h4 className="font-bold text-sm truncate w-full">{s.display_name}</h4>
+                    <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">{suggestions.map((s) => (
+                        <div key={s.user_id} className="min-w-[150px] w-[150px] p-3 rounded-2xl border bg-card/50 flex flex-col items-center text-center shadow-sm relative group hover:border-primary/50 transition-all">
+                          
+                          {/* 🆕 New Account Badge */}
+                          {s.is_new && (
+                            <Badge className="absolute -top-2 -right-1 bg-blue-500 hover:bg-blue-600 border-none px-1.5 py-0 text-[9px] h-4">
+                              NEW
+                            </Badge>
+                          )}
+                      
+                          <Avatar className="h-16 w-16 mb-2 border-2 border-background shadow-md">
+                            <AvatarImage src={s.avatar_url || undefined} />
+                            <AvatarFallback>{s.display_name?.[0]}</AvatarFallback>
+                          </Avatar>
+                      
+                          <h4 className="font-bold text-sm truncate w-full">{s.display_name}</h4>
+                          
+                          {/* Prioritize Distance Display */}
+                          {s.distance_km ? (
+                            <p className="text-[10px] font-bold text-primary flex items-center gap-1 mb-1">
+                              <MapPin className="w-2.5 h-2.5" /> {s.distance_km.toFixed(1)}km away
+                            </p>
+                          ) : null}
+                      
+                          {/* Secondary: Mutual Count */}
+                          {s.mutual_count > 0 && (
+                            <p className="text-[9px] text-muted-foreground mb-3">
+                              {s.mutual_count} mutual friend{s.mutual_count > 1 ? 's' : ''}
+                            </p>
+                          )}
                                 {s.distance_km ? (
                                     <p className="text-[10px] text-muted-foreground flex items-center gap-1 mb-3">
                                         <MapPin className="w-2.5 h-2.5" /> {s.distance_km.toFixed(1)}km away
