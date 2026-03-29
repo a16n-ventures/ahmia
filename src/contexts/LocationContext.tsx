@@ -222,7 +222,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
             startWatching();
           }
         },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 0 }
       );
     };
 
