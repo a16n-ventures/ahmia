@@ -291,13 +291,13 @@ const ProfileViewsTab = ({ userId, isPremium }: { userId: string; isPremium: boo
 };
 
 // EventsProfileTab removed - now handled in Events page
-const { shareInvite, referralCode } = useReferrals(); 
 
 const Profile = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('tickets');
+  const [activeTab, setActiveTab] = useState('tickets'); 
+  const { shareInvite, referralCode } = useReferrals(); 
 
   // Local state for smooth slider dragging
   const [localRadius, setLocalRadius] = useState<number>(25);
