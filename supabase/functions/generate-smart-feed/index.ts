@@ -49,7 +49,9 @@ serve(async (req) => {
     // 1. REVERSE GEOCODE ON THE BACKEND
     if (user_lat && user_long) {
       try {
-        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user_lat}&lon=${user_long}`);
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user_lat}&lon=${user_long}`,
+          { headers: { 'User-Agent': 'Ahmia/1.0' } }
+        );
         const geoData = await geoRes.json();
         detectedCity = geoData.address.city || geoData.address.town || geoData.address.village || "Global mode";
       } catch (e) {
