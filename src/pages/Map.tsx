@@ -600,70 +600,54 @@ const MapPage = () => {
           {!isNavigating && !selectedFriend && !selectedEvent && (
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide snap-x">
               
-              {showGlobalDiscovery ? (
-                /* --- OPTION 1: LOW DENSITY (Hides Friends List Entirely) --- */
-                <div className="flex gap-3 w-full">
-                  {/* Left: Global Discovery Card */}
+              {/* If Low Density, show the "Global Discovery" twist first */}
+              {/* LEFT BOOKEND: Global Discovery with Social Proof */}
+                {showGlobalDiscovery && (
                   <div className="flex-shrink-0 w-64 snap-start">
-                    <Card className="h-40 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/10 flex flex-col items-center justify-center p-4 text-center">
+                    <Card className="h-40 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/10 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
+                      <div className="absolute -right-4 -top-4 w-12 h-12 bg-primary/10 rounded-full blur-xl" />
                       <Globe className="w-8 h-8 text-primary mb-2 animate-spin-slow" />
                       <h4 className="font-bold text-sm">Quiet nearby?</h4>
-                      <p className="text-[10px] text-muted-foreground mb-3 leading-tight">
-                        Join Global Communities while we find more pioneers in your area.
+                      <p className="text-[10px] text-muted-foreground mb-2 leading-tight">
+                        Join 12 friends in the **Abuja Tech Hub** community.
                       </p>
                       <Button 
                         size="sm" 
                         variant="outline" 
-                        className="h-8 rounded-full text-[10px] px-4 bg-background" 
+                        className="h-8 rounded-full text-[10px] px-4 bg-background shadow-sm hover:scale-105 transition-transform" 
                         onClick={() => navigate('/app/feed?tab=communities')}
                       >
                         Explore Communities
                       </Button>
                     </Card>
                   </div>
-          
-                  {/* Right: Grow Circle Card */}
-                  <div className="flex-shrink-0 w-44 snap-end">
-                    <Button 
-                      variant="outline" 
-                      className="w-full h-40 rounded-3xl border-dashed border-2 flex flex-col gap-2 hover:bg-primary/5 bg-background/50 border-muted-foreground/20"
-                      onClick={() => setShowContactImport(true)}
-                    >
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-inner">
-                        <UserPlus className="w-5 h-5" />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs font-bold">Grow Circle</p>
-                        <p className="text-[10px] text-muted-foreground">Invite contacts</p>
-                      </div>
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                /* --- OPTION 2: HIGH DENSITY (Shows Friends List) --- */
-                <>
-                  {(activeView === 'friends' ? friendsMapped : events).map((item: any) => (
+                )}
+               
+                {(activeView === 'friends' ? friendsMapped : events).map((item: any) => (
                     <div
                       key={item.id}
                       className="flex-shrink-0 w-36 h-40 p-3 rounded-3xl bg-background/90 backdrop-blur-xl border border-white/10 shadow-lg cursor-pointer hover:scale-105 transition-transform snap-center flex flex-col items-center justify-center gap-2 text-center"
                       onClick={() => activeView === 'friends' ? setSelectedFriend(item) : setSelectedEvent(item)}
                     >
                       <div className="relative">
-                        <Avatar className="w-14 h-14 shadow-md border-2 border-background">
+                        <Avatar className="w-14 h-14 shadow-md">
                           <AvatarImage src={item.avatar || item.image_url} className="object-cover" />
                           <AvatarFallback>{item.name?.[0] || item.title?.[0]}</AvatarFallback>
                         </Avatar>
+                        {activeView === 'friends' && item.status === 'online' && (
+                          <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background" />
+                        )}
                       </div>
                       <div className="w-full px-1">
                         <h4 className="font-bold text-sm truncate">{item.name || item.title}</h4>
                         <p className="text-[10px] text-muted-foreground font-medium flex items-center justify-center gap-1">
-                          <MapPin className="w-2.5 h-2.5" /> {item.distanceKm}km
+                          <MapPin className="w-3 h-3" /> {item.distanceKm}km
                         </p>
                       </div>
                     </div>
-                  ))}
+                  ))} 
                   
-                  {/* End of list Invite button */}
+                  {/* Invite Friends Card appended to the end of the scroll */}
                   {activeView === 'friends' && (
                     <div className="flex-shrink-0 w-44 snap-end">
                       <Button variant="outline" className="w-full h-40 rounded-3xl border-dashed border-2" onClick={() => setShowContactImport(true)}>
@@ -671,8 +655,6 @@ const MapPage = () => {
                         <span className="text-xs font-medium">Invite Friends</span>
                       </Button>
                     </div>
-                  )}
-                </>
               )}
             </div>
           )}
