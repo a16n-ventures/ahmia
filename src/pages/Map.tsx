@@ -60,7 +60,7 @@ const MapPage = () => {
   const mapRef = useRef<LeafletMapHandle>(null);
   
   // Global State
-  const { location, requestLocation, isLoading: locationLoading, error: locationError } = useGeolocation();
+  const { location, requestLocation, isLoading: locationLoading, error: locationError, locationName } = useGeolocation();
   const { friends = [] } = useFriends(user?.id);
 
   // Local State

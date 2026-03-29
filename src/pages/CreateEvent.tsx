@@ -52,7 +52,8 @@ const CreateEvent = () => {
     isPrivate: false,
     requireApproval: false,
     eventType: 'physical',
-    recurrenceRule: '', // New: recurring event support
+    isOfficial: false, 
+    recurrenceRule: '', 
   });
 
   const categories = [...CATEGORIES];
@@ -205,7 +206,7 @@ const CreateEvent = () => {
           creator_id: user.id,
           image_url: imageUrl,
           is_official: eventData.isOfficial || false, 
-          is_locked: eventData.isOfficial ? false : true, 
+          is_locked: eventData.isOfficial ? false : false, 
           match_score: 50, // Set a baseline score for the algorithm
           event_type: eventData.eventType,
           meeting_link: generatedMeetingLink,
