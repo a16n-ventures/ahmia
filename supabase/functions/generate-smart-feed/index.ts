@@ -6,373 +6,113 @@ export const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-interface FeedRequest {
-  user_id: string;
-  user_lat?: number;
-  user_long?: number;
-  city?: string;
-  location_name?: string;
-}
-
-const ABU_ZARIA_COORDS = { lat: 11.1500, long: 7.6500 }; // Samaru Campus center
-const UNLOCK_THRESHOLD = 500; // Target users for ABU Zaria 
+const LAUNCH_ZONES = {
+  ZARIA: {
+    name: "Zaria",
+    coords: { lat: 11.1500, long: 7.6500 },
+    threshold: 500,
+    schools: ["ABU Samaru", "ABU Kongo", "Federal College of Education"]
+  },
+  ABUJA: {
+    name: "Abuja",
+    coords: { lat: 9.0765, long: 7.3986 },
+    threshold: 1000,
+    schools: ["UniAbuja Main", "UniAbuja Gwagwalada", "Baze University", "Nile University"]
+  },
+  KANO: {
+    name: "Kano",
+    coords: { lat: 11.9912, long: 8.5167 },
+    threshold: 750,
+    schools: ["Bayero University (BUK)", "Kano State University (KUST)", "Skyline University"]
+  },
+  BENIN: {
+    name: "Benin City",
+    coords: { lat: 6.3350, long: 5.6037 },
+    threshold: 600,
+    schools: ["UNIBEN Ugbowo", "UNIBEN Ekenwan", "Benson Idahosa University"]
+  }
+};
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { user_id, user_lat, user_long, city, location_name } = await req.json() as FeedRequest; 
+    const { user_id, user_lat, user_long, city } = await req.json();
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+    // 1. DYNAMIC ZONE DETECTION
+    let activeZone = ZARIA;
+    let minDistance = Infinity;
     
-    const locationFilter = city || location_name || null;
+    if (user_lat && user_long) {
+      for (const zone of Object.values(LAUNCH_ZONES)) {
+        const dist = calculateDistance(user_lat, user_long, zone.coords.lat, zone.coords.long);
+        if (dist < 25 && dist < minDistance) {
+          minDistance = dist;
+          activeZone = zone;
+        }
+      }
+    }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    ); 
-
-    // 1. CALCULATE DISTANCE TO LAUNCH ZONE (ABU Zaria)
-    // We prioritize users near Zaria; others see a "Coming Soon" state
-    const distToZaria = (user_lat && user_long) 
-      ? calculateDistance(user_lat, user_long, ABU_ZARIA_COORDS.lat, ABU_ZARIA_COORDS.long)
-      : 999;
-
-    // 2. CHECK CITY MILESTONE STATUS
-    // Count profiles within 10km of ABU Zaria
+    // 2. PIONEER COUNT (Specific to the detected zone)
     const { count: pioneerCount } = await supabase
       .from('profiles')
       .select('*', { count: 'exact', head: true })
-      .eq('is_pioneer', true);
-      // This assumes you store lat/long on profiles or use a PostGIS point
-      .not('last_lat', 'is', null); 
+      .eq('is_pioneer', true)
+      // If we found a zone, we only count pioneers in that city/neighborhood
+      .ilike('address', `%${activeZone?.name || city || ''}%`);
 
-    const isCityUnlocked = (pioneerCount || 0) >= UNLOCK_THRESHOLD;
+    const isCityLocked = activeZone ? (pioneerCount || 0) < activeZone.threshold : false;
 
-    // 3. ADAPTIVE CONTENT POOL
-    let eventsQuery = supabase.from('events')
-      .select(`*, event_attendees(count)`)
-      .gt('start_date', new Date().toISOString())
-      .eq('is_public', true);
+    // 3. FETCH CONTENT
+    const [profileRes, eventsRes, communitiesRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('user_id', user_id).single(),
+      supabase.from('events').select(`*, event_attendees(count)`).gt('start_date', new Date().toISOString()).eq('is_public', true),
+      supabase.from('communities').select(`*, community_members(count)`).limit(50)
+    ]);
 
-    // If locked, we only show "Official Ahmia/ABU" events to build hype
-    if (!isCityUnlocked) {
-      eventsQuery = eventsQuery.eq('is_official', true); 
-    } else {
-      // Once unlocked, show everything within a tight 10km radius of Zaria
-      eventsQuery = eventsQuery.ilike('location', '%Zaria%');
-    }
+    const profile = profileRes.data || { interests: [] };
 
-    const { data: events } = await eventsQuery.limit(25);
-
-    // 4. ALGORITHM: "THE ZARIA BOOST"
-    const eventsData = events?.map((event: any) => {
+    // 4. ALGORITHM: CAMPUS BOOST & LOCK LOGIC
+    const eventsData = (eventsRes.data || []).map((event: any) => {
       let matchScore = 50;
       
-      // Hyper-local boost for ABU Zaria locations
-      if (event.location?.toLowerCase().includes('samaru') || 
-          event.location?.toLowerCase().includes('kongo')) {
+      // If Locked, hide non-official events
+      if (isCityLocked && !event.is_official) return null;
+
+      // School/Campus Boost (+40)
+      if (activeZone?.schools.some(school => event.location?.includes(school) || event.description?.includes(school))) {
         matchScore += 40;
       }
 
       return {
         ...event,
-        match_score: Math.min(matchScore, 100),
-        is_locked: !isCityUnlocked // Tell frontend to show the "Waiting Room" UI
+        is_locked: isCityLocked,
+        match_score: isCityLocked ? 100 : Math.min(matchScore, 100)
       };
+    }).filter(Boolean);
+
+    // 5. COMMUNITY FILTERING (Zaria-only if in Zaria)
+    const communitiesData = (communitiesRes.data || []).filter(c => {
+      if (!activeZone) return true;
+      return c.name.toLowerCase().includes(activeZone.name.toLowerCase());
     });
-
-    return new Response(JSON.stringify({ 
-  success: true, 
-  events: eventsData, 
-  communities: communitiesData,
-  ai_insights: aiInsights,
-  is_premium: isViewerPremium,
-  location_context: locationFilter || null,
-  // NEW: Milestone data for the progress bar
-  milestone: {
-    current: pioneerCount || 0,
-    target: 500,
-    is_unlocked: (pioneerCount || 0) >= 500
-     }
-    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    // 1. FETCH VIEWER CONTEXT (Profile, Friends, Active Features)
-    const [profileRes, friendsRes, viewerFeaturesRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('user_id', user_id).single(),
-      supabase.from('friendships').select('addressee_id, requester_id').eq('status', 'accepted').or(`requester_id.eq.${user_id},addressee_id.eq.${user_id}`),
-      // Fetch Viewer's Active Premium Features
-      supabase.from('premium_features')
-        .select('feature_type')
-        .eq('user_id', user_id)
-        .eq('is_active', true)
-        .gt('expires_at', new Date().toISOString())
-    ]);
-
-    const profile = profileRes.data || { is_premium: false, interests: [] };
-    
-    // Map viewer features to a simple Set for fast lookup
-    const viewerFeatures = new Set(viewerFeaturesRes.data?.map((f: any) => f.feature_type) || []);
-    const hasFullPackage = viewerFeatures.has('full_package');
-    const isViewerPremium = profile.is_premium || hasFullPackage || viewerFeatures.size > 0;
-
-    const friendIds = friendsRes.data?.map((f: any) => 
-      f.requester_id === user_id ? f.addressee_id : f.requester_id
-    ) || [];
-
-    // 2. FETCH CONTENT POOL
-    // Build events query — filter by city if we have location context
-    let eventsQuery = supabase.from('events')
-      .select(`*, event_attendees(count)`)
-      .gt('start_date', new Date().toISOString())
-      .eq('is_public', true)
-      .order('start_date', { ascending: true });
-
-    // City-based filtering: match location column containing the city name
-    if (locationFilter) {
-      eventsQuery = eventsQuery.ilike('location', `%${locationFilter}%`);
-    }
-
-    const [eventsRes, cityEventsRes, communitiesRes] = await Promise.all([
-      // Primary: city-filtered events
-      eventsQuery.limit(50),
-
-      // Fallback: if city filter returns too few, also fetch global events
-      locationFilter ? supabase.from('events')
-        .select(`*, event_attendees(count)`)
-        .gt('start_date', new Date().toISOString())
-        .eq('is_public', true)
-        .not('location', 'ilike', `%${locationFilter}%`)
-        .order('start_date', { ascending: true })
-        .limit(20) : Promise.resolve({ data: [] }),
-
-      // Communities: deduplicate by name using distinct approach
-      supabase.from('communities')
-        .select(`*, community_members(user_id, role)`)
-        .order('created_at', { ascending: false })
-        .limit(50),
-    ]);
-
-    // Merge city events first, then global fallback (no duplicates)
-    const cityEvents = eventsRes.data || [];
-    const globalFallback = (cityEventsRes as any).data || [];
-    const seenEventIds = new Set(cityEvents.map((e: any) => e.id));
-    const mergedEvents = [...cityEvents];
-    for (const ge of globalFallback) {
-      if (!seenEventIds.has(ge.id)) mergedEvents.push(ge);
-    }
-
-    // Deduplicate communities by name (keep the one with highest member_count)
-    const allCommunities = communitiesRes.data || [];
-    const communityByName = new Map<string, any>();
-    for (const c of allCommunities) {
-      const existing = communityByName.get(c.name);
-      if (!existing || (c.member_count || 0) > (existing.member_count || 0)) {
-        communityByName.set(c.name, c);
-      }
-    }
-
-    const events = mergedEvents;
-    const communities = Array.from(communityByName.values());
-
-    // 3. FETCH CREATOR "BOOST" STATUS (The Intelligent Layer)
-    // We need to know which creators have paid for boosts
-    const creatorIds = new Set([
-      ...events.map((e: any) => e.user_id), // Event Creators
-    ].filter(Boolean));
-
-    let boostedCreators = new Set<string>(); // Users with 'profile_boost'
-    let boostedEventCreators = new Set<string>(); // Users with 'event_boost'
-
-    if (creatorIds.size > 0) {
-      const { data: creatorFeatures } = await supabase
-        .from('premium_features')
-        .select('user_id, feature_type')
-        .in('user_id', Array.from(creatorIds))
-        .eq('is_active', true)
-        .gt('expires_at', new Date().toISOString());
-
-      creatorFeatures?.forEach((f: any) => {
-        if (f.feature_type === 'profile_boost' || f.feature_type === 'full_package') {
-          boostedCreators.add(f.user_id);
-        }
-        if (f.feature_type === 'event_boost' || f.feature_type === 'full_package') {
-          boostedEventCreators.add(f.user_id);
-        }
-      });
-    }
-
-    // 4. SOCIAL GRAPH (Mutual Discovery & Facepiles)
-    let friendAttendanceMap = new Map<string, string[]>(); // Map event_id -> [friend_avatar_urls]
-
-    if (friendIds.length > 0) {
-      const [fAttendance] = await Promise.all([
-        // FETCH FRIEND FACES for events
-        supabase.from('event_attendees')
-          .select('event_id, user_id, profiles(avatar_url)')
-          .in('user_id', friendIds)
-      ]);
-      
-      // Group friend avatars by event
-      fAttendance.data?.forEach((a: any) => {
-        const avatar = a.profiles?.avatar_url;
-        if (avatar) {
-          const current = friendAttendanceMap.get(a.event_id) || [];
-          if (current.length < 3) { // Limit to 3 faces per card
-            current.push(avatar);
-            friendAttendanceMap.set(a.event_id, current);
-          }
-        }
-      });
-     }
-
-    // --- ALGORITHMIC PROCESSING ---
-
-    // A. EVENTS ALGORITHM (Event Boost Logic)
-    const { data: userAttendance } = await supabase.from('event_attendees').select('event_id').eq('user_id', user_id);
-    const attendingEventIds = new Set(userAttendance?.map(a => a.event_id) || []);
-
-    const eventsData = events.map((event: any) => {
-      let matchScore = 50; 
-
-      // 1. Distance Logic (Wanderlust)
-      if (user_lat && user_long && event.latitude && event.longitude) {
-        const distance = calculateDistance(user_lat, user_long, event.latitude, event.longitude);
-        
-        // Premium Viewers see further
-        const maxDist = isViewerPremium ? 150 : 75; 
-        
-        if (distance < 25) matchScore += 40;
-        else if (distance < maxDist) matchScore += 20;
-        else matchScore -= 20;
-      }
-
-      // 2. Interest Matching
-      let interestMatch = false;
-      if (profile.interests && event.category) {
-        const userInterests = profile.interests.map((i: string) => i.toLowerCase());
-        if (userInterests.includes(event.category.toLowerCase())) {
-          matchScore += 25;
-          interestMatch = true;
-        }
-      }
-
-      // >>> INTELLIGENT BOOST: EVENT VISIBILITY (20x) <<<
-      const creatorHasBoost = boostedEventCreators.has(event.user_id);
-      
-      if (creatorHasBoost) {
-        if (interestMatch) {
-           // INTELLIGENT SUGGESTION: Match found + Paid Boost = EXPLOSIVE VISIBILITY
-           matchScore += 100; // Guarantee top slot
-        } else {
-           // Paid boost but no interest match? Smaller boost (Don't spam irrelevant users)
-           matchScore += 50; 
-        }
-      }
-
-      // 3. Nigerian Context
-      const nigerianKeywords = ['owambe', 'party', 'tech', 'lagos', 'abuja', 'vibes', 'cruise', 'wedding'];
-      if (nigerianKeywords.some(k => event.title.toLowerCase().includes(k))) matchScore += 15;
-
-      return {
-        ...event,
-        type: 'event',
-        match_score: Math.min(matchScore, 100), // Cap for UI, but sort uses raw score
-        raw_score: matchScore, // Internal score for debugging
-        attendee_count: event.event_attendees?.[0]?.count || 0,
-        is_attending: attendingEventIds.has(event.id),
-        // NEW: Inject Friend Faces
-        friend_images: friendAttendanceMap.get(event.id) || [], 
-        is_sponsored: event.is_boosted || (creatorHasBoost && interestMatch) // Mark as sponsored if boosted
-      };
-    }).sort((a: any, b: any) => b.raw_score - a.raw_score);
-
-    // C. COMMUNITIES (Standard Logic)
-    const { data: userMemberships } = await supabase.from('community_members').select('community_id, role').eq('user_id', user_id);
-    const membershipMap = new Map(userMemberships?.map(m => [m.community_id, m.role]) || []);
-
-    const communitiesData = communities.map((community: any) => {
-      let matchScore = 40;
-      if (membershipMap.has(community.id)) matchScore += 30;
-      // Premium Viewers see Exclusive communities
-      if (isViewerPremium && (community.name.includes('Exclusive') || community.name.includes('Premium'))) matchScore += 20;
-      
-      return {
-        ...community,
-        type: 'community',
-        match_score: Math.min(matchScore, 100),
-        is_member: membershipMap.has(community.id),
-        my_role: membershipMap.get(community.id) || null
-      };
-    }).sort((a: any, b: any) => b.match_score - a.match_score);
-
-    // 6. AI INSIGHTS (Viewer Premium Benefit)
-    let aiInsights = null;
-    const groqApiKey = Deno.env.get('GROQ_API_KEY');
-    
-    console.log("🔍 DEBUG VARIABLES:", {
-      hasKey: !!groqApiKey, 
-      location: locationFilter, 
-      isPremium: isViewerPremium 
-    });
-    
-    if (isViewerPremium && groqApiKey && locationFilter) {
-      try {
-         // Helper to format events with descriptions safely
-         const eventContext = eventsData.slice(0, 5)
-            .map(e => `Event: ${e.title}. Details: ${e.description?.substring(0, 150) || 'No details'}`)
-            .join('\n');
-        
-         const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${groqApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{
-              role: 'system',
-              content: `You are a high-energy hype-man for ${locationFilter}, Nigeria. Here is the lineup of events happening soon: ${eventContext}
-                
-                Task: Read the "Details" for each event above. 
-                Generate a 2-sentence "Vibe Check" that specifically mentions the coolest activity found in the descriptions. 
-                Do not list the events. Just hype up the specific vibes (e.g., "Afro-beats", "Pool party", "Tech networking").`
-            }],
-            max_tokens: 150
-          })
-        });
-        if (!aiResponse.ok) {
-           // THIS WAS MISSING: Log why it failed if status is not 200
-           const errorData = await aiResponse.text();
-           console.error("❌ GROQ API Error:", errorData);
-        } else {
-          const aiData = await aiResponse.json();
-          console.log("✅ OpenAI Success!"); // Confirm success
-          aiInsights = aiData.choices?.[0]?.message?.content || null;
-        }
-
-      } catch (e) { 
-        console.error('❌ AI Exception:', e); 
-      }
-    }
 
     return new Response(JSON.stringify({ 
       success: true, 
-      events: eventsData,
+      events: eventsData, 
       communities: communitiesData,
-      ai_insights: aiInsights,
-      is_premium: isViewerPremium,
-      location_context: locationFilter || null
-    }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    });
+      location_context: activeZone?.name || city || "Global",
+      milestone: {
+        current: pioneerCount || 0,
+        target: activeZone?.threshold || 0,
+        is_unlocked: !isCityLocked,
+        zone_name: activeZone?.name || "Global"
+      }
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  } catch (error: any) {
-    console.error('Feed generation error:', error);
-    return new Response(JSON.stringify({ error: error.message, success: false }), { 
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
   }
 });
 
@@ -381,6 +121,5 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
