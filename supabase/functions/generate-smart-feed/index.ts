@@ -44,29 +44,26 @@ serve(async (req) => {
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
     // 1. DYNAMIC ZONE DETECTION
-    let activeZone = null;
-    let minDistance = Infinity;
-    
+    let detectedCity = "Global mode";
+
+    // 1. REVERSE GEOCODE ON THE BACKEND
     if (user_lat && user_long) {
-      for (const zone of Object.values(LAUNCH_ZONES)) {
-        const dist = calculateDistance(user_lat, user_long, zone.coords.lat, zone.coords.long);
-        if (dist < 25 && dist < minDistance) {
-          minDistance = dist;
-          activeZone = zone;
-        }
+      try {
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user_lat}&lon=${user_long}`);
+        const geoData = await geoRes.json();
+        detectedCity = geoData.address.city || geoData.address.town || geoData.address.village || "Global mode";
+      } catch (e) {
+        console.error("Geocoding failed", e);
       }
     }
-
-    // 2. MANUAL OVERRIDE (Must happen BEFORE cityToSearch)
-    if (!activeZone && city) {
-      const matchedZone = Object.values(LAUNCH_ZONES).find(z => 
-        city.toLowerCase().includes(z.name.toLowerCase())
-      );
-      if (matchedZone) activeZone = matchedZone;
-    }
+    
+    // 2. USE DETECTED CITY FOR ZONE MATCHING
+    let activeZone = Object.values(LAUNCH_ZONES).find(z => 
+      detectedCity.toLowerCase().includes(z.name.toLowerCase())
+    );
     
     // 3. NOW DEFINE THE SEARCH TERM
-    const cityToSearch = activeZone?.name || city || 'Global'; 
+    const cityToSearch = activeZone?.name || city || 'Global mode'; 
     
     // 4. PERFORM PIONEER COUNT
     const { count: pioneerCount } = await supabase
@@ -118,12 +115,12 @@ serve(async (req) => {
       success: true, 
       events: eventsData, 
       communities: communitiesData,
-      location_context: activeZone?.name || city || "Global",
+      location_context: activeZone?.name || city || "Global mode",
       milestone: {
         current: pioneerCount || 0,
         target: activeZone?.threshold || 0,
         is_unlocked: !isCityLocked,
-        zone_name: activeZone?.name || "Global"
+        zone_name: activeZone?.name || "Global mode"
       }
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
