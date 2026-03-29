@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import LeafletMap from '@/components/map/LeafletMap';
 import type { LeafletMapHandle } from '@/components/map/LeafletMap';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 
 // --- Types ---
@@ -57,6 +57,7 @@ const PremiumBadge = () => (
 const MapPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const mapRef = useRef<LeafletMapHandle>(null);
   
   // Global State
