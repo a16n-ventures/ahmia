@@ -342,9 +342,9 @@ const CreateEvent = () => {
 
           {/* Event Type */}
           <Card className="gradient-card shadow-card border-0">
-            <CardHeader className="pb-3">
-              <CardTitle className="heading-lg">Event Type</CardTitle>
-            </CardHeader>
+            {/* <CardHeader className="pb-3">
+              <CardTitle className="heading-lg">Event Type</CardTitle> 
+            </CardHeader> */}
             <CardContent>
               <RadioGroup 
                 value={eventData.eventType} 
@@ -383,9 +383,9 @@ const CreateEvent = () => {
 
           {/* Basic Info */}
           <Card className="gradient-card shadow-card border-0">
-            <CardHeader className="pb-3">
+            {/* <CardHeader className="pb-3">
               <CardTitle className="heading-lg">Event Details</CardTitle>
-            </CardHeader>
+            </CardHeader> */}
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="title">Event Title *</Label>
@@ -449,12 +449,12 @@ const CreateEvent = () => {
 
           {/* Date & Time */}
           <Card className="gradient-card shadow-card border-0">
-            <CardHeader className="pb-3">
+            {/* <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
                 <Calendar className="w-5 h-5" />
                 When
               </CardTitle>
-            </CardHeader>
+            </CardHeader> */}
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -492,21 +492,22 @@ const CreateEvent = () => {
 
           {/* Location / Meeting Details */}
           <Card className="gradient-card shadow-card border-0">
-            <CardHeader className="pb-3">
+            {/* <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
-                {eventData.eventType === 'physical' ? (
-                  <>
-                    <MapPin className="w-5 h-5" />
-                    Where
-                  </>
-                ) : (
-                  <>
-                    <Video className="w-5 h-5" />
-                    Meeting Details
-                  </>
-                )}
+                
               </CardTitle>
-            </CardHeader>
+            </CardHeader> */} 
+            {eventData.eventType === 'physical' ? (
+              <>
+                <MapPin className="w-5 h-5" />
+                Where
+              </>
+            ) : (
+              <>
+                <Video className="w-5 h-5" />
+                Meeting Details
+              </>
+            )}
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="location">
@@ -561,12 +562,12 @@ const CreateEvent = () => {
 
           {/* Capacity & Pricing */}
           <Card className="gradient-card shadow-card border-0">
-            <CardHeader className="pb-3">
+            {/* <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="w-5 h-5" />
                 Tickets & Pricing
               </CardTitle>
-            </CardHeader>
+            </CardHeader> */} 
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -625,9 +626,9 @@ const CreateEvent = () => {
 
           {/* Privacy Settings */}
           <Card className="gradient-card shadow-card border-0">
-            <CardHeader className="pb-3">
+            {/* <CardHeader className="pb-3">
               <CardTitle>Event Options</CardTitle>
-            </CardHeader>
+            </CardHeader> */}
             <CardContent className="space-y-4">
               {/* Recurring Event */}
               <div className="space-y-2">
@@ -679,7 +680,7 @@ const CreateEvent = () => {
           </Card>
           
           {/* ADMIN ONLY SECTION */}
-          {(user?.email === 'amdagas4@gmail.com') && (
+          {(user?.role === 'super_admin || admin') && (
             <Card className="border-2 border-primary/50 bg-primary/5 shadow-lg">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
