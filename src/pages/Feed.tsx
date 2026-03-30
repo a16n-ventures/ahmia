@@ -92,7 +92,6 @@ const Feed = () => {
   const { location, isLoading: locationLoading, error: locationError } = useGeolocation();
   
   // Data State
-  const [communities, setCommunities] = useState<Community[]>([]);
   const [aiInsights, setAiInsights] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [locationName, setLocationName] = useState("Detecting...");
@@ -152,7 +151,8 @@ const Feed = () => {
 
   const discoveryRadiusKm = useMemo(() => {
     const prefs = userProfile?.preferences as { discovery_radius?: number } | null;
-    return (prefs?.discovery_radius ?? 25000) / 1000; // Default 25km
+    // Default to 25km if no preference is found
+    return (prefs?.discovery_radius ?? 25000) / 1000; 
   }, [userProfile]);
 
   // --- INITIALIZATION & REALTIME ---
@@ -370,7 +370,7 @@ const Feed = () => {
             <div className="flex items-center justify-between mb-3">
             <div>
                 <h1 className="text-xl font-bold flex items-center gap-2">
-                Discover <span className="text-primary">{locationName}</span>
+                Discover <span className="text-primary">{cityName}</span>
                 </h1>
                 <p className="text-xs text-muted-foreground">Find your vibe for today</p>
             </div>
