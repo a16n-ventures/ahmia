@@ -680,7 +680,7 @@ const CreateEvent = () => {
           </Card>
           
           {/* ADMIN ONLY SECTION */}
-          {(user?.role === 'super_admin || admin') && (
+          {(user?.name === 'a16n') && (
             <Card className="border-2 border-primary/50 bg-primary/5 shadow-lg">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
