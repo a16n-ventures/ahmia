@@ -101,10 +101,6 @@ const Feed = () => {
   // queryFn is defined inline so it's always in scope and can close over `location`.
   const FEED_QUERY_KEY = ['smart-feed', user?.id, location?.latitude?.toFixed(2), location?.longitude?.toFixed(2)];
   
-  const milestone = feedData?.milestone;
-  const isLocked = milestone?.is_unlocked === false;
-  const isLaunchZone = milestone?.is_launch_zone;
-
     // 1. Unified Query for the entire backend response
   const { data: feedData, isLoading: loading } = useQuery({
     queryKey: FEED_QUERY_KEY,
@@ -117,25 +113,24 @@ const Feed = () => {
           city: locationName 
         }
       });
-      if (error) throw error;
-      
-       // ALWAYS sync the name from the backend milestone
-        if (data.milestone?.zone_name) {
-          setLocationName(data.milestone.zone_name);
-        }
-    
-      return data; // This returns the { events, communities, milestone } object
+      return data; 
     },
     enabled: !!user,
     staleTime: 1000 * 60 * 5,
-  });
-
-  // 2. Extract variables safely BELOW the hook
-  const events = feedData?.events || [];
+  }); 
+  
+  // 2. Define derived state AFTER the query
   const milestone = feedData?.milestone;
+  const isLocked = milestone?.is_unlocked === false;
+  const isLaunchZone = milestone?.is_launch_zone;
+  
+  // Use the name detected by reverse geocoding in the Edge Function
+  const cityName = milestone?.zone_name || "Detecting...";
+  
+  const events = feedData?.events || [];
+  const communities = feedData?.communities || [];
   const currentCount = milestone?.current || 0;
   const targetCount = milestone?.target || 500;
-  const cityName = milestone?.zone_name || locationName;
   
   // UI State
   const [activeTab, setActiveTab] = useState("for_you");
