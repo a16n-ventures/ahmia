@@ -538,7 +538,7 @@ const Feed = () => {
                                         className="rounded-full px-6 gap-2 shadow-md"
                                         onClick={() => navigate('/app/messages?type=community')}
                                     >
-                                        <Plus className="w-4 h-4" /> Create Event
+                                        <Plus className="w-4 h-4" /> Create Community
                                     </Button>
                                 </div>
                             ) : communities.map(c => (
