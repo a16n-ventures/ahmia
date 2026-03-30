@@ -223,7 +223,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
             Import Contacts
           </DialogTitle>
           <DialogDescription>
-            Enter details or upload CSV. If they use the app (username/phone match), we'll send a friend request. If not, we'll save them as a contact.
+            Enter details or upload CSV. If they use the app, we'll send a friend request. If not, we'll save them as a contact.
           </DialogDescription>
         </DialogHeader>
 
@@ -270,7 +270,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
                   className="h-9"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              
                 <div>
                   <Label className="text-xs">Username (App Users)</Label>
                   <Input
@@ -289,7 +289,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
                     className="h-9"
                   />
                 </div>
-              </div>
+              
             </div>
           ))}
 
