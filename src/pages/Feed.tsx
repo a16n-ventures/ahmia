@@ -100,6 +100,11 @@ const Feed = () => {
   // FIX: Use React Query for events to prevent flickering.
   // queryFn is defined inline so it's always in scope and can close over `location`.
   const FEED_QUERY_KEY = ['smart-feed', user?.id, location?.latitude?.toFixed(2), location?.longitude?.toFixed(2)];
+  
+  const milestone = feedData?.milestone;
+  const isLocked = milestone?.is_unlocked === false;
+  const isLaunchZone = milestone?.is_launch_zone; // From our new logic
+  const cityName = milestone?.zone_name || "your area";
 
     // 1. Unified Query for the entire backend response
   const { data: feedData, isLoading: loading } = useQuery({
@@ -172,8 +177,8 @@ const Feed = () => {
     )
     .subscribe();
 
-  return () => { supabase.removeChannel(channel); };
-}, [user, queryClient]); 
+    return () => { supabase.removeChannel(channel); };
+  }, [user, queryClient]); 
 
   // --- FETCH FRIENDS FOR MODAL ---
   useEffect(() => {
@@ -480,47 +485,55 @@ const Feed = () => {
 
     {/* B. WAITING ROOM / MILESTONE UI (Zaria Support) */}
     {/* USE THIS UNIFIED BLOCK for both Launch Zones and Coming Soon areas */}
-    {activeTab === 'for_you' && milestone && milestone.is_unlocked === false && (
-      <div className="mx-4 mb-8 p-6 bg-card rounded-3xl border shadow-xl relative overflow-hidden">
-        <div className="relative z-10">
-          <Lock className="w-8 h-8 text-primary animate-pulse mb-4" />
-          <h2 className="text-2xl font-black mb-2 italic uppercase leading-none">
-            {milestone.zone_name} IS LOADING...
-          </h2>
-          <p className="text-sm text-muted-foreground mb-6">
-            {/* If we have a target > 0, it's a launch zone. Otherwise, it's coming soon. */}
-            {milestone.target > 0 
-              ? `Ahmia goes live once we hit ${milestone.target} Pioneers.` 
-              : "We're heading your way soon! Invite friends to fast-track your campus."}
-          </p>
-    
-          {/* Progress Bar - Always show if we have a name */}
-          <div className="space-y-2 mb-6">
-            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-              <span>Pioneer Progress</span>
-              <span className="text-primary">{milestone.current} / {milestone.target}</span>
-            </div>
-            <div className="h-3 w-full bg-muted rounded-full overflow-hidden border">
-              <div 
-                className="h-full bg-primary transition-all duration-1000 shadow-[0_0_15px_rgba(var(--primary),0.5)]" 
-                style={{ width: `${Math.min((milestone.current / milestone.target) * 100, 100)}%` }}
-              />
+    {activeTab === 'for_you' && isLocked && (
+          <div className="mx-4 mb-8 p-6 bg-card rounded-3xl border shadow-xl relative overflow-hidden">
+            <div className="relative z-10">
+              <Lock className="w-8 h-8 text-primary animate-pulse mb-4" />
+              
+              {/* BRANCH 1: Official Launch Zone (Zaria/Abuja) */}
+              {isLaunchZone ? (
+                <>
+                  <h2 className="text-2xl font-black mb-2 italic uppercase leading-none">
+                    {cityName} IS LOADING...
+                  </h2>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Ahmia goes live here once we hit {milestone.target} Pioneers.
+                  </p>
+                  <div className="space-y-2 mb-6">
+                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
+                      <span>Progress</span>
+                      <span className="text-primary">{milestone.current} / {milestone.target}</span>
+                    </div>
+                    <div className="h-3 w-full bg-muted rounded-full overflow-hidden border">
+                      <div 
+                        className="h-full bg-primary transition-all duration-1000" 
+                        style={{ width: `${(milestone.current / milestone.target) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* BRANCH 2: Generic "Coming Soon" (Anywhere else) */
+                <>
+                  <h2 className="text-2xl font-black mb-2 italic uppercase leading-none">
+                    {cityName || "CITY"} UNAVAILABLE
+                  </h2>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    We haven't touched down in {cityName} yet. Want to bring Ahmia to your campus?
+                  </p>
+                </>
+              )}
+              
+              <Button className="w-full h-12 rounded-2xl font-bold uppercase italic">
+                <Users className="w-4 h-4 mr-2" /> Invite Pioneers
+              </Button>
             </div>
           </div>
-          
-          <Button className="w-full h-12 rounded-2xl font-bold uppercase italic" onClick={handleShare}>
-            <Users className="w-4 h-4 mr-2" /> Invite Pioneers
-          </Button>
-        </div>
-      </div>
-    )}
+        )}
 
-    {/* C. MAIN FEED CONTENT */}
-    <TabsContent 
-      value={activeTab} 
-      className={`mt-0 space-y-5 px-4 min-h-[50vh] transition-all ${activeTab === 'for_you' && isLocked ? "opacity-40 grayscale blur-[1px]" : ""}`}
-    >
-      {activeTab === 'communities' ? (
+        {/* The feed below will be blurred/hidden if isLocked is true */}
+        <TabsContent value={activeTab} className={isLocked ? "opacity-40 grayscale blur-sm pointer-events-none" : ""}>
+          {activeTab === 'communities' ? (
                         // COMMUNITIES VIEW
                         <div className="space-y-3">
                             {loading ? (
