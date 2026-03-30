@@ -601,7 +601,7 @@ const MapPage = () => {
               {/* If Low Density, show the "Global Discovery" twist first */}
               {/* LEFT BOOKEND: Global Discovery with Social Proof */}
                 {showGlobalDiscovery && (
-                  <div className="flex-shrink-0 w-64 snap-start">
+                  <div className="flex-shrink-0 snap-start">
                     <Card className="h-40 w-48 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/10 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
                       <div className="absolute -right-4 -top-4 w-12 h-12 bg-primary/10 rounded-full blur-xl" />
                       <Globe className="w-8 h-8 text-primary mb-2 animate-spin-slow" />
@@ -624,7 +624,7 @@ const MapPage = () => {
                 {(activeView === 'friends' ? friendsMapped : events).map((item: any) => (
                     <div
                       key={item.id}
-                      className="flex-shrink-0 h-40 p-3 rounded-3xl bg-background/90 backdrop-blur-xl border border-white/10 shadow-lg cursor-pointer hover:scale-105 transition-transform snap-center flex flex-col items-center justify-center gap-2 text-center"
+                      className="flex-shrink-0 w-36 h-40 p-3 rounded-3xl bg-background/90 backdrop-blur-xl border border-white/10 shadow-lg cursor-pointer hover:scale-105 transition-transform snap-center flex flex-col items-center justify-center gap-2 text-center"
                       onClick={() => activeView === 'friends' ? setSelectedFriend(item) : setSelectedEvent(item)}
                     >
                       <div className="relative">
