@@ -266,7 +266,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
                 <Input
                   value={contact.name}
                   onChange={(e) => updateContact(index, 'name', e.target.value)}
-                  placeholder="e.g. John Doe"
+                  placeholder="e.g. Barack Musa"
                   className="h-9"
                 />
               </div>
@@ -285,7 +285,7 @@ export const ContactImportModal = ({ open, onOpenChange }: ContactImportModalPro
                   <Input
                     value={contact.phone}
                     onChange={(e) => updateContact(index, 'phone', e.target.value)}
-                    placeholder="+123..."
+                    placeholder="+234..."
                     className="h-9"
                   />
                 </div>
