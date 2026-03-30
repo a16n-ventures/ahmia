@@ -533,7 +533,13 @@ const Feed = () => {
                                     <div>
                                         <p className="font-semibold">No communities yet</p>
                                         <p className="text-sm text-muted-foreground">Be the first to create one!</p>
-                                    </div>
+                                    </div> 
+                                    <Button 
+                                        className="rounded-full px-6 gap-2 shadow-md"
+                                        onClick={() => navigate('/app/messages?type=community')}
+                                    >
+                                        <Plus className="w-4 h-4" /> Create Event
+                                    </Button>
                                 </div>
                             ) : communities.map(c => (
                             <div key={c.id} className="flex items-center gap-4 p-4 bg-card rounded-xl border shadow-sm cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setSelectedCommunity(c)}>
@@ -573,7 +579,7 @@ const Feed = () => {
                                     </div>
                                     <Button 
                                         className="rounded-full px-6 gap-2 shadow-md"
-                                        onClick={() => navigate('/app/events/create')}
+                                        onClick={() => navigate('/create-event')}
                                     >
                                         <Plus className="w-4 h-4" /> Create Event
                                     </Button>

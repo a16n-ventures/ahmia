@@ -602,7 +602,7 @@ const MapPage = () => {
               {/* LEFT BOOKEND: Global Discovery with Social Proof */}
                 {showGlobalDiscovery && (
                   <div className="flex-shrink-0 w-64 snap-start">
-                    <Card className="h-40 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/10 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
+                    <Card className="h-40 w-44 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/10 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
                       <div className="absolute -right-4 -top-4 w-12 h-12 bg-primary/10 rounded-full blur-xl" />
                       <Globe className="w-8 h-8 text-primary mb-2 animate-spin-slow" />
                       <h4 className="font-bold text-white text-sm">Quiet in {locationName || 'your area'}?</h4>
