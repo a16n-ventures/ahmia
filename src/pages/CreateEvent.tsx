@@ -492,21 +492,21 @@ const CreateEvent = () => {
 
           {/* Location / Meeting Details */}
           <Card className="gradient-card shadow-card border-0">
-            <CardHeader className="pb-3">
+            {/* <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
                  {eventData.eventType === 'physical' ? (
                   <>
                     <MapPin className="w-5 h-5" />
-                    Where
+                    Where 
                   </>
                 ) : (
                   <>
                     <Video className="w-5 h-5" />
-                    Meeting Details
+                    Meeting Details 
                   </>
                 )}
               </CardTitle>
-            </CardHeader> 
+            </CardHeader> */}
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="location">
