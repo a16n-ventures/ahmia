@@ -37,26 +37,43 @@ serve(async (req) => {
       // 1. REVERSE GEOCODE (Always do this first for the UI label)
       let cityName = "Unknown Location";
       if (user_lat && user_long) {
-        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user_lat}&lon=${user_long}`, { 
-          headers: { 'User-Agent': 'Ahmia-production/1.0' } 
-        });
-        const geoData = await geoRes.json();
-        // Prioritize city/town names
-        cityName = geoData.address.city || geoData.address.town || geoData.address.village || "Your Area";
+        try {
+          const geoRes = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${user_lat}&lon=${user_long}`, 
+            { 
+              headers: { 
+                'User-Agent': 'Ahmia-Zaria-Launch-V1', // Use a unique string
+                'Accept-Language': 'en' 
+              } 
+            }
+          );
+          
+          if (geoRes.ok) {
+            const geoData = await geoRes.json();
+            // OSM often puts the city in 'city', 'town', or 'county' for Nigerian addresses
+            cityName = geoData.address.city || geoData.address.town || geoData.address.county || "Zaria";
+          }
+        } catch (e) {
+          console.error("Geocoding failed, falling back to coordinate check");
+        }
       }
-  
-      // 2. CHECK AGAINST LAUNCH ZONES
+      
+      // 2. FUZZY MATCHING (Requirement 1 & 2)
       let activeZone = null;
       for (const [key, zone] of Object.entries(LAUNCH_ZONES)) {
         const dist = calculateDistance(user_lat, user_long, zone.coords.lat, zone.coords.long);
-        if (dist <= 25) { // 25km radius
+        
+        // Check by distance OR if the geocoded city name matches our zone name
+        if (dist <= 25 || cityName.toLowerCase().includes(zone.name.toLowerCase())) { 
           activeZone = zone;
           break;
         }
       }
-  
-      // 3. GET PIONEER COUNT (Search by detected cityName or Zone Name)
+      
+      // 3. FINAL STATE LOGIC
+      const isLaunchZone = !!activeZone;
       const searchName = activeZone?.name || cityName;
+            
       const { count: pioneerCount } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
