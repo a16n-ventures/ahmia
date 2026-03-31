@@ -35,46 +35,53 @@ serve(async (req) => {
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
         // 1. REVERSE GEOCODE (The only source for cityName)
-        let cityName = "Unknown Location";
-        if (user_lat && user_long) {
-          try {
-            const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user_lat}&lon=${user_long}`, { headers: { 'User-Agent': 'Ahmia/1.0' } });
+      try {
+          const { user_lat, user_long } = await req.json();
+          
+          // 1. REVERSE GEOCODE (Always do this first for the UI label)
+          let cityName = "Unknown Location";
+          if (user_lat && user_long) {
+            const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user_lat}&lon=${user_long}`, { 
+              headers: { 'User-Agent': 'Ahmia-production/1.0' } 
+            });
             const geoData = await geoRes.json();
-            cityName = geoData.address.city || geoData.address.town || geoData.address.village || "Nearby";
-          } catch (e) { console.error("Geocoding failed", e); }
-        }
-      
-        // 2. MATCH AGAINST LAUNCH ZONES (By Coordinates)
-        let activeZone = null;
-        for (const zone of Object.values(LAUNCH_ZONES)) {
-          const dist = calculateDistance(user_lat, user_long, zone.coords.lat, zone.coords.long);
-          if (dist < 25) { // 20km radius for Zaria/Abuja
-            activeZone = zone;
-            break;
+            // Prioritize city/town names
+            cityName = geoData.address.city || geoData.address.town || geoData.address.village || "Your Area";
           }
-        }
       
-        // 3. FETCH REAL COUNT FOR THIS CITY
-        // We count users who have this city name in their profile
-        const { count: pioneerCount } = await supabase
-          .from('profiles')
-          .select('*', { count: 'exact', head: true })
-          .ilike('location', `%${activeZone?.name || cityName}%`);
-      
-        const isLaunchZone = !!activeZone;
-        const isUnlocked = pioneerCount >= (activeZone?.threshold || 999999); // Generic cities never "unlock" automatically
-      
-        return new Response(JSON.stringify({
-          success: true,
-          events: isUnlocked ? (await supabase.from('events').select('*').limit(10)).data : [],
-          milestone: {
-            current: pioneerCount || 0,
-            target: activeZone?.threshold || 500,
-            is_unlocked: isUnlocked,
-            is_launch_zone: isLaunchZone,
-            zone_name: cityName // Pass the dynamic name back to Feed.tsx
+          // 2. CHECK AGAINST LAUNCH ZONES
+          let activeZone = null;
+          for (const [key, zone] of Object.entries(LAUNCH_ZONES)) {
+            const dist = calculateDistance(user_lat, user_long, zone.coords.lat, zone.coords.long);
+            if (dist <= 25) { // 25km radius
+              activeZone = zone;
+              break;
+            }
           }
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      
+          // 3. GET PIONEER COUNT (Search by detected cityName or Zone Name)
+          const searchName = activeZone?.name || cityName;
+          const { count: pioneerCount } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+            .ilike('location', `%${searchName}%`);
+      
+          // Logic for UI branching
+          const isLaunchZone = !!activeZone;
+          const isUnlocked = isLaunchZone && pioneerCount >= activeZone.threshold;
+      
+          return new Response(JSON.stringify({
+            success: true,
+            events: isUnlocked ? (await supabase.from('events').select('*').limit(10)).data : [],
+            milestone: {
+              current: pioneerCount || 0,
+              target: activeZone?.threshold || 500,
+              is_unlocked: isUnlocked,
+              is_launch_zone: isLaunchZone,
+              zone_name: searchName // The "Dynamic" name
+            }
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        } catch (error) { /* error handling */ }
       });
     } catch (error) {
       return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
