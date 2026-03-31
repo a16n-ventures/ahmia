@@ -87,7 +87,8 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
   // ✅ FIXED: Only update coordinates, NEVER touch is_sharing_location
   const updateDatabase = useCallback(async (loc: LocationData) => {
-    if (!user || isLocationSharingEnabled === null) return;
+  // ✅ PRIVACY GUARD: Only sync to DB if the user explicitly allowed sharing
+  if (!user || !isLocationSharingEnabled) return;
 
     // Throttle: Prevent too-frequent updates (30s)
     const now = Date.now();
@@ -188,45 +189,27 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     );
   }, [handleSuccess, handleError]);
 
-  // ✅ FIXED: Effect - Only start tracking if user has enabled sharing
+  // ✅ FIX: Change the effect to always attempt to get location for UI purposes
   useEffect(() => {
-    if (!user || isLocationSharingEnabled === null) return;
-    
-    // ✅ If sharing is disabled, stop here
-    if (!isLocationSharingEnabled) {
-      setLoading(false);
-      console.log('📍 Location sharing is disabled, skipping location tracking');
-      return;
-    }
+    if (!user) return; // Removed isLocationSharingEnabled check here
     
     if (!navigator.geolocation) {
       setError('Geolocation not supported');
       setLoading(false);
       return;
     }
-
-    console.log('📍 Location sharing is enabled, starting location tracking');
-
-    // 1. Try High Accuracy Single Shot
-    let attempts = 0;
-    const attemptFix = () => {
-      attempts++;
+  
+    const startTracking = () => {
       navigator.geolocation.getCurrentPosition(
-        handleSuccess,
-        (err) => {
-          if (err.code === 3 && attempts < 2) {
-            console.log('Retrying location...');
-            attemptFix();
-          } else {
-            handleError(err);
-            startWatching();
-          }
+        (pos) => {
+          handleSuccess(pos);
+          startWatching();
         },
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 0 }
+        handleError,
+        { enableHighAccuracy: false, timeout: 10000 }
       );
     };
-
-    // 2. Start Continuous Watch
+  
     const startWatching = () => {
       if (watchId.current !== null) return;
       watchId.current = navigator.geolocation.watchPosition(
@@ -235,16 +218,13 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         { enableHighAccuracy: false, timeout: 30000, maximumAge: 30000 }
       );
     };
-
-    attemptFix();
-
+  
+    startTracking();
+  
     return () => {
-      if (watchId.current !== null) {
-        navigator.geolocation.clearWatch(watchId.current);
-        watchId.current = null;
-      }
+      if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     };
-  }, [user, handleSuccess, handleError, isLocationSharingEnabled]);
+  }, [user, handleSuccess, handleError]); // Remove isLocationSharingEnabled from dependency
 
   return (
     <LocationContext.Provider value={{ location, error, isLoading: loading, requestLocation }}>
