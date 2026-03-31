@@ -96,7 +96,7 @@ const Feed = () => {
     queryKey: ['user-db-location', user?.id],
     queryFn: async () => {
       const { data } = await supabase
-        .from('user_locations')
+        .from('profiles')
         .select('latitude, longitude')
         .eq('user_id', user!.id)
         .maybeSingle();
