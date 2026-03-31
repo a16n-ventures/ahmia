@@ -113,11 +113,15 @@ const Feed = () => {
   const resolvedLocation = location ?? dbLocation;
   
   // Update your query key and queryFn to use resolvedLocation
-  const FEED_QUERY_KEY = ['smart-feed', user?.id, resolvedLocation?.latitude?.toFixed(2), resolvedLocation?.longitude?.toFixed(2)];
+  const FEED_QUERY_KEY = ['smart-feed', user?.id, resolvedLocation?.latitude?.toFixed(2), resolvedLocation?.longitude?.toFixed(2)
+  ].filter(Boolean); 
   
   const { data: feedData, isLoading: loading } = useQuery({
     queryKey: FEED_QUERY_KEY,
-    queryFn: async () => {
+    queryFn: async () => { 
+      
+      if (!resolvedLocation?.latitude || !resolvedLocation?.longitude) return null; 
+      
       const { data, error } = await supabase.functions.invoke('generate-smart-feed', {
         body: { 
           user_id: user?.id, 
@@ -128,7 +132,7 @@ const Feed = () => {
       if (error) throw error;
       return data; 
     },
-    enabled: !!user && !!resolvedLocation, // ← was !!location
+    enabled: !!user?.id && typeof resolvedLocation?.latitude === 'number',
     staleTime: 1000 * 60 * 5,
   });
   
