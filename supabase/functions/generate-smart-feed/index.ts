@@ -50,8 +50,17 @@ serve(async (req) => {
           
           if (geoRes.ok) {
             const geoData = await geoRes.json();
-            // OSM often puts the city in 'city', 'town', or 'county' for Nigerian addresses
-            cityName = geoData.address.city || geoData.address.town || geoData.address.county || "Zaria";
+            const addr = geoData.address;
+            
+            // Broaden the search for the name
+            cityName = addr.city || 
+                       addr.town || 
+                       addr.village || 
+                       addr.suburb || 
+                       addr.neighbourhood || 
+                       addr.state_district || 
+                       addr.county || 
+                       "your area"; // High-confidence fallback if you're near the coords
           }
         } catch (e) {
           console.error("Geocoding failed, falling back to coordinate check");
