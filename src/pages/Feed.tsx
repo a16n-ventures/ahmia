@@ -119,7 +119,7 @@ const Feed = () => {
   
   // 2. Define derived state AFTER the query
   const milestone = feedData?.milestone;
-  const isLocked = milestone?.is_unlocked === false;
+  const isUnlocked = milestone?.is_unlocked;
   const isLaunchZone = milestone?.is_launch_zone;
   
   // Use the name detected by reverse geocoding in the Edge Function
@@ -440,11 +440,11 @@ const Feed = () => {
                 </TabsList>
             </div>
 
-            {/* CONTENT AREA */}
-     <div className="container-mobile py-2 space-y-6"> 
+    {/* CONTENT AREA */}
+    <div className="container-mobile py-2 space-y-6"> 
     
     {/* A. PREMIUM SECTION */}
-    {isPremium && activeTab === 'for_you' && (
+    {/* {isPremium && activeTab === 'for_you' && (
         <div className="mx-4 mt-2 space-y-3">
           <div className="relative overflow-hidden bg-gradient-to-r from-amber-500/15 via-primary/10 to-purple-500/15 border border-amber-300/30 dark:border-amber-700/30 rounded-2xl p-4 shadow-sm">
             <div className="absolute -right-6 -top-6 w-24 h-24 bg-amber-400/10 rounded-full blur-2xl" />
@@ -473,10 +473,10 @@ const Feed = () => {
             </div>
           )} 
         </div>
-    )}
+    )} */}
 
     {/* B. WAITING ROOM / MILESTONE UI (Zaria Support) */}
-    {activeTab === 'for_you' && isLocked && (
+    {activeTab === 'for_you' && !isUnlocked && (
           <div className="mx-4 mb-8 p-6 bg-card rounded-3xl border shadow-xl relative overflow-hidden">
             <div className="relative z-10">
               <Lock className="w-8 h-8 text-primary animate-pulse mb-4" />
@@ -487,17 +487,17 @@ const Feed = () => {
                     {cityName} IS LOADING...
                   </h2>
                   <p className="text-sm text-muted-foreground mb-6">
-                    Join {currentCount} pioneers in {cityName}. We unlock at {targetCount}!
+                    Join {milestone.current} pioneers in {cityName}. We unlock at {milestone.target}!
                   </p>
                   <div className="space-y-2 mb-6">
                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
                       <span>Progress</span>
-                      <span className="text-primary">{currentCount} / {targetCount}</span>
+                      <span className="text-primary">{milestone.current} / {milestone.target}</span>
                     </div>
                     <div className="h-3 w-full bg-muted rounded-full overflow-hidden border">
                       <div 
                         className="h-full bg-primary transition-all duration-1000" 
-                        style={{ width: `${(currentCount / targetCount) * 100}%` }}
+                        style={{ width: `${(milestone.current / milestone.target) * 100}%` }}
                       />
                     </div>
                   </div>
@@ -515,14 +515,14 @@ const Feed = () => {
               )}
               
               <Button className="w-full h-12 rounded-2xl font-bold uppercase italic">
-                <Users className="w-4 h-4 mr-2" /> Invite Pioneers to {cityName}
+                <Users className="w-4 h-4 mr-2" /> Nominate {cityName}
               </Button>
             </div>
           </div>
         )}
 
         {/* The feed below will be blurred/hidden if isLocked is true */}
-        <TabsContent value={activeTab} className={isLocked ? "opacity-40 grayscale blur-sm pointer-events-none" : ""}>
+        <TabsContent value={activeTab} className={!isUnlocked ? "opacity-40 grayscale blur-sm pointer-events-none" : ""}>
           {activeTab === 'communities' ? (
                         // COMMUNITIES VIEW
                         <div className="space-y-3">
