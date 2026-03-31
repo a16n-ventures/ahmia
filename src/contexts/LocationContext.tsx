@@ -185,7 +185,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       handleError,
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
   }, [handleSuccess, handleError]);
 
@@ -205,7 +205,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           handleSuccess(pos);
           startWatching();
         },
-        handleError,
+        (err) => {
+          handleError(err);
+          startWatching();
+        },
         { enableHighAccuracy: true, timeout: 10000 }
       );
     };
@@ -215,7 +218,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       watchId.current = navigator.geolocation.watchPosition(
         handleSuccess,
         (err) => console.warn("Watch warning:", err.message), 
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
       );
     };
   
