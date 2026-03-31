@@ -108,12 +108,11 @@ const Feed = () => {
           user_id: user?.id, 
           user_lat: location?.latitude, 
           user_long: location?.longitude, 
-          city: locationName 
         }
       });
       return data; 
     },
-    enabled: !!user,
+    enabled: !!user && !!location,
     staleTime: 1000 * 60 * 5,
   }); 
   
@@ -123,7 +122,7 @@ const Feed = () => {
   const isLaunchZone = milestone?.is_launch_zone;
   
   // Use the name detected by reverse geocoding in the Edge Function
-  const cityName = milestone?.zone_name || "Detecting...";
+  const cityName = milestone?.zone_name || (locationLoading ? "Detecting..." : "Your area");
   
   const events = feedData?.events || [];
   const communities = feedData?.communities || [];
@@ -376,7 +375,7 @@ const Feed = () => {
             <div className="flex items-center gap-2">
               {isPremium && (
                 <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-                  <Sparkles className="w-3 h-3 mr-1" /> Premium
+                  <Sparkles className="w-3 h-3 mr-1" /> Pro
                 </Badge>
               )}
               <Button 
@@ -508,7 +507,7 @@ const Feed = () => {
                 <div className="space-y-4 py-4 text-center">
                   <MapPin className="w-10 h-10 text-muted-foreground/30 mx-auto" />
                   <h2 className="text-2xl font-bold mb-2 uppercase leading-none">
-                    {cityName || "CITY"} UNAVAILABLE
+                    {cityName || "CITY"} IS ON THE WAY
                   </h2>
                   <p className="text-sm text-muted-foreground mb-6">
                     Ahmia hasn't landed in {cityName} yet. Want to be our campus lead here?
@@ -516,8 +515,8 @@ const Feed = () => {
                 </div>
               )}
               
-              <Button className="w-full h-12 rounded-2xl font-bold uppercase italic">
-                <Users className="w-4 h-4 mr-2" /> Nominate {cityName}
+              <Button className="w-full h-12 rounded-2xl font-bold uppercase">
+                <Plus className="w-4 h-4 mr-2" /> Nominate {cityName}
               </Button>
             </div>
           </div>
