@@ -122,8 +122,9 @@ const Feed = () => {
   const isUnlocked = milestone?.is_unlocked;
   const isLaunchZone = milestone?.is_launch_zone;
   
-  // Use the name detected by reverse geocoding in the Edge Function
-  const cityName = milestone?.zone_name || (locationLoading ? "Detecting..." : "Your City");
+  // In Feed.tsx, replace line 126
+  const cityName = milestone?.zone_name || 
+                   (locationLoading || loading ? "Detecting..." : "Your City");
   
   const events = feedData?.events || [];
   const communities = feedData?.communities || [];
