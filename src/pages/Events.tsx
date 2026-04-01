@@ -170,8 +170,6 @@ export default function Events() {
   
   const [milestone, setMilestone] = useState<{ current: number; target: number; is_unlocked: boolean; zone_name?: string } | null>(null);
   const [locationName, setLocationName] = useState("Detecting..."); 
-  
-  const { isInLaunchZone, isLoading: launchZoneLoading } = useLaunchZone(location?.latitude, location?.longitude);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("my");
@@ -206,8 +204,6 @@ export default function Events() {
 
     getMilestoneData();
   }, [user, location]); 
-  
-  const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
 
   // --- HELPER: Logic to check if an event is still "Active" ---
   const isEventActive = (dateString: string) => {
@@ -608,8 +604,8 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
   
   const filteredAttendingEvents = filterEvents(attendingEvents);
 
-  const showCityUnavailable = !locationLoading && !launchZoneLoading && isInLaunchZone === false;
-  const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
+  const showCityUnavailable = !locationLoading === false;
+  const cityNotDetected = !locationLoading && !location; 
 
     // Replace the existing if (showCityUnavailable || cityNotDetected) block
   if (!locationLoading && !launchZoneLoading && (cityNotDetected || (milestone && !milestone.is_unlocked))) 

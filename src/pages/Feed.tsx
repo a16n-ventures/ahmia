@@ -403,7 +403,7 @@ const Feed = () => {
               </div>
             ) : (
               <div className="container-mobile py-2 space-y-6">
-                <TabsContent value={activeTab} className="mt-0 space-y-5 px-4 min-h-[50vh]">
+                <TabsContent value={activeTab} className={!milestone.is_unlocked ? "opacity-40 grayscale blur-sm pointer-events-none" : "" "mt-0 space-y-5 px-4 min-h-[50vh]"}>
                   {activeTab === 'communities' ? (
                     <div className="space-y-3">
                       {loading ? <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div> : 
@@ -412,7 +412,7 @@ const Feed = () => {
                         <div key={c.id} className="flex items-center gap-4 p-4 bg-card rounded-xl border shadow-sm cursor-pointer hover:bg-accent/50" onClick={() => setSelectedCommunity(c)}>
                           <Avatar className="h-14 w-14 rounded-xl border"><AvatarImage src={c.avatar_url || undefined} className="object-cover" /><AvatarFallback>{c.name[0]}</AvatarFallback></Avatar>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2"><h4 className="font-bold truncate">{c.name}</h4>{c.is_premium && <Badge className="bg-amber-500 text-white border-0 text-[10px]">Exclusive</Badge>}</div>
+                            <div className="flex items-center gap-2"><h4 className="font-bold truncate">{c.name}</h4>{cis_premium && <Badge className="bg-amber-500 text-white border-0 text-[10px]">Exclusive</Badge>}</div>
                             <p className="text-xs text-muted-foreground line-clamp-1">{c.description}</p>
                             <div className="flex items-center gap-1 mt-1 text-xs font-medium text-primary"><Users className="w-3 h-3" /> {c.member_count} members</div>
                           </div>
