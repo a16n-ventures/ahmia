@@ -8,7 +8,7 @@ export const corsHeaders = {
 
 const LAUNCH_ZONES = {
   ZARIA: {
-    name: "Zaria",
+    name: "Samaru",
     coords: { lat: 11.1500, long: 7.6500 },
     threshold: 500,
   },
