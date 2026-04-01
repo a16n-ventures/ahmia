@@ -303,8 +303,9 @@ const MapPage = () => {
     return list.filter((item: any) => (item.name || item.title).toLowerCase().includes(q));
   }, [searchQuery, friendsMapped, events, activeView]);
 
-  const showCityUnavailable = !locationLoading && !launchZoneLoading && isInLaunchZone === false;
-  const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
+  const showCityUnavailable = !locationLoading && !launchZoneLoading && LaunchZone === false;
+  const cityNotDetected = !locationLoading && 
+    location;
   const mapBlurred = showCityUnavailable || cityNotDetected;
 
   return (

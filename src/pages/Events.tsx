@@ -196,7 +196,8 @@ export default function Events() {
         });
         if (response?.milestone) {
           setMilestone(response.milestone);
-          setLocationName(response.milestone.zone_name || "Nearby");
+          // Ensure locationName matches the zone returned by the engine
+          setLocationName(response.milestone.zone_name || "Nearby"); 
         }
       } catch (e) {
         console.error("Failed to fetch zone milestone", e);
@@ -611,7 +612,8 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
   const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
 
     // Replace the existing if (showCityUnavailable || cityNotDetected) block
-  if (cityNotDetected || !milestone?.is_unlocked) {
+  if (!locationLoading && !launchZoneLoading && (cityNotDetected || (milestone && !milestone.is_unlocked))) 
+    {
     return (
       <div className="container-mobile py-4 pb-24 space-y-6">
         <h1 className="text-2xl font-bold tracking-tight px-1">Events</h1>

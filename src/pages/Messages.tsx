@@ -358,7 +358,7 @@ export default function Messages() {
   const showCityUnavailable = !locationLoading && !launchZoneLoading && isInLaunchZone === false;
   const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
 
-  if (cityNotDetected || !milestone?.is_unlocked) {
+  if (!locationLoading && !launchZoneLoading && (cityNotDetected || (milestone && !milestone.is_unlocked))) {
     return (
       <div className="flex h-screen bg-background items-center justify-center p-6">
         {!milestone?.is_unlocked && !cityNotDetected ? (
