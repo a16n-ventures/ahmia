@@ -166,7 +166,12 @@ export default function Events() {
   const userId = user?.id;
   const queryClient = useQueryClient();
   const { location, isLoading: locationLoading } = useGeolocation();
-  const { isInLaunchZone, cityName: launchCityName, isLoading: launchZoneLoading } = useLaunchZone(location?.latitude, location?.longitude);
+  const { isInLaunchZone, cityName: launchCityName, isLoading: launchZoneLoading } = useLaunchZone(location?.latitude, location?.longitude); 
+  
+  const [milestone, setMilestone] = useState<{ current: number; target: number; is_unlocked: boolean; zone_name?: string } | null>(null);
+  const [locationName, setLocationName] = useState("Detecting..."); 
+  
+  const { isInLaunchZone, isLoading: launchZoneLoading } = useLaunchZone(location?.latitude, location?.longitude);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("my");
@@ -176,6 +181,32 @@ export default function Events() {
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [isPayoutLoading, setIsPayoutLoading] = useState(false);
   const [bankForm, setBankForm] = useState<BankDetails>({ bank_name: '', account_number: '', account_name: '' }); 
+  
+  useEffect(() => {
+    if (!user || !location) return;
+
+    const getMilestoneData = async () => {
+      try {
+        const { data: response } = await supabase.functions.invoke('generate-smart-feed', {
+          body: { 
+            user_id: user.id, 
+            user_lat: location.latitude, 
+            user_long: location.longitude 
+          }
+        });
+        if (response?.milestone) {
+          setMilestone(response.milestone);
+          setLocationName(response.milestone.zone_name || "Nearby");
+        }
+      } catch (e) {
+        console.error("Failed to fetch zone milestone", e);
+      }
+    };
+
+    getMilestoneData();
+  }, [user, location]); 
+  
+  const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
 
   // --- HELPER: Logic to check if an event is still "Active" ---
   const isEventActive = (dateString: string) => {
@@ -579,55 +610,55 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
   const showCityUnavailable = !locationLoading && !launchZoneLoading && isInLaunchZone === false;
   const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
 
-  // Replace the existing if (showCityUnavailable || cityNotDetected) block
-if (cityNotDetected || !milestone?.is_unlocked) {
-  return (
-    <div className="container-mobile py-4 pb-24 space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight px-1">Events</h1>
-      
-      {cityNotDetected ? (
-        <div className="flex flex-col items-center justify-center py-16 px-6 text-center space-y-6">
-          <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
-            <MapPin className="w-10 h-10 text-muted-foreground" />
+    // Replace the existing if (showCityUnavailable || cityNotDetected) block
+  if (cityNotDetected || !milestone?.is_unlocked) {
+    return (
+      <div className="container-mobile py-4 pb-24 space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight px-1">Events</h1>
+        
+        {cityNotDetected ? (
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center space-y-6">
+            <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
+              <MapPin className="w-10 h-10 text-muted-foreground" />
+            </div>
+            <h2 className="text-xl font-bold italic uppercase tracking-tighter">Location Required</h2>
+            <Button variant="outline" className="rounded-2xl" onClick={() => window.location.reload()}>Retry Detection</Button>
           </div>
-          <h2 className="text-xl font-bold italic uppercase tracking-tighter">Location Required</h2>
-          <Button variant="outline" className="rounded-2xl" onClick={() => window.location.reload()}>Retry Detection</Button>
-        </div>
-      ) : (
-        /* THE ROCKET / PIONEER CARD */
-        <div className="mx-1 p-8 bg-card rounded-[2.5rem] border border-dashed border-primary/30 shadow-xl relative overflow-hidden bg-gradient-to-br from-background to-primary/5">
-          <div className="relative z-10 text-center space-y-4">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-              <Rocket className="w-8 h-8 text-primary/60" />
+        ) : (
+          /* THE ROCKET / PIONEER CARD */
+          <div className="mx-1 p-8 bg-card rounded-[2.5rem] border border-dashed border-primary/30 shadow-xl relative overflow-hidden bg-gradient-to-br from-background to-primary/5">
+            <div className="relative z-10 text-center space-y-4">
+              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+                <Rocket className="w-8 h-8 text-primary/60" />
+              </div>
+              <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
+                {milestone?.zone_name || locationName} IS LOADING...
+              </h2>
+              <p className="text-sm text-muted-foreground px-4">
+                Event hosting unlocks once <span className="text-foreground font-bold">{milestone?.target || 500} Pioneers</span> join.
+              </p>
+              
+              <div className="flex justify-between items-end px-1 pt-2">
+                <p className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground text-left">Pioneers<br/>Joined</p>
+                <p className="text-sm font-black text-primary">{milestone?.current || 0} / {milestone?.target || 500}</p>
+              </div>
+              
+              <div className="h-4 w-full bg-muted rounded-full overflow-hidden border p-[3px]">
+                <div 
+                  className="h-full bg-gradient-to-r from-[#6366f1] to-[#a855f7] rounded-full transition-all duration-1000" 
+                  style={{ width: `${Math.min(100, ((milestone?.current || 0) / (milestone?.target || 500)) * 100)}%` }}
+                />
+              </div>
+              
+              <Button className="w-full h-14 rounded-2xl font-bold uppercase gap-2 bg-gradient-to-r from-[#6366f1] to-[#a855f7] border-0 text-white" onClick={() => navigate('/app/friends')}>
+                <UserPlus className="w-5 h-5" /> Invite Friends
+              </Button>
             </div>
-            <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
-              {milestone?.zone_name || locationName} IS LOADING...
-            </h2>
-            <p className="text-sm text-muted-foreground px-4">
-              Event hosting unlocks once <span className="text-foreground font-bold">{milestone?.target || 500} Pioneers</span> join.
-            </p>
-            
-            <div className="flex justify-between items-end px-1 pt-2">
-              <p className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground text-left">Pioneers<br/>Joined</p>
-              <p className="text-sm font-black text-primary">{milestone?.current || 0} / {milestone?.target || 500}</p>
-            </div>
-            
-            <div className="h-4 w-full bg-muted rounded-full overflow-hidden border p-[3px]">
-              <div 
-                className="h-full bg-gradient-to-r from-[#6366f1] to-[#a855f7] rounded-full transition-all duration-1000" 
-                style={{ width: `${Math.min(100, ((milestone?.current || 0) / (milestone?.target || 500)) * 100)}%` }}
-              />
-            </div>
-            
-            <Button className="w-full h-14 rounded-2xl font-bold uppercase gap-2 bg-gradient-to-r from-[#6366f1] to-[#a855f7] border-0 text-white" onClick={() => navigate('/app/friends')}>
-              <UserPlus className="w-5 h-5" /> Invite Friends
-            </Button>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="container-mobile py-4 space-y-6 pb-24">
