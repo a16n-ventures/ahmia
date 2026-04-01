@@ -43,6 +43,9 @@ import { useNavigate } from "react-router-dom";
 import { format, isPast, isFuture, isToday, addHours, differenceInMinutes } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { useGeolocation } from '@/contexts/LocationContext';
+import { useLaunchZone } from '@/hooks/useLaunchZone';
+import { Rocket, UserPlus, Globe } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; 
 import { z } from 'zod';
 
@@ -162,6 +165,8 @@ export default function Events() {
   const { user } = useAuth();
   const userId = user?.id;
   const queryClient = useQueryClient();
+  const { location, isLoading: locationLoading } = useGeolocation();
+  const { isInLaunchZone, cityName: launchCityName, isLoading: launchZoneLoading } = useLaunchZone(location?.latitude, location?.longitude);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("my");
@@ -571,17 +576,59 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
   
   const filteredAttendingEvents = filterEvents(attendingEvents);
 
+  const showCityUnavailable = !locationLoading && !launchZoneLoading && isInLaunchZone === false;
+  const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
+
+  if (showCityUnavailable || cityNotDetected) {
+    return (
+      <div className="container-mobile py-4 pb-24">
+        <div className="flex items-center justify-between px-1 mb-6">
+          <h1 className="text-2xl font-bold tracking-tight">Events</h1>
+        </div>
+        <div className="flex flex-col items-center justify-center py-16 px-6 text-center space-y-6">
+          <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+            <Rocket className="w-10 h-10 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold mb-2">
+              {cityNotDetected ? 'City Not Detected' : 'Coming Soon 🚀'}
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+              {cityNotDetected 
+                ? 'We couldn\'t detect your location. Please enable location access to discover events.'
+                : `We're not in your city yet, but we're expanding fast! Invite friends to help unlock your city.`
+              }
+            </p>
+          </div>
+          {launchCityName && (
+            <Badge variant="outline" className="text-sm px-4 py-1.5">
+              <Globe className="w-3.5 h-3.5 mr-1.5" /> Nearest zone: {launchCityName}
+            </Badge>
+          )}
+          <Card className="w-full max-w-sm border-dashed border-2 border-primary/30 bg-primary/5">
+            <CardContent className="p-5 text-center space-y-3">
+              <UserPlus className="w-8 h-8 text-primary mx-auto" />
+              <h3 className="font-bold text-base">Invite Friends</h3>
+              <p className="text-xs text-muted-foreground">Help us launch in your city by inviting your friends!</p>
+              <Button className="w-full gap-2" onClick={() => navigate('/app/friends')}>
+                <UserPlus className="w-4 h-4" /> Invite Friends
+              </Button>
+            </CardContent>
+          </Card>
+          {cityNotDetected && (
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Retry Location Detection
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container-mobile py-4 space-y-6 pb-24">
       <div className="flex items-center justify-between px-1">
         <h1 className="text-2xl font-bold tracking-tight">Events</h1>
-  {/* <Button 
-          onClick={() => navigate('/create-event')} 
-          size="sm" 
-          className="gradient-primary text-white rounded-full shadow-md gap-1"
-        >
-          <Plus className="w-4 h-4" /> Create
-        </Button> */}
       </div>
 
       <div className="relative">

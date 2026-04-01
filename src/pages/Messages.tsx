@@ -17,6 +17,10 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { useGeolocation } from '@/contexts/LocationContext';
+import { useLaunchZone } from '@/hooks/useLaunchZone';
+import { Rocket, UserPlus, Globe } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDistanceToNow } from "date-fns";
 
@@ -51,7 +55,9 @@ export default function Messages() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  
+  const { location, isLoading: locationLoading } = useGeolocation();
+  const { isInLaunchZone, cityName: launchCityName, isLoading: launchZoneLoading } = useLaunchZone(location?.latitude, location?.longitude);
+
   // State
   const [activeTab, setActiveTab] = useState<ChatType>('dm');
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
@@ -348,6 +354,52 @@ export default function Messages() {
     }
   };
 
+
+  const showCityUnavailable = !locationLoading && !launchZoneLoading && isInLaunchZone === false;
+  const cityNotDetected = !locationLoading && !launchZoneLoading && !location;
+
+  if (showCityUnavailable || cityNotDetected) {
+    return (
+      <div className="flex h-screen bg-background items-center justify-center">
+        <div className="flex flex-col items-center justify-center py-20 px-6 text-center space-y-6 max-w-md">
+          <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+            <Rocket className="w-10 h-10 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold mb-2">
+              {cityNotDetected ? 'City Not Detected' : 'Coming Soon 🚀'}
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+              {cityNotDetected 
+                ? 'We couldn\'t detect your location. Please enable location access to use messaging.'
+                : `We're not in your city yet, but we're expanding fast! Invite friends to help unlock your city.`
+              }
+            </p>
+          </div>
+          {launchCityName && (
+            <Badge variant="outline" className="text-sm px-4 py-1.5">
+              <Globe className="w-3.5 h-3.5 mr-1.5" /> Nearest zone: {launchCityName}
+            </Badge>
+          )}
+          <Card className="w-full max-w-sm border-dashed border-2 border-primary/30 bg-primary/5">
+            <CardContent className="p-5 text-center space-y-3">
+              <UserPlus className="w-8 h-8 text-primary mx-auto" />
+              <h3 className="font-bold text-base">Invite Friends</h3>
+              <p className="text-xs text-muted-foreground">Help us launch in your city by inviting your friends!</p>
+              <Button className="w-full gap-2" onClick={() => navigate('/app/friends')}>
+                <UserPlus className="w-4 h-4" /> Invite Friends
+              </Button>
+            </CardContent>
+          </Card>
+          {cityNotDetected && (
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Retry Location Detection
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // --- RENDER ---
   return (
