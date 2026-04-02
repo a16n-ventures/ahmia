@@ -390,7 +390,7 @@ const Feed = () => {
                   <div className="relative z-10 text-center space-y-4">
                     <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2"><Lock className="w-8 h-8 text-primary/60" /></div>
                     <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
-                      {milestone?.zone_name} IS LOADING...
+                      {milestone?.zone_name} LOADING...
                     </h2>
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground font-medium">Ahmia goes live once <span className="text-foreground font-bold">{milestone?.target || 500} Pioneers</span> join.</p>
