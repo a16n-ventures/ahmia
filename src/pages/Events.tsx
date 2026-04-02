@@ -611,7 +611,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
   if (cityNotDetected || showCityUnavailable)
     {
     return (
-      <div className="container-mobile py-4 pb-24 space-y-6 bg-background/50 sticky top-0 z-10">
+      <div className="container-mobile py-4 pb-24 space-y-6 bg-background/50 backdrop-blur-sm sticky top-0 z-10">
         <h1 className="text-2xl font-bold tracking-tight px-1">Events</h1>
         
         {cityNotDetected ? (
@@ -624,7 +624,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
           </div>
         ) : (
           /* THE ROCKET / PIONEER CARD */
-          <div className="mx-1 p-8 bg-card rounded-[2.5rem] border border-dashed border-primary/30 shadow-xl relative overflow-hidden bg-gradient-to-br from-background to-primary/5">
+          <div className="w-full max-w-md mx-1 p-8 bg-card rounded-[2.5rem] border border-dashed border-primary/30 shadow-xl relative overflow-hidden bg-gradient-to-br from-background to-primary/5">
             <div className="relative z-10 text-center space-y-4">
               <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
                 <Ticket className="w-8 h-8 text-primary/60" />
