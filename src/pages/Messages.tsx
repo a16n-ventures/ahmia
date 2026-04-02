@@ -396,7 +396,7 @@ export default function Messages() {
       {/* LEFT SIDEBAR (Chat List) */}
       <div className={`w-full md:w-80 lg:w-96 border-r flex flex-col bg-muted/10 ${selectedChat ? 'hidden md:flex' : 'flex'}`}>
         {/* Header */}
-        <div className="p-4 border-b bg-background/50 backdrop-blur-sm sticky top-0 z-10">
+        <div className="p-4 border-b bg-background/50 sticky top-0 z-10">
           <div className="flex items-center justify-between mb-4">
              <h1 className="text-xl font-bold">Messages</h1>
              <Button size="icon" variant="ghost" className="rounded-full bg-primary/10 text-primary hover:bg-primary/20" onClick={handleAddNew}>

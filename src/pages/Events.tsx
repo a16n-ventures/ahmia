@@ -611,7 +611,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
   if (cityNotDetected || showCityUnavailable)
     {
     return (
-      <div className="container-mobile py-4 pb-24 space-y-6">
+      <div className="container-mobile py-4 pb-24 space-y-6 bg-background/50 sticky top-0 z-10">
         <h1 className="text-2xl font-bold tracking-tight px-1">Events</h1>
         
         {cityNotDetected ? (
