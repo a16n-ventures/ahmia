@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface LaunchZoneResult {
-  isInLaunchZone: boolean | null; // null = still checking
+  isInLaunchZone: boolean | null;
   cityName: string | null;
+  currentCount: number;
+  targetCount: number;
   isLoading: boolean;
 }
 
@@ -17,11 +19,11 @@ const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
 };
 
 export function useLaunchZone(latitude: number | null | undefined, longitude: number | null | undefined): LaunchZoneResult {
-  const [result, setResult] = useState<LaunchZoneResult>({ isInLaunchZone: null, cityName: null, isLoading: true });
+  const [result, setResult] = useState<LaunchZoneResult>({ isInLaunchZone: null, cityName: null, currentCount: 0, targetCount: 500, isLoading: true });
 
   useEffect(() => {
     if (!latitude || !longitude) {
-      setResult({ isInLaunchZone: null, cityName: null, isLoading: false });
+      setResult({ isInLaunchZone: null, cityName: null, currentCount: 0, targetCount: 500, isLoading: false });
       return;
     }
 
@@ -30,11 +32,10 @@ export function useLaunchZone(latitude: number | null | undefined, longitude: nu
       try {
         const { data: milestones } = await supabase
           .from('city_milestones')
-          .select('city_name, center_lat, center_long, radius_km, is_unlocked');
+          .select('city_name, center_lat, center_long, radius_km, is_unlocked, current_count, target_count');
 
         if (!milestones || milestones.length === 0) {
-          // No milestones configured = allow all
-          setResult({ isInLaunchZone: true, cityName: null, isLoading: false });
+          setResult({ isInLaunchZone: true, cityName: null, currentCount: 0, targetCount: 500, isLoading: false });
           return;
         }
 
@@ -42,19 +43,37 @@ export function useLaunchZone(latitude: number | null | undefined, longitude: nu
           const dist = distanceKm(latitude, longitude, m.center_lat, m.center_long);
           const radius = m.radius_km || 50;
           if (dist <= radius) {
-            setResult({ 
-              isInLaunchZone: m.is_unlocked ?? true, 
-              cityName: m.city_name, 
-              isLoading: false 
+            setResult({
+              isInLaunchZone: m.is_unlocked ?? true,
+              cityName: m.city_name,
+              currentCount: m.current_count || 0,
+              targetCount: m.target_count || 500,
+              isLoading: false,
             });
             return;
           }
         }
 
-        // Not within any configured city
-        setResult({ isInLaunchZone: false, cityName: null, isLoading: false });
+        // Not within any configured city — find nearest
+        let nearest = milestones[0];
+        let nearestDist = Infinity;
+        for (const m of milestones) {
+          const dist = distanceKm(latitude, longitude, m.center_lat, m.center_long);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearest = m;
+          }
+        }
+
+        setResult({
+          isInLaunchZone: false,
+          cityName: nearest.city_name,
+          currentCount: nearest.current_count || 0,
+          targetCount: nearest.target_count || 500,
+          isLoading: false,
+        });
       } catch {
-        setResult({ isInLaunchZone: null, cityName: null, isLoading: false });
+        setResult({ isInLaunchZone: null, cityName: null, currentCount: 0, targetCount: 500, isLoading: false });
       }
     };
 
