@@ -346,10 +346,10 @@ const Feed = () => {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h1 className="text-xl font-bold flex items-center gap-2">
-                  Discover <span className="text-primary">{{milestone?.zone_name || locationName}</span>
+                  Discover <span className="text-primary">{locationName}</span>
                 </h1>
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <MapPin className="w-3 h-3" /> {locationName}
+                  <MapPin className="w-3 h-3" /> Nearby: {milestone?.zone_name}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -390,7 +390,7 @@ const Feed = () => {
                   <div className="relative z-10 text-center space-y-4">
                     <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2"><Lock className="w-8 h-8 text-primary/60" /></div>
                     <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
-                      {milestone?.zone_name || locationName} IS LOADING...
+                      {locationName} IS LOADING...
                     </h2>
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground font-medium">Ahmia goes live once <span className="text-foreground font-bold">{milestone?.target || 500} Pioneers</span> join.</p>
