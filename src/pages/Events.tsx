@@ -176,7 +176,7 @@ export default function Events() {
   return (
     <div className="relative min-h-screen bg-background">
       {/* LAYER 1: CONTENT (Blurred if Locked) */}
-      <div className={`container-mobile py-4 space-y-6 pb-24 transition-all duration-700 ${isLocked ? 'blur-xl grayscale pointer-events-none opacity-40 select-none' : ''}`}>
+      <div className={`container-mobile py-4 space-y-6 pb-24 transition-all duration-700 ${isLocked ? 'blur-md grayscale-[0.3] pointer-events-none opacity-60 select-none' : ''}`}>
         <div className="flex items-center justify-between px-1">
           <h1 className="text-2xl font-bold tracking-tight">Events in {locationName}</h1>
         </div>
@@ -215,7 +215,7 @@ export default function Events() {
 
       {/* LAYER 2: CENTERED WAITING UI */}
       {isLocked && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-background/20 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-background/10 backdrop-blur-[2px]">
           <div className="w-full max-w-md p-8 bg-card rounded-[2.5rem] border border-dashed border-primary/30 shadow-2xl text-center space-y-6 animate-in zoom-in-95 duration-300">
             <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
               {cityNotDetected ? <MapPin className="w-8 h-8 text-primary" /> : <Zap className="w-8 h-8 text-primary" />}

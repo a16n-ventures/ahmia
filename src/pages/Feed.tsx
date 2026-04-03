@@ -367,76 +367,58 @@ const Feed = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="w-full overflow-x-auto scrollbar-hide px-4 pb-3">
-                <TabsList className="bg-transparent p-0 gap-2 h-auto flex justify-start">
-                    {['for_you', 'trending', 'communities', 'music', 'nightlife', 'tech', 'sports', 'food', 'art'].map(tab => (
-                      <TabsTrigger key={tab} value={tab} className="rounded-full border border-border px-4 py-2 text-xs font-medium data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:border-primary transition-all capitalize">
-                        {tab.replace('_', ' ')}
-                      </TabsTrigger>
-                    ))}
-                </TabsList>
+          <div className="w-full overflow-x-auto scrollbar-hide px-4 pb-3">
+            <TabsList className="bg-transparent p-0 gap-2 h-auto flex justify-start">
+              {['for_you', 'trending', 'communities', 'music', 'nightlife', 'tech', 'sports', 'food', 'art'].map(tab => (
+                <TabsTrigger key={tab} value={tab} className="rounded-full border border-border px-4 py-2 text-xs font-medium data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:border-primary transition-all capitalize">
+                  {tab.replace('_', ' ')}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+        
+          {cityNotDetected ? (
+            <div className="flex flex-col items-center justify-center py-20 px-6 text-center space-y-6">
+              <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center"><MapPin className="w-10 h-10 text-muted-foreground" /></div>
+              <h2 className="text-xl font-bold italic uppercase tracking-tighter">Location Required</h2>
+              <p className="text-sm text-muted-foreground max-w-xs">Please enable location access to discover events in {locationName}.</p>
+              <Button variant="outline" className="rounded-2xl px-8" onClick={() => window.location.reload()}>Retry Detection</Button>
             </div>
-
-            {cityNotDetected ? (
-              <div className="flex flex-col items-center justify-center py-20 px-6 text-center space-y-6">
-                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center"><MapPin className="w-10 h-10 text-muted-foreground" /></div>
-                <h2 className="text-xl font-bold italic uppercase tracking-tighter">Location Required</h2>
-                <p className="text-sm text-muted-foreground max-w-xs">Please enable location access to discover events in {locationName}.</p>
-                <Button variant="outline" className="rounded-2xl px-8" onClick={() => window.location.reload()}>Retry Detection</Button>
-              </div>
-            ) : !milestone?.is_unlocked ? (
-              <div className="space-y-6">
-                <div className="mx-4 mt-4 p-8 bg-card rounded-[2.5rem] border border-dashed border-primary/30 shadow-xl relative overflow-hidden bg-gradient-to-br from-background to-primary/5">
-                  <div className="relative z-10 text-center space-y-4">
-                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2"><Lock className="w-8 h-8 text-primary/60" /></div>
-                    <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
-                      {milestone?.zone_name} LOADING...
-                    </h2>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground font-medium">Ahmia goes live once <span className="text-foreground font-bold">{milestone?.target || 500} Pioneers</span> join.</p>
-                      <p className="text-[11px] text-muted-foreground/60 italic leading-none">Social features are currently in "Stealth Mode."</p>
-                    </div>
-                    <div className="flex justify-between items-end px-1 pt-4">
-                      <div className="text-left">
-                        <p className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground leading-tight">{milestone?.zone_name || "DETECTING..."}</p>
-                        <p className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground leading-tight">Pioneers</p>
+          ) : (
+            <div className="relative">
+              {/* MILESTONE OVERLAY: Only shows on 'for_you' tab when locked */}
+              {!milestone?.is_unlocked && activeTab === 'for_you' && (
+                <div className="absolute inset-x-0 top-0 z-20 px-4 pt-4">
+                  <div className="p-8 bg-card/90 backdrop-blur-md rounded-[2.5rem] border border-dashed border-primary/30 shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 duration-500">
+                    <div className="relative z-10 text-center space-y-4">
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                        <Lock className="w-8 h-8 text-primary" />
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-black text-primary">{milestone?.current || 0} / {milestone?.target || 500}</p>
+                      <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
+                        {milestone?.zone_name} LOADING...
+                      </h2>
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground font-medium">
+                          Ahmia goes live once <span className="text-foreground font-bold">{milestone?.target || 500} Pioneers</span> join.
+                        </p>
+                        <p className="text-[11px] text-muted-foreground/60 italic">Social features are currently in "Stealth Mode."</p>
                       </div>
+                      <div className="h-3 w-full bg-muted rounded-full overflow-hidden border p-[2px] mt-4">
+                        <div 
+                          className="h-full bg-gradient-to-r from-primary to-purple-500 rounded-full transition-all duration-1000" 
+                          style={{ width: `${Math.min(100, ((milestone?.current || 0) / (milestone?.target || 500)) * 100)}%` }} 
+                        />
+                      </div>
+                      <Button className="w-full h-14 rounded-2xl font-bold uppercase gap-2 shadow-lg bg-primary text-white mt-4" onClick={() => navigate('/app/friends')}>
+                        <UserPlus className="w-5 h-5" /> Invite to Speed Up
+                      </Button>
                     </div>
-                    <div className="h-4 w-full bg-muted rounded-full overflow-hidden border p-[3px]">
-                      <div className="h-full bg-gradient-to-r from-[#6366f1] to-[#a855f7] rounded-full transition-all duration-1000 shadow-sm" style={{ width: `${Math.min(100, ((milestone?.current || 0) / (milestone?.target || 500)) * 100)}%` }} />
-                    </div>
-                    <Button className="w-full h-14 rounded-2xl font-bold uppercase gap-2 shadow-lg bg-gradient-to-r from-[#6366f1] to-[#a855f7] border-0 mt-4 text-white" onClick={() => navigate('/app/friends')}>
-                      <UserPlus className="w-5 h-5" /> Invite Friends to Speed Up
-                    </Button>
                   </div>
                 </div>
-                <div className="px-4 filter blur-md grayscale pointer-events-none select-none opacity-50">
-                   <h3 className="font-bold mb-4 italic uppercase">Happening soon in {locationName}...</h3>
-                   <div className="space-y-4">
-                     {displayEvents.length > 0 ? (
-                       displayEvents.slice(0, 4).map((event) => (
-                         <Card key={event.id} className="overflow-hidden border-0 shadow-sm rounded-3xl">
-                         </Card>
-                                     )) 
-                                     ) : (
-                       /* Loading Skeletons */
-                       [1, 2, 3].map((i) => <div key={i} className="h-48 bg-muted rounded-[2.5rem] mb-4 animate-pulse" />)
-                     )}
-                   </div>
-                </div>
-              </div>
-            ) : showCityUnavailable ? (
-              <div className="flex flex-col items-center justify-center py-20 px-6 text-center space-y-6">
-                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center"><Globe className="w-10 h-10 text-primary" /></div>
-                <h2 className="text-xl font-bold uppercase italic tracking-tighter">Coming Soon</h2>
-                <p className="text-sm text-muted-foreground max-w-xs mx-auto">Ahmia hasn't landed in {locationName} yet, but we're expanding fast!</p>
-                <Button className="gap-2 rounded-2xl px-8" variant="outline" onClick={() => navigate('/app/friends')}><Megaphone className="w-4 h-4" /> Nominate {locationName}</Button>
-              </div>
-            ) : (
-              <div className="container-mobile py-2 space-y-6">
+              )}
+        
+              {/* BLURRED CONTENT LAYER */}
+              <div className={`container-mobile py-2 space-y-6 transition-all duration-700 ${!milestone?.is_unlocked ? 'blur-md grayscale-[0.5] opacity-60 pointer-events-none' : ''}`}>
                 <TabsContent value={activeTab} className="mt-0 space-y-5 px-4 min-h-[50vh]">
                   {activeTab === 'communities' ? (
                     <div className="space-y-3">
