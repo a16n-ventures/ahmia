@@ -44,7 +44,34 @@ interface Community {
   member_count: number | null; 
   description: string | null; 
   avatar_url: string | null;
-}
+} 
+
+// --- HELPER: Calendar Sync ---
+const addToCalendar = (event: Event) => {
+  const start = new Date(event.start_date).toISOString().replace(/-|:|\.\d\d\d/g, "");
+  const end = event.end_date 
+    ? new Date(event.end_date).toISOString().replace(/-|:|\.\d\d\d/g, "") 
+    : new Date(new Date(event.start_date).getTime() + 2 * 60 * 60 * 1000).toISOString().replace(/-|:|\.\d\d\d/g, "");
+
+  const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${start}/${end}&details=${encodeURIComponent(event.description || "")}&location=${encodeURIComponent(event.location || "")}`;
+  window.open(googleUrl, '_blank');
+  toast.success("Opening Calendar...");
+};
+
+const getEventStatus = (startDate: string) => {
+  const date = new Date(startDate);
+  const now = new Date();
+  const expirationTime = addHours(date, 3); 
+
+  if (isPast(date) && now < expirationTime) return { label: 'Happening Now', color: 'bg-green-600' };
+  if (isToday(date)) return { label: 'Today', color: 'bg-blue-500' };
+  if (isFuture(date)) {
+    const hoursUntil = differenceInMinutes(date, now) / 60;
+    if (hoursUntil <= 24) return { label: 'Soon', color: 'bg-amber-500' };
+    return { label: 'Upcoming', color: 'bg-primary' };
+  }
+  return { label: 'Past', color: 'bg-muted' };
+};
 
 const Feed = () => {
   const { user } = useAuth();
@@ -305,7 +332,6 @@ const Feed = () => {
       )}
 
       <FriendProfilePreview profile={previewProfile} open={!!previewProfile} onClose={() => setPreviewProfile(null)} />
-    </div>
     </LaunchZoneGuard>
   );
 };
