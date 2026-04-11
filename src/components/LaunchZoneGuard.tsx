@@ -41,8 +41,8 @@ export function LaunchZoneGuard({
               <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
                 {noGps ? "Location Required" : waitingRoom ? `${cityName?.toUpperCase() || 'CITY'} LOADING...` : "COMING SOON"}
               </h2>
-              <p className="text-[11px] text-muted-foreground/60 italic uppercase tracking-wider">We are gathering pioneers! Help us reach our pioneer goal to unlock the app.</p> 
-              <small>Social features are currently in stealth mode</small>
+              <p className="text-[11px] uppercase tracking-wider">We are gathering pioneers! Help us reach our pioneer goal to unlock the app.</p> 
+              <small className="text-muted-foreground/60 italic">Social features are currently in "stealth mode"</small>
             </div>
 
             {waitingRoom && (
