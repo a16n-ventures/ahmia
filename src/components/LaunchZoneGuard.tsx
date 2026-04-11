@@ -22,7 +22,7 @@ export function LaunchZoneGuard({
   if (isLoading || isInLaunchZone === true) return <>{children}</>;
 
   const noGps = !locationDetected;
-  const waitingRoom = !noGps && isWithinCity && !isInLaunchZone;
+  const waitingRoom = !noGps && isWithinCity && !isInLaunchZone && targetCount > 0;
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden">
@@ -38,10 +38,14 @@ export function LaunchZoneGuard({
             </div>
 
             <div className="space-y-1">
-              <h2 className="text-2xl font-black uppercase tracking-tighter leading-none">
+              <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
                 {noGps ? "Location Required" : waitingRoom ? `${cityName?.toUpperCase() || 'CITY'} LOADING...` : "COMING SOON"}
               </h2>
-              <p className="text-[11px] uppercase tracking-wider">We are gathering pioneers! Help us reach our pioneer goal to unlock the app.</p> 
+              <p className="text-[11px] uppercase tracking-wider">
+                {waitingRoom 
+                  ? "We are gathering pioneers! Help us reach our goal to unlock." 
+                  : "Ahmia hasn't landed in your city yet. We're expanding fast!"}
+              </p> 
               <small className="text-muted-foreground/60 italic">Social features are currently in "stealth mode"</small>
             </div>
 
