@@ -37,7 +37,7 @@ export function useLaunchZone(latitude: number | null | undefined, longitude: nu
       for (const m of milestones) {
         // Simple distance check (simplified for performance)
         const dist = Math.sqrt(Math.pow(latitude - m.center_lat, 2) + Math.pow(longitude - m.center_long, 2)) * 111;
-        if (dist <= (m.radius_km || 50)) {
+        if (dist <= (m.radius_km || 25)) {
           setResult({
             isInLaunchZone: m.is_unlocked ?? false,
             isWithinCity: true,
@@ -52,7 +52,14 @@ export function useLaunchZone(latitude: number | null | undefined, longitude: nu
       }
 
       if (!found) {
-        setResult({ isInLaunchZone: false, isWithinCity: false, cityName: null, currentCount: 0, targetCount: 0, isLoading: false });
+        setResult({ 
+          isInLaunchZone: false, 
+          isWithinCity: false, 
+          cityName: "Global", 
+          currentCount: 0, 
+          targetCount: 0, 
+          isLoading: false 
+        });
       }
     };
 
