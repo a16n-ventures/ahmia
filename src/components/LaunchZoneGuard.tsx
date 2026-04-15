@@ -1,8 +1,11 @@
 import { Button } from '@/components/ui/button';
-import { Lock, MapPin, Globe, UserPlus } from 'lucide-react';
+import { Lock, MapPin, Globe, UserPlus, Bell, CheckCircle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { useGeolocation } from '@/contexts/LocationContext';
+import { useEffect, useState, useCallback } from 'react';
+import { useGeolocation } from '@/contexts/LocationContext'; 
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 // Reverse-geocodes coords → real city name, fully self-contained
 function useResolvedCityName(): string {
@@ -32,6 +35,77 @@ function useResolvedCityName(): string {
   }, [location?.latitude, location?.longitude]);
 
   return resolvedCity;
+} 
+
+// ─── Waitlist Hook ─────────────────────────────────────────────────────────────
+// No form needed — auto-captures logged-in user's profile data.
+// Saves to `waitlist` table + inserts an `admin_notifications` row. 
+function useWaitlist(cityName: string) {
+  const { user } = useAuth();
+  const { location } = useGeolocation();
+  const [status, setStatus] = useState<'idle' | 'loading' | 'joined'>('idle');
+
+  // On mount: check if this user already joined so button shows correct state
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('waitlist')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setStatus('joined'); });
+  }, [user?.id]);
+
+  const joinWaitlist = useCallback(async () => {
+    if (!user?.id || status !== 'idle') return;
+    setStatus('loading');
+
+    try {
+      // Auto-capture name from profile — no form needed
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, username')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const displayName = profile?.full_name || profile?.username || user.email || 'Unknown';
+
+      const payload = {
+        user_id:   user.id,
+        email:     user.email ?? null,
+        full_name: displayName,
+        city:      cityName || 'Unknown',
+        latitude:  location?.latitude  ?? null,
+        longitude: location?.longitude ?? null,
+        joined_at: new Date().toISOString(),
+      };
+
+      // 1. Save to waitlist (upsert = safe if user taps twice)
+      const { error } = await supabase
+        .from('waitlist')
+        .upsert(payload, { onConflict: 'user_id' });
+
+      if (error) throw error;
+
+      // 2. Notify admin via admin_notifications table
+      await supabase.from('admin_notifications').insert({
+        type:    'waitlist_signup',
+        title:   `New waitlist signup — ${cityName || 'Unknown City'}`,
+        body:    `${displayName} (${user.email}) wants Ahmia in ${cityName}.`,
+        meta:    payload,
+        is_read: false,
+      });
+
+      setStatus('joined');
+      toast.success("You're on the list! We'll notify you when Ahmia lands.");
+    } catch (err: any) {
+      console.error('[Waitlist]', err);
+      toast.error("Couldn't join — please try again.");
+      setStatus('idle');
+    }
+  }, [user, location, cityName, status]);
+
+  return { status, joinWaitlist };
 }
 
 interface LaunchZoneGuardProps {
@@ -92,13 +166,16 @@ export function LaunchZoneGuard({
 }: LaunchZoneGuardProps) {
   const navigate = useNavigate();
   const resolvedCityName = useResolvedCityName();
-  const state = resolveState(isLoading, locationDetected, isWithinCity, isInLaunchZone);
+  const state = resolveState(isLoading, locationDetected, isWithinCity, isInLaunchZone); 
+  
+    // DB milestone name takes priority, then live geocode, then generic fallback
+  const bestCityName = (cityName || resolvedCityName || 'YOUR CITY').toUpperCase();
+  
+    // Waitlist hook — only meaningful in COMING_SOON but safe to always call (hook rules)
+  const { status: waitlistStatus, joinWaitlist } = useWaitlist(cityName || resolvedCityName);
 
   // Transparent pass-through states
   if (state === 'PASS_THROUGH' || state === 'LOADING') return <>{children}</>;
-
-  // DB milestone name takes priority, then live geocode, then generic fallback
-  const bestCityName = (cityName || resolvedCityName || 'YOUR CITY').toUpperCase();
 
   // ── Overlay content per state ──────────────────────────────────────────────
   const icon = {
@@ -118,22 +195,6 @@ export function LaunchZoneGuard({
     WAITING_ROOM: 'We are gathering pioneers! Help us reach our goal to unlock.',
     COMING_SOON:  "Ahmia hasn't landed in your city yet. We're expanding fast!",
   }[state];
-
-  const buttonLabel =
-    state === 'NO_GPS' ? 'Retry Detection' : (
-      <>
-        <UserPlus className="w-5 h-5 mr-2" />
-        Invite to Speed Up
-      </>
-    );
-
-  const handleButton = () => {
-    if (state === 'NO_GPS') {
-      window.location.reload();
-    } else {
-      navigate('/app/friends');
-    }
-  };
 
   const progress = targetCount > 0 ? Math.min(100, (currentCount / targetCount) * 100) : 0;
 
@@ -190,13 +251,59 @@ export function LaunchZoneGuard({
               </div>
             )}
 
-            {/* CTA */}
-            <Button
-              className="w-full h-14 rounded-2xl font-bold uppercase shadow-lg bg-primary text-white"
-              onClick={handleButton}
-            >
-              {buttonLabel}
-            </Button>
+            {/* ── CTA — NO_GPS ── */}
+            {state === 'NO_GPS' && (
+              <Button
+                className="w-full h-14 rounded-2xl font-bold uppercase shadow-lg bg-primary text-white"
+                onClick={() => window.location.reload()}
+              >
+                Retry Detection
+              </Button>
+            )}
+
+            {/* ── CTA — WAITING_ROOM ── */}
+            {state === 'WAITING_ROOM' && (
+              <Button
+                className="w-full h-14 rounded-2xl font-bold uppercase shadow-lg bg-primary text-white"
+                onClick={() => navigate('/app/friends')}
+              >
+                <UserPlus className="w-5 h-5 mr-2" /> Invite to Speed Up
+              </Button>
+            )}
+
+            {/* ── CTA — COMING_SOON (3 states) ── */}
+            {state === 'COMING_SOON' && (
+              <div className="space-y-3">
+                {waitlistStatus === 'joined' ? (
+                  <Button
+                    disabled
+                    className="w-full h-14 rounded-2xl font-bold uppercase shadow-lg bg-green-600 text-white opacity-100 cursor-default"
+                  >
+                    <CheckCircle className="w-5 h-5 mr-2" /> You're on the Waitlist
+                  </Button>
+                ) : (
+                  <Button
+                    className="w-full h-14 rounded-2xl font-bold uppercase shadow-lg bg-primary text-white"
+                    onClick={joinWaitlist}
+                    disabled={waitlistStatus === 'loading'}
+                  >
+                    {waitlistStatus === 'loading'
+                      ? <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      : <Bell className="w-5 h-5 mr-2" />
+                    }
+                    {waitlistStatus === 'loading' ? 'Joining...' : 'Join Waitlist'}
+                  </Button>
+                )}
+
+                {/* Secondary nudge */}
+                <button
+                  className="w-full text-xs text-muted-foreground underline underline-offset-2"
+                  onClick={() => navigate('/app/friends')}
+                >
+                  Or invite friends to speed things up
+                </button>
+              </div>
+            )}
 
           </div>
         </div>
