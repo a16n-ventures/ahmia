@@ -11,7 +11,7 @@ import {
   Search, MapPin, Calendar, Users, Plus, 
   MessageCircle, Loader2, Sparkles, Ticket, 
   Clock, Check, Megaphone, Repeat,
-  ArrowRight, Music, Martini, Palette, Zap, Rocket, UserPlus, Globe, Lock, Bell
+  ArrowRight, Music, Martini, Palette, Zap, Rocket, UserPlus, Globe, Lock, Bell, ShieldCheck
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -61,6 +61,8 @@ const Feed = () => {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  // --- NEW: Explorer UX State ---
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const { location, isLoading: locationLoading } = useGeolocation();
   const [locationName, setLocationName] = useState("Detecting...");
   const { isInLaunchZone, isLoading: launchZoneLoading, currentCount, targetCount, cityName: launchCityName } = useLaunchZone(location?.latitude, location?.longitude);
@@ -288,9 +290,29 @@ const Feed = () => {
     }
   };
 
+  // --- MODIFIED: Smart Feed Logic for Explorers ---
   const getFilteredEvents = () => {
-    let filtered = events;
-    if (searchQuery) filtered = filtered.filter(e => e.title.toLowerCase().includes(searchQuery.toLowerCase()));
+    let filtered = [...events];
+
+    // 1. Trust Filter: Hide unvouched events if toggled
+    if (verifiedOnly) {
+      filtered = filtered.filter(e => e.creator_id && e.is_verified); 
+      // Note: is_verified comes from the backend payload
+    }
+
+    if (searchQuery) {
+      filtered = filtered.filter(e => e.title.toLowerCase().includes(searchQuery.toLowerCase()));
+    }
+
+    // 2. Prioritized View: Sort by Match Score and Friends Going for 'for_you'
+    if (activeTab === 'for_you') {
+      filtered.sort((a, b) => {
+        const scoreA = (a.match_score || 0) + (a.friend_images?.length || 0) * 10;
+        const scoreB = (b.match_score || 0) + (b.friend_images?.length || 0) * 10;
+        return scoreB - scoreA;
+      });
+    }
+    
     switch (activeTab) {
         case 'trending': return filtered.filter(e => (e.attendee_count || 0) > 10 || (e.match_score && e.match_score > 80));
         case 'music': return filtered.filter(e => e.category?.toLowerCase().includes('music') || e.description?.toLowerCase().includes('music'));
@@ -328,8 +350,17 @@ const Feed = () => {
                     <MapPin className="w-3 h-3" /> City: {locationName}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  {isPremium && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 font-bold tracking-tight px-2 py-0.5 rounded-full"><Sparkles className="w-3 h-3 mr-1" /> PRO</Badge>}
+                <div className="flex items-center gap-2"> 
+                  {/* --- NEW: Trust Filter Toggle --- */}
+                  <Button 
+                    variant={verifiedOnly ? "default" : "outline"} 
+                    size="sm" 
+                    onClick={() => setVerifiedOnly(!verifiedOnly)}
+                    className={`rounded-full h-9 px-3 gap-2 transition-all ${verifiedOnly ? 'bg-primary text-white' : 'text-muted-foreground'}`}
+                  >
+                    <ShieldCheck className={`w-4 h-4 ${verifiedOnly ? 'fill-white/20' : ''}`} />
+                    <span className="text-xs font-bold">Vouched</span>
+                  </Button>
                   <Button size="icon" variant="ghost" className="rounded-full relative" onClick={() => navigate('/app/notifications')}>
                     <Bell className="w-5 h-5" />
                     {unreadCount > 0 && <span className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{unreadCount > 99 ? '99+' : unreadCount}</span>}
@@ -382,27 +413,53 @@ const Feed = () => {
                           <div className="relative h-48 w-full bg-muted">
                             <img src={event.image_url || '/placeholder-event.jpg'} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                             <div className="absolute top-3 left-3 flex gap-2">
-                              <Badge className={`${status.color} text-white border-0 shadow-sm backdrop-blur-md`}>{status.label}</Badge>
-                              {event.match_score && event.match_score > 80 && <Badge className="bg-black/60 text-white border-0 backdrop-blur-md"><Sparkles className="w-3 h-3 mr-1 text-yellow-400" /> {event.match_score}% Match</Badge>}
-                            </div>
-                            <div className="absolute top-3 right-3 bg-white/90 backdrop-blur text-black px-2.5 py-1.5 rounded-lg text-center shadow-sm min-w-[50px]">
-                              <span className="block text-xs font-bold uppercase text-red-500">{new Date(event.start_date).toLocaleString('default', { month: 'short' })}</span>
-                              <span className="block text-lg font-black leading-none">{new Date(event.start_date).getDate()}</span>
-                            </div>
-                          </div>
-                          <CardContent className="p-4">
-                            <h3 className="font-bold text-lg leading-tight mb-1 line-clamp-2">{event.title}</h3>
-                            <div className="flex items-center text-xs text-muted-foreground gap-3">
-                              <span className="flex items-center"><MapPin className="w-3 h-3 mr-1" /> {event.location || locationName}</span>
-                              <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {new Date(event.start_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                            </div>
-                            <div className="mt-4 flex items-center justify-between">
-                              <div className="flex items-center -space-x-2">
-                                {(event.friend_images || []).slice(0, 3).map((img, i) => <Avatar key={i} className="w-7 h-7 border-2 border-background"><AvatarImage src={img} /><AvatarFallback>?</AvatarFallback></Avatar>)}
-                                <div className="text-xs text-muted-foreground pl-3 font-medium">
-                                  {event.friend_images?.length ? <span className="text-foreground">{event.friend_images.length} {event.friend_images.length === 1 ? 'friend' : 'friends'} going</span> : <span>{event.attendee_count || 0} attending</span>}
-                                </div>
+                                <Badge className={`${status.color} text-white border-0 shadow-sm backdrop-blur-md`}>{status.label}</Badge>
+                                {/* --- Explorer UI: High Match Score Badge --- */}
+                                {event.match_score && event.match_score > 80 && (
+                                  <Badge className="bg-black/60 text-white border-0 backdrop-blur-md">
+                                    <Sparkles className="w-3 h-3 mr-1 text-yellow-400" /> {event.match_score}% Vibe Match
+                                  </Badge>
+                                )}
                               </div>
+                              
+                              {/* --- NEW: Vouch Badge for Verified Organizers --- */}
+                              {event.is_verified && (
+                                <div className="absolute top-3 right-16">
+                                   <div className="bg-primary/90 text-white p-1.5 rounded-full shadow-lg backdrop-blur-md">
+                                      <ShieldCheck className="w-4 h-4 fill-white/20" />
+                                   </div>
+                                </div>
+                              )}
+
+                              <div className="absolute top-3 right-3 bg-white/90 backdrop-blur text-black px-2.5 py-1.5 rounded-lg text-center shadow-sm min-w-[50px]">
+                                <span className="block text-xs font-bold uppercase text-red-500">{new Date(event.start_date).toLocaleString('default', { month: 'short' })}</span>
+                                <span className="block text-lg font-black leading-none">{new Date(event.start_date).getDate()}</span>
+                              </div>
+                            </div>
+
+                            <CardContent className="p-4">
+                              <h3 className="font-bold text-lg leading-tight mb-1 line-clamp-2">{event.title}</h3>
+                              <div className="flex items-center text-xs text-muted-foreground gap-3">
+                                <span className="flex items-center"><MapPin className="w-3 h-3 mr-1" /> {event.location || locationName}</span>
+                              </div>
+                              
+                              <div className="mt-4 flex items-center justify-between">
+                                {/* --- Explorer UI: Large Avatar Stacks for Social Proof --- */}
+                                <div className="flex items-center -space-x-3">
+                                  {(event.friend_images || []).slice(0, 4).map((img, i) => (
+                                    <Avatar key={i} className="w-9 h-9 border-2 border-background shadow-sm">
+                                      <AvatarImage src={img} />
+                                      <AvatarFallback>?</AvatarFallback>
+                                    </Avatar>
+                                  ))}
+                                  <div className="text-xs text-muted-foreground pl-4 font-semibold">
+                                    {event.friend_images?.length ? (
+                                      <span className="text-primary">{event.friend_images.length === 1 ? "friend" : "friends"} in your circle are going</span>
+                                    ) : (
+                                      <span>{event.attendee_count || 0} attending</span>
+                                    )}
+                                  </div>
+                                </div>
                               <div className="flex gap-2">
                                 <Button size="sm" variant="secondary" className="h-8 w-8 rounded-full p-0" onClick={(e) => { e.stopPropagation(); navigate(`/app/messages?type=event&id=${event.id}`); }}><MessageCircle className="w-4 h-4 text-primary" /></Button>
                                 <Button size="sm" className={`h-8 rounded-full px-4 ${event.is_attending ? "bg-green-600" : ""}`} onClick={(e) => { e.stopPropagation(); handleRSVP(event.id); }}>{event.is_attending ? "Going" : event.ticket_price ? `₦${event.ticket_price.toLocaleString()}` : "RSVP"}</Button>
