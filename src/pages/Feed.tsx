@@ -405,7 +405,7 @@ const Feed = () => {
                   ) : (
                     <>
                       {loading ? <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div> : 
-                      displayEvents.length === 0 ? <div className="text-center py-16 flex flex-col items-center gap-4"><div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center"><Calendar className="w-10 h-10 text-muted-foreground/30" /></div><div><p className="font-semibold text-base">No events for this vibe yet in {locationName}</p></div><Button className="rounded-full px-6 gap-2 shadow-md" onClick={() => navigate('/app/events/create')}><Plus className="w-4 h-4" /> Create Event</Button></div> :
+                      displayEvents.length === 0 ? <div className="text-center py-16 flex flex-col items-center gap-4"><div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center"><Calendar className="w-10 h-10 text-muted-foreground/30" /></div><div><p className="font-semibold text-base">No events for this vibe yet in {locationName}</p></div><Button className="rounded-full px-6 gap-2 shadow-md" onClick={() => navigate('/create-event')}><Plus className="w-4 h-4" /> Create Event</Button></div> :
                       displayEvents.map((event) => {
                         const status = getEventStatus(event.start_date);
                         return (
