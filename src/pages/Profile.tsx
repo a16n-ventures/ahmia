@@ -45,6 +45,9 @@ interface UserPreferences {
   [key: string]: any;
 }
 
+type UserType = 'personal' | 'vendor';
+type VerificationStatus = 'unverified' | 'pending' | 'verified';
+
 interface ProfileData {
   user_id: string;
   display_name: string;
@@ -57,6 +60,9 @@ interface ProfileData {
   is_premium?: boolean;
   profile_views_30d?: number;
   preferences?: UserPreferences;
+  user_type: UserType;
+  verification_status: VerificationStatus;
+  trust_score?: number;
 }
 
 interface LocationData {
@@ -274,6 +280,11 @@ const ProfileViewsTab = ({ userId, isPremium }: { userId: string; isPremium: boo
           </div>
           {!isPremium && (
             <Badge className="bg-amber-100 text-amber-800 border-0 text-[9px]">PRO</Badge>
+          )}
+          {profile.user_type === 'vendor' && profile.verification_status === 'verified' && (
+            <div className="bg-primary/10 p-1 rounded-full border border-primary/20" title="Ahmia-Verified Vendor">
+              <ShieldCheck className="w-4 h-4 text-primary fill-primary/20" />
+            </div>
           )}
         </div>
       ))}
@@ -740,6 +751,22 @@ const Profile = () => {
                     </div>
                     <Button variant="outline" size="sm" onClick={() => navigate('/premium')}>Manage</Button>
                   </div>
+                  
+                    {/* --- INSERT THIS BLOCK --- */}
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary/10 rounded-lg text-primary"><Shield className="w-5 h-5" /></div>
+                      <div>
+                        <p className="font-semibold text-sm">Account Path</p>
+                        <p className="text-xs text-muted-foreground">
+                          {profile.user_type === 'vendor' ? 'Business / Vendor' : 'Explorer (Social)'}
+                        </p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => navigate('/vouch-it')}>
+                      {profile.verification_status === 'verified' ? 'Verified' : 'Verify'}
+                    </Button>
+                  </div>
 
                   <div className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-lg cursor-pointer transition-colors">
                     <div className="flex items-center gap-3">
@@ -936,6 +963,16 @@ const Profile = () => {
               className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary px-0 pb-3 pt-2 text-muted-foreground transition-all"
             >
               <Sparkles className="w-4 h-4 mr-2" /> Insights
+            </TabsTrigger>
+          )} 
+          
+          {/* --- INSERT THIS BLOCK --- */}
+          {profile.user_type === 'vendor' && (
+            <TabsTrigger
+              value="trust"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary px-0 pb-3 pt-2 text-muted-foreground transition-all"
+            >
+              <ShieldCheck className="w-4 h-4 mr-2" /> Trust Center
             </TabsTrigger>
           )}
         </TabsList>
