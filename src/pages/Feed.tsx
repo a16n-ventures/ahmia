@@ -190,8 +190,11 @@ const Feed = () => {
         }
       }
 
-      const { data: response, error } = await supabase.functions.invoke('generate-smart-feed', {
-        body: { user_id: user?.id, user_lat: currentLat, user_long: currentLong, city: city }
+      const { data: response, error } = await supabase.rpc('generate_smart_feed', {
+        p_user_id: user?.id,
+        p_user_lat: currentLat,
+        p_user_long: currentLong,
+        p_city: city
       });
 
       if (error) throw error;
@@ -389,7 +392,7 @@ const Feed = () => {
                   {activeTab === 'communities' ? (
                     <div className="space-y-3">
                       {loading ? <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div> : 
-                      communities.length === 0 ? <div className="text-center py-16 flex flex-col items-center gap-4"><div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center"><Users className="w-8 h-8 text-muted-foreground/40" /></div><div><p className="font-semibold">No communities yet in {locationName}</p></div></div> :
+                      communities.length === 0 ? <div className="text-center py-16 flex flex-col items-center gap-4"><div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center"><Users className="w-8 h-8 text-muted-foreground/40" /></div><div><p className="font-semibold">No communities yet in {milestone?.zone_name}</p></div><Button className="rounded-full px-6 gap-2 shadow-md" onClick={() => navigate('/app/messages?tab=communities')}><Plus className="w-4 h-4" /> Create Community</Button></div> :
                       communities.map(c => (
                         <div key={c.id} className="flex items-center gap-4 p-4 bg-card rounded-xl border shadow-sm cursor-pointer hover:bg-accent/50" onClick={() => setSelectedCommunity(c)}>
                           <Avatar className="h-14 w-14 rounded-xl border"><AvatarImage src={c.avatar_url || undefined} className="object-cover" /><AvatarFallback>{c.name[0]}</AvatarFallback></Avatar>
@@ -405,7 +408,7 @@ const Feed = () => {
                   ) : (
                     <>
                       {loading ? <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div> : 
-                      displayEvents.length === 0 ? <div className="text-center py-16 flex flex-col items-center gap-4"><div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center"><Calendar className="w-10 h-10 text-muted-foreground/30" /></div><div><p className="font-semibold text-base">No events for this vibe yet in {locationName}</p></div><Button className="rounded-full px-6 gap-2 shadow-md" onClick={() => navigate('/create-event')}><Plus className="w-4 h-4" /> Create Event</Button></div> :
+                      displayEvents.length === 0 ? <div className="text-center py-16 flex flex-col items-center gap-4"><div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center"><Calendar className="w-10 h-10 text-muted-foreground/30" /></div><div><p className="font-semibold text-base">No events for this vibe yet in {milestone?.zone_name}</p></div><Button className="rounded-full px-6 gap-2 shadow-md" onClick={() => navigate('/create-event')}><Plus className="w-4 h-4" /> Create Event</Button></div> :
                       displayEvents.map((event) => {
                         const status = getEventStatus(event.start_date);
                         return (
@@ -487,7 +490,7 @@ const Feed = () => {
                 <div className="absolute bottom-0 left-0 p-5 text-white w-full">
                   <Badge className="bg-white/20 mb-2 border-0 backdrop-blur-md italic font-bold">EVENT</Badge>
                   <h2 className="text-2xl font-black leading-tight mb-1 italic uppercase tracking-tighter">{selectedEvent.title}</h2>
-                  <div className="flex items-center gap-2 text-white/80 text-sm font-medium"><Calendar className="w-4 h-4" /> {new Date(selectedEvent.start_date).toLocaleDateString()} in {locationName}</div>
+                  <div className="flex items-center gap-2 text-white/80 text-sm font-medium"><Calendar className="w-4 h-4" /> {new Date(selectedEvent.start_date).toLocaleDateString()} in {milestone?.zone_name}</div>
                 </div>
               </div>
               <div className="p-5 space-y-6">
