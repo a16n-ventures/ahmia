@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
   Crosshair, MapPin, Search, Plus, Eye, EyeOff, Navigation,
   MessageCircle, Calendar, Users, Loader2, X, 
-  Globe, Layers, Radar, CornerUpRight, Sparkles, UserPlus, Rocket
+  Globe, Layers, Radar, CornerUpRight, Sparkles, UserPlus, Rocket, Flame
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
@@ -127,7 +127,7 @@ const MapPage = () => {
     queryKey: ['user-profile', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase.from('profiles').select('preferences').eq('user_id', user.id).single();
+      const { data } = await supabase.from('profiles').select('preferences, user_type').eq('user_id', user.id).single();
       return data;
     },
     enabled: !!user?.id
@@ -226,7 +226,8 @@ const MapPage = () => {
           longitude: eLng,
           distanceKm: Number(dist.toFixed(1)),
           friend_images: friendImages,
-          attendee_count: e.event_attendees?.length || 0
+          attendee_count: e.event_attendees?.length || 0 
+          is_vibe: (e.event_attendees?.length || 0) >= 10
         };
       }).filter(Boolean))
       .sort((a: any, b: any) => (a.distanceKm || 0) - (b.distanceKm || 0));
@@ -357,19 +358,19 @@ const MapPage = () => {
                   </Button>
                 </div>
 
-                <div className="flex justify-between items-center w-full">
+                  <div className="flex justify-between items-center w-full">
                     <div className="bg-background/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex shadow-lg">
                       <button 
                         onClick={() => setActiveView('friends')}
                         className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'friends' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
                       >
-                        Friends
+                        {userProfile?.user_type === 'vendor' ? 'Customer Heatmap' : 'Friends'}
                       </button>
                       <button 
                         onClick={() => setActiveView('events')}
                         className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'events' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
                       >
-                        Events
+                        {userProfile?.user_type === 'vendor' ? 'Marketplace' : 'Events'}
                       </button>
                     </div>
     
@@ -483,9 +484,18 @@ const MapPage = () => {
             {/* 3. EVENT CARD */}
             {!isNavigating && selectedEvent && (
               <Card className="border-0 shadow-2xl bg-background/95 backdrop-blur-xl rounded-3xl animate-in slide-in-from-bottom-10 overflow-hidden">
+                
                 <div className="relative h-32 w-full">
                   <img src={selectedEvent.image_url || '/placeholder.jpg'} className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+                  
+                  {/* --- ADDED: High Vibe Pulse Badge --- */}
+                  {selectedEvent.is_vibe && (
+                    <Badge className="absolute top-2 left-2 bg-orange-500 text-white animate-pulse border-0 shadow-lg">
+                      <Flame className="w-3 h-3 mr-1" /> HIGH VIBE
+                    </Badge>
+                  )}
+                  
                   <Button variant="secondary" size="icon" className="absolute top-2 right-2 rounded-full h-8 w-8 shadow-md" onClick={() => setSelectedEvent(null)}>
                     <X className="w-4 h-4" />
                   </Button>
@@ -568,7 +578,8 @@ const MapPage = () => {
                     onClick={() => activeView === 'friends' ? setSelectedFriend(item) : setSelectedEvent(item)}
                   >
                     <div className="relative">
-                      <Avatar className="w-14 h-14 shadow-md">
+                    {/* --- ADDED: Orange Pulse Ring if is_vibe is true --- */}
+                      <Avatar className={`w-14 h-14 shadow-md ${item.is_vibe ? 'ring-2 ring-orange-500 ring-offset-2 animate-pulse' : ''}`}>
                         <AvatarImage src={item.avatar || item.image_url} className="object-cover" />
                         <AvatarFallback>{item.name?.[0] || item.title?.[0]}</AvatarFallback>
                       </Avatar>
