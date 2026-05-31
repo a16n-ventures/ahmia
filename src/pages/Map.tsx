@@ -1,12 +1,12 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
   Crosshair, MapPin, Search, Plus, Eye, EyeOff, Navigation,
-  MessageCircle, Calendar, Users, Loader2, X, 
-  Globe, Layers, Radar, CornerUpRight, Sparkles, UserPlus, Rocket, Flame
+  MessageCircle, Calendar, Users, Loader2, X, Ticket,
+  Globe, Layers, Radar, CornerUpRight, Sparkles, UserPlus, Rocket, Flame, ShieldCheck, Briefcase, Star
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
@@ -22,6 +22,21 @@ import type { LeafletMapHandle } from '@/components/map/LeafletMap';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { LaunchZoneGuard } from '@/components/LaunchZoneGuard';
+import { useNearbyEvents } from '@/hooks/useNearbyEvents';
+import { EventFilterBar, applyEventFilters } from '@/components/events/EventFilterBar';
+import { useEventFilters } from '@/hooks/useEventFilters';
+import { usePremiumStatus } from '@/hooks/usePremiumStatus';
+import { TicketTierSelector } from '@/components/events/TicketTierSelector';
+import { formatTicketPrice as fmtTicket } from '@/lib/eventFormat';
+import { useUserCatalog } from '@/hooks/useUserCatalog';
+import { ServiceCard } from '@/components/ServiceCard';
+
+type CityMilestone = {
+  city_name: string;
+  center_lat: number;
+  center_long: number;
+  radius_km: number | null;
+};
 
 // --- Types ---
 type FriendOnMap = {
@@ -37,6 +52,8 @@ type FriendOnMap = {
   latitude?: number | null;
   longitude?: number | null;
   is_premium?: boolean;
+  is_verified?: boolean;
+  account_type?: string;
   profiles?: { display_name?: string | null; avatar_url?: string | null } | null;
 };
 
@@ -49,6 +66,8 @@ const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
+
+const formatTicketPrice = fmtTicket;
  
 const PremiumBadge = () => (
   <span className="inline-flex items-center justify-center bg-blue-500 text-white text-[8px] font-bold px-1 rounded-sm ml-1 h-3.5">
@@ -63,7 +82,8 @@ const MapPage = () => {
   
   // Global State
   const { location, requestLocation, isLoading: locationLoading, error: locationError } = useGeolocation();
-  const { isInLaunchZone, cityName: launchCityName, isLoading: launchZoneLoading, currentCount, targetCount } = useLaunchZone(location?.latitude, location?.longitude);
+  const { isInLaunchZone, isWithinCity, isLoading: launchZoneLoading, currentCount, targetCount, cityName }
+  = useLaunchZone(location?.latitude, location?.longitude);
   const { friends = [] } = useFriends(user?.id);
 
   // Local State
@@ -72,10 +92,16 @@ const MapPage = () => {
   const [showContactImport, setShowContactImport] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendOnMap | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
+  const [selectedBusiness, setSelectedBusiness] = useState<any | null>(null);
   const [isGhostMode, setIsGhostMode] = useState(false);
-  const [activeView, setActiveView] = useState<'friends' | 'events'>('friends');
-  const [mapStyle, setMapStyle] = useState<'standard' | 'satellite'>('satellite');
-  
+  const [activeView, setActiveView] = useState<'friends' | 'events' | 'marketplace'>('friends');
+  const [mapStyle, setMapStyle] = useState<'standard' | 'satellite'>('standard');
+  const [filters, setFilters] = useEventFilters();
+  const { isPremium } = usePremiumStatus(user?.id);
+  const [tierSheetOpen, setTierSheetOpen] = useState(false);
+  const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
   // Navigation State
   const [isNavigating, setIsNavigating] = useState(false);
   const [navigationTarget, setNavigationTarget] = useState<{ lat: number; lng: number; name: string } | null>(null);
@@ -111,7 +137,7 @@ const MapPage = () => {
       if (friendIds.length === 0) return {};
       const { data } = await supabase
         .from('profiles')
-        .select('user_id, is_premium, user_type, verification_status') 
+        .select('user_id, is_premium, account_type, verification_status') 
         .in('user_id', friendIds);
       
       const metaMap: Record<string, any> = {};
@@ -126,15 +152,32 @@ const MapPage = () => {
     queryKey: ['user-profile', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase.from('profiles').select('preferences, user_type').eq('user_id', user.id).single();
+      const { data } = await supabase.from('profiles').select('preferences, account_type').eq('user_id', user.id).single();
       return data;
     },
     enabled: !!user?.id
   });
 
+  const { data: cityMilestone } = useQuery({
+    queryKey: ['map-city-milestone', location?.latitude, location?.longitude],
+    queryFn: async (): Promise<CityMilestone | null> => {
+      if (!location) return null;
+      const { data, error } = await supabase
+        .from('city_milestones')
+        .select('city_name, center_lat, center_long, radius_km');
+      if (error || !data) return null;
+      return data
+        .map((m) => ({ ...m, dist: distanceKm(location.latitude, location.longitude, m.center_lat, m.center_long) }))
+        .filter((m) => m.dist <= (m.radius_km ?? 25))
+        .sort((a, b) => a.dist - b.dist)[0] || null;
+    },
+    enabled: !!location,
+  });
+
   const discoveryRadiusKm = useMemo(() => {
     const prefs = userProfile?.preferences as { discovery_radius?: number } | null;
-    return (prefs?.discovery_radius ?? 20000) / 1000; // Default 20km for Map (wider than feed)
+    const km = (prefs?.discovery_radius ?? 25000) / 1000; // Default 25km
+    return Math.min(25, Math.max(5, km)); // Clamp between 5km and 25km
   }, [userProfile]);
 
   // --- 3. Process & Sort Friends ---
@@ -187,7 +230,7 @@ const MapPage = () => {
           latitude: loc.latitude,
           longitude: loc.longitude,
           is_premium: friendMeta[loc.user_id]?.is_premium || false,
-          user_type: friendMeta[loc.user_id]?.user_type || 'personal',
+          account_type: friendMeta[loc.user_id]?.account_type || 'personal',
           is_verified: friendMeta[loc.user_id]?.verification_status === 'verified',
           profiles: loc.profiles
         };
@@ -195,60 +238,154 @@ const MapPage = () => {
       .filter(Boolean) as FriendOnMap[])
       // ✅ SORTING: NEAREST FIRST
       .sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
-  }, [nearbyFriendsRaw, friendsPresence, location, discoveryRadiusKm, premiumStatus]);
+  }, [nearbyFriendsRaw, friendsPresence, location, discoveryRadiusKm]);
 
-  // --- 4. Events (With Clyx "Decide" Data) ---
- const { data: events = [], isLoading: eventsLoading } = useQuery({
-    queryKey: ['events', 'nearby', location?.latitude, location?.longitude, discoveryRadiusKm],
+  // --- 4. Events: shared source of truth (uses event_locations + city_milestone origin) ---
+  const {
+    events: nearbyEvents,
+    isLoading: eventsLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    originLabel,
+    effectiveRadiusKm,
+  } = useNearbyEvents({
+    userLocation: location,
+    cityCenter: cityMilestone
+      ? { latitude: cityMilestone.center_lat, longitude: cityMilestone.center_long }
+      : null,
+    radiusKm: discoveryRadiusKm,
+    isPremium,
+    userId: user?.id ?? null,
+    friendIds,
+  });
+
+  const events = useMemo(() => applyEventFilters(nearbyEvents as any, filters), [nearbyEvents, filters]);
+
+  // --- 4b. Nearby Business Profiles (marketplace view) ---
+  // useUserCatalog gives us the *current user's* catalog for map preview.
+  // A separate query fetches all nearby verified business profiles for discovery.
+  const { items: ownCatalogItems } = useUserCatalog(user?.id);
+
+    const { data: nearbyBusinesses = [], isLoading: businessesLoading } = useQuery({
+    queryKey: ['nearby-businesses', location?.latitude, location?.longitude, discoveryRadiusKm],
     queryFn: async () => {
       if (!location) return [];
-        const { data } = await supabase.from('events')
-        // --- FIXED: Join profiles to fetch creator's trust status ---
-        .select('*, creator:profiles!events_creator_id_fkey(user_type, verification_status), event_attendees(user_id, profiles(avatar_url))')
-        .gt('start_date', new Date().toISOString())
-        .eq('is_public', true);
-
-      if (!data) return [];
-
-      return (data.map((e: any) => {
-        const eLat = e.latitude || 6.5244; 
-        const eLng = e.longitude || 3.3792;
-        const dist = distanceKm(location.latitude, location.longitude, eLat, eLng);
+      const { data, error } = await supabase
+        .from('user_locations')
+        .select(`
+          user_id,
+          latitude,
+          longitude,
+          updated_at,
+          is_sharing_location,
+          profiles!inner (
+            display_name,
+            avatar_url,
+            bio,
+            account_type,
+            verification_status,
+            skills,
+            is_premium
+          )
+        `)
+        // ✅ Keep this filter to target business accounts
+        .eq('profiles.account_type', 'business')
         
-        if (dist > discoveryRadiusKm) return null;
-
-        const friendImages = e.event_attendees?.map((a: any) => a.profiles?.avatar_url).filter(Boolean).slice(0, 3) || [];
-
-        return {
-          id: e.id,
-          title: e.title,
-          location: e.location,
-          start_date: e.start_date,
-          image_url: e.image_url,
-          latitude: eLat,
-          longitude: eLng,
-          distanceKm: Number(dist.toFixed(1)),
-          friend_images: friendImages,
-          attendee_count: e.event_attendees?.length || 0 
-          is_vibe: (e.event_attendees?.length || 0) >= 10 
-          is_verified: e.creator?.verification_status === 'verified'
-        };
-      }).filter(Boolean))
-      .sort((a: any, b: any) => (a.distanceKm || 0) - (b.distanceKm || 0));
+        // 🚀 NUCLEAR FIX 1: Remove or comment out this strict verification clause 
+        // so your newly registered business/service accounts display right away
+        // .eq('profiles.verification_status', 'verified')
+        
+        .eq('is_sharing_location', true);
+  
+      if (error || !data) return [];
+  
+      return data
+        .map((row: any) => {
+          const dist = distanceKm(
+            location.latitude, location.longitude,
+            row.latitude, row.longitude
+          );
+          if (dist > discoveryRadiusKm) return null;
+          return {
+            id: row.user_id,
+            user_id: row.user_id,
+            name: row.profiles?.display_name || 'Business',
+            avatar: row.profiles?.avatar_url,
+            bio: row.profiles?.bio,
+            skills: row.profiles?.skills || [],
+            is_premium: row.profiles?.is_premium || false,
+            // ✅ Adapt verification status dynamically rather than filtering items out entirely
+            is_verified: row.profiles?.verification_status === 'verified',
+            latitude: row.latitude,
+            longitude: row.longitude,
+            distanceKm: Number(dist.toFixed(1)),
+          };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => a.distanceKm - b.distanceKm);
     },
-    enabled: !!location && activeView === 'events',
+    enabled: !!location && activeView === 'marketplace',
+    refetchInterval: 60000,
   });
 
   const nearbyEventsForMap = useMemo(() => {
-    return events.map((e: any) => ({
-      user_id: e.id, 
-      latitude: e.latitude,
-      longitude: e.longitude,
-      is_sharing: true, 
+    return events
+      .filter((e: any) => {
+        // Use city center as fallback for official events with no coords
+        const lat = e.latitude ?? cityMilestone?.center_lat;
+        const lng = e.longitude ?? cityMilestone?.center_long;
+        return lat != null && lng != null;
+      })
+      .map((e: any) => ({
+        user_id: e.id,
+        latitude: e.latitude ?? cityMilestone?.center_lat,
+        longitude: e.longitude ?? cityMilestone?.center_long,
+        markerType: 'event' as const,
+        is_sharing: true,
+        updated_at: new Date().toISOString(),
+        profiles: { display_name: e.title, avatar_url: e.image_url }
+      }));
+  }, [events, cityMilestone]);
+
+  const nearbyBusinessesForMap = useMemo(() => {
+    return nearbyBusinesses.map((b: any) => ({
+      user_id: b.id,
+      latitude: b.latitude,
+      longitude: b.longitude,
+      markerType: 'business' as const,
+      is_sharing: true,
       updated_at: new Date().toISOString(),
-      profiles: { display_name: e.title, avatar_url: e.image_url }
+      profiles: { display_name: b.name, avatar_url: b.avatar }
     }));
-  }, [events]);
+  }, [nearbyBusinesses]);
+
+  const handleMarkerSelect = (id: string, markerType?: 'friend' | 'event' | 'business') => {
+    if (activeView === 'marketplace' || markerType === 'business') {
+      const biz = nearbyBusinesses.find((b: any) => b.id === id);
+      if (biz) {
+        setSelectedFriend(null);
+        setSelectedEvent(null);
+        setSelectedBusiness(biz);
+      }
+      return;
+    }
+    if (markerType === 'event' || activeView === 'events') {
+      const event = events.find((e: any) => e.id === id);
+      if (event) {
+        setSelectedFriend(null);
+        setSelectedBusiness(null);
+        setSelectedEvent(event);
+      }
+      return;
+    }
+    const friend = friendsMapped.find((f) => f.id === id || f.user_id === id);
+    if (friend) {
+      setSelectedEvent(null);
+      setSelectedBusiness(null);
+      setSelectedFriend(friend);
+    }
+  };
 
   // --- 5. Ghost Mode ---
   useEffect(() => {
@@ -302,23 +439,54 @@ const MapPage = () => {
       setIsRouting(false);
     }
   };
-  
+
+  // RSVP toggle from map sheet
+  const handleToggleRSVP = async (ev: any) => {
+    if (!user) return toast.error('Please sign in to RSVP');
+    if (!ev) return;
+    const wasGoing = !!ev.is_attending;
+    setSelectedEvent({ ...ev, is_attending: !wasGoing });
+    try {
+      if (wasGoing) {
+        await supabase.from('event_attendees').delete().match({ event_id: ev.id, user_id: user.id });
+        toast.success('RSVP cancelled');
+      } else {
+        await supabase.from('event_attendees').insert({ event_id: ev.id, user_id: user.id, status: 'confirmed' });
+        toast.success("You're going! 🎉");
+      }
+    } catch (e: any) {
+      setSelectedEvent(ev);
+      toast.error(e.message || 'Action failed');
+    }
+  };
+
+  // Infinite scroll observer for the horizontal event list
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || activeView !== 'events') return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage();
+    }, { rootMargin: '200px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [activeView, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   const filteredList = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    const list = activeView === 'friends' ? friendsMapped : events;
+    const list = activeView === 'friends' ? friendsMapped : activeView === 'marketplace' ? nearbyBusinesses : events;
     if (!q) return list;
     return list.filter((item: any) => (item.name || item.title).toLowerCase().includes(q));
-  }, [searchQuery, friendsMapped, events, activeView]);
+  }, [searchQuery, friendsMapped, events, nearbyBusinesses, activeView]);
 
   return (
     <LaunchZoneGuard
       isLoading={locationLoading || launchZoneLoading}
       locationDetected={!!location}
-      isWithinCity={!!launchCityName}
+      isWithinCity={isWithinCity}
       isInLaunchZone={isInLaunchZone}
-      cityName={launchCityName}
+      cityName={cityName}
       currentCount={currentCount || 0}
-      targetCount={targetCount || 0}
+      targetCount={targetCount || 0} 
     >
       <div className="relative h-screen w-screen overflow-hidden bg-background">
         
@@ -327,10 +495,11 @@ const MapPage = () => {
           <LeafletMap
             ref={mapRef}
             userLocation={location}
-            friendsLocations={activeView === 'friends' ? friendsMapped : []}
-            loading={locationLoading}
+            friendsLocations={activeView === 'friends' ? friendsMapped : activeView === 'marketplace' ? nearbyBusinessesForMap : nearbyEventsForMap}
+            loading={locationLoading || (activeView === 'events' && eventsLoading) || (activeView === 'marketplace' && businessesLoading)}
             error={locationError}
             mapStyle={mapStyle} 
+            onMarkerSelect={handleMarkerSelect}
             routeCoordinates={routeCoordinates}
           />
         </div>
@@ -346,7 +515,7 @@ const MapPage = () => {
                   <div className="relative flex-1 h-12 bg-background/80 backdrop-blur-xl border border-white/20 rounded-2xl shadow-lg flex items-center px-4">
                     <Search className="w-5 h-5 text-muted-foreground mr-3" />
                     <Input 
-                      placeholder={activeView === 'friends' ? "Find friends..." : "Find vibes..."}
+                      placeholder={activeView === 'friends' ? "Find friends..." : activeView === 'marketplace' ? "Find a service..." : "Find vibes..."}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="flex-1 bg-transparent border-0 h-full focus-visible:ring-0 p-0 text-base"
@@ -355,7 +524,7 @@ const MapPage = () => {
                   
                   <Button 
                     size="icon" 
-                    className={`h-12 w-12 rounded-2xl shadow-lg border border-white/10 ${isGhostMode ? "bg-purple-600 text-white" : "bg-background/80 backdrop-blur-xl text-foreground"}`}
+                    className={`h-12 w-12 rounded-2xl border border-white/10 ${isGhostMode ? "bg-purple-600 text-white" : "bg-background/80 backdrop-blur-xl text-foreground"}`}
                     onClick={toggleGhostMode}
                   >
                     {isGhostMode ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5 text-white" />}
@@ -363,18 +532,24 @@ const MapPage = () => {
                 </div>
 
                   <div className="flex justify-between items-center w-full">
-                    <div className="bg-background/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex shadow-lg">
+                    <div className="bg-background/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex items-center shadow-lg">
                       <button 
                         onClick={() => setActiveView('friends')}
                         className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'friends' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
                       >
-                        {userProfile?.user_type === 'vendor' ? 'Customer Heatmap' : 'Friends'}
+                        {userProfile?.account_type === 'business' ? 'Customer Heatmap' : 'Friends'}
                       </button>
                       <button 
                         onClick={() => setActiveView('events')}
                         className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'events' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
                       >
-                        {userProfile?.user_type === 'vendor' ? 'Marketplace' : 'Events'}
+                        Events
+                      </button>
+                      <button
+                        onClick={() => setActiveView('marketplace')}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${activeView === 'marketplace' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:bg-white/10'}`}
+                      >
+                        Marketplace
                       </button>
                     </div>
     
@@ -387,6 +562,12 @@ const MapPage = () => {
                       {mapStyle === 'standard' ? <Globe className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
                     </Button>
                 </div>
+
+                {activeView === 'events' && (
+                  <div className="bg-background/70 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-lg">
+                    <EventFilterBar value={filters} onChange={setFilters} />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -401,7 +582,7 @@ const MapPage = () => {
               <div className="flex justify-end mb-4">
                 <Button
                   onClick={() => location ? mapRef.current?.recenter() : requestLocation()}
-                  className="rounded-full h-12 w-12 shadow-xl bg-background/90 text-primary border border-white/20"
+                  className="rounded-full h-12 w-12 bg-background/90 text-primary border border-white/20"
                 >
                   {locationLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <Crosshair className="h-6 w-6 text-white" />}
                 </Button>
@@ -488,25 +669,28 @@ const MapPage = () => {
 
             {/* 3. EVENT CARD */}
             {!isNavigating && selectedEvent && (
-              <Card className="border-0 shadow-2xl bg-background/95 backdrop-blur-xl rounded-3xl animate-in slide-in-from-bottom-10 overflow-hidden">
+              <Card className="border-0 shadow-2xl bg-background/95 backdrop-blur-xl rounded-3xl animate-in slide-in-from-bottom-10 overflow-hidden max-h-[82vh] flex flex-col">
                 
-                <div className="relative h-32 w-full">
-                  <img src={selectedEvent.image_url || '/placeholder.jpg'} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+                {/* Banner — padding-top % trick: parent is position:relative, no absolute child needed */}
+                {/* <div className="relative w-full shrink-0" style={{ paddingTop: '44%' }}>
+                  <img
+                    src={selectedEvent.image_url || '/placeholder.jpg'}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
+                  /> 
+                  <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, var(--background) 0%, transparent 60%)' }} />
                   
-                  {/* --- ADDED: High Vibe Pulse Badge --- */}
                   {selectedEvent.is_vibe && (
                     <Badge className="absolute top-2 left-2 bg-orange-500 text-white animate-pulse border-0 shadow-lg">
                       <Flame className="w-3 h-3 mr-1" /> HIGH VIBE
                     </Badge>
                   )}
                   
+                </div> */}
+                
+                <CardContent className="p-5 pt-2 overflow-y-auto flex-1 min-h-0">
                   <Button variant="secondary" size="icon" className="absolute top-2 right-2 rounded-full h-8 w-8 shadow-md" onClick={() => setSelectedEvent(null)}>
                     <X className="w-4 h-4" />
                   </Button>
-                </div>
-                
-                <CardContent className="p-5 pt-2">
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <Badge variant="secondary" className="mb-2 bg-primary/10 text-primary hover:bg-primary/20 border-0">
@@ -519,39 +703,155 @@ const MapPage = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between mb-5 bg-muted/30 p-2.5 rounded-xl border border-border/50">
-                    <div className="flex items-center -space-x-3">
-                      {selectedEvent.friend_images.length > 0 ? (
-                        selectedEvent.friend_images.map((img: string, i: number) => (
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    <div className="rounded-xl bg-muted/30 border border-border/50 p-2.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        From {originLabel === 'city' ? (cityMilestone?.city_name || 'city') : 'you'}
+                      </p>
+                      <p className="text-sm font-black">{selectedEvent.distanceKm}km</p>
+                    </div>
+                    <div className="rounded-xl bg-muted/30 border border-border/50 p-2.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Ticket</p>
+                      <p className="text-sm font-black">{formatTicketPrice(selectedEvent.ticket_price)}</p>
+                    </div>
+                    <div className="rounded-xl bg-muted/30 border border-border/50 p-2.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Others Going</p>
+                      <p className="text-sm font-black">{selectedEvent.attendee_count || 0}</p>
+                    </div>
+                  </div>
+                  {selectedEvent.is_attending && (
+                    <Badge className="mb-3 bg-green-600 text-white border-0">✓ You're going</Badge>
+                  )}
+
+                  {(selectedEvent.friends_going_count || 0) > 0 ? (
+                    <div className="flex items-center justify-between mb-5 bg-muted/30 p-2.5 rounded-xl border border-border/50">
+                      <div className="flex items-center -space-x-3">
+                        {selectedEvent.friend_images.map((img: string, i: number) => (
                           <Avatar key={i} className="w-8 h-8 border-2 border-background">
                             <AvatarImage src={img} />
                           </Avatar>
-                        ))
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-muted border-2 border-background flex items-center justify-center text-[10px] text-muted-foreground">?</div>
-                      )}
-                      <div className="w-8 h-8 rounded-full bg-background border-2 border-muted flex items-center justify-center text-[10px] font-bold z-10 shadow-sm">
-                        +{selectedEvent.attendee_count}
+                        ))}
+                        {selectedEvent.friends_going_count > selectedEvent.friend_images.length && (
+                          <div className="w-8 h-8 rounded-full bg-background border-2 border-muted flex items-center justify-center text-[10px] font-bold z-10 shadow-sm">
+                            +{selectedEvent.friends_going_count - selectedEvent.friend_images.length}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-xs font-medium text-right">
+                        <p className="text-primary">{selectedEvent.friends_going_count} {selectedEvent.friends_going_count === 1 ? 'friend' : 'friends'}</p>
+                        <p className="text-muted-foreground">going too</p>
                       </div>
                     </div>
-                    <div className="text-xs font-medium text-right">
-                      <p className="text-primary">{selectedEvent.friend_images.length} friends</p>
-                      <p className="text-muted-foreground">are going</p>
+                  ) : (
+                    <div className="mb-5 bg-muted/30 p-2.5 rounded-xl border border-border/50 text-center text-xs text-muted-foreground">
+                      None of your friends are going yet
                     </div>
-                  </div>
+                  )}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button 
-                      className="h-12 rounded-xl border-dashed border-2 border-primary/20 text-primary hover:bg-primary/5 bg-transparent"
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <Button
+                      variant="outline"
+                      className="h-11 rounded-xl text-xs font-semibold"
+                      onClick={() => { setSelectedTierId(null); setTierSheetOpen(true); }}
+                    >
+                      <Ticket className="w-4 h-4 mr-1" /> Tickets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-11 rounded-xl text-xs font-semibold"
                       onClick={() => navigate(`/app/messages?type=event&id=${selectedEvent.id}`)}
                     >
-                      <Sparkles className="w-4 h-4 mr-2" /> Vibe Chat
+                      <MessageCircle className="w-4 h-4 mr-1" /> Chat
                     </Button>
                     <Button 
-                      className="h-12 rounded-xl shadow-lg bg-primary hover:bg-primary/90 text-white"
-                      onClick={() => navigate(`/app/feed?event=${selectedEvent.id}`)}
+                      variant="outline"
+                      className="h-11 rounded-xl text-xs font-semibold"
+                      onClick={() => handleGetDirections(selectedEvent.latitude, selectedEvent.longitude, selectedEvent.title)}
                     >
-                      <Calendar className="w-4 h-4 mr-2" /> RSVP
+                      <Navigation className="w-4 h-4 mr-1" /> Go
+                    </Button>
+                  </div>
+                  <div className="text-center">
+                    <Button
+                      variant={selectedEvent.is_attending ? 'success' : 'outline'}
+                      className="h-12 w-full rounded-xl font-bold"
+                      onClick={() => handleToggleRSVP(selectedEvent)}
+                    >
+                      {selectedEvent.is_attending ? '✓ Going' : 'RSVP'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 3b. BUSINESS CARD */}
+            {!isNavigating && selectedBusiness && (
+              <Card className="border-0 shadow-2xl bg-background/95 backdrop-blur-xl rounded-3xl animate-in slide-in-from-bottom-10 overflow-hidden max-h-[82vh] flex flex-col">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-cyan-400" />
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="w-12 h-12 border-2 border-background shadow-md">
+                        <AvatarImage src={selectedBusiness.avatar} />
+                        <AvatarFallback>{selectedBusiness.name?.[0]}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h3 className="font-bold text-base flex items-center gap-1.5">
+                          {selectedBusiness.name}
+                          <ShieldCheck className="w-4 h-4 text-primary" />
+                          {selectedBusiness.is_premium && <PremiumBadge />}
+                        </h3>
+                        <p className="text-xs text-muted-foreground">{selectedBusiness.distanceKm}km away</p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setSelectedBusiness(null)}>
+                      <X className="w-5 h-5" />
+                    </Button>
+                  </div>
+
+                  {selectedBusiness.bio && (
+                    <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{selectedBusiness.bio}</p>
+                  )}
+
+                  {/* Show the business's catalog items using ServiceCard in discovery mode */}
+                  {selectedBusiness.catalogItems?.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto mb-3">
+                      {selectedBusiness.catalogItems.slice(0, 4).map((item: any) => (
+                        <ServiceCard
+                          key={item.id}
+                          mode="discovery"
+                          item={item}
+                          actions={{
+                            onContact: (phone) => window.open(`tel:${phone}`),
+                            onDirections: (lat, lng, name) => handleGetDirections(lat, lng, name),
+                          }}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    selectedBusiness.skills?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {selectedBusiness.skills.slice(0, 5).map((skill: string) => (
+                          <span key={skill} className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      className="h-11 rounded-xl text-sm font-semibold bg-primary/10 text-primary hover:bg-primary/20 border-0"
+                      onClick={() => navigate(`/app/messages?type=dm&id=${selectedBusiness.id}`)}
+                    >
+                      <MessageCircle className="w-4 h-4 mr-1.5" /> Message
+                    </Button>
+                    <Button
+                      className="h-11 rounded-xl text-sm font-semibold shadow-lg bg-primary hover:bg-primary/90 text-white"
+                      onClick={() => handleGetDirections(selectedBusiness.latitude, selectedBusiness.longitude, selectedBusiness.name)}
+                    >
+                      <Navigation className="w-4 h-4 mr-1.5" /> Directions
                     </Button>
                   </div>
                 </CardContent>
@@ -559,7 +859,7 @@ const MapPage = () => {
             )}
 
             {/* 4. DEFAULT LIST */}
-            {!isNavigating && !selectedFriend && !selectedEvent && (
+            {!isNavigating && !selectedFriend && !selectedEvent && !selectedBusiness && (
               <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide snap-x">
                 {activeView === 'friends' && (
                   <div className="flex-shrink-0 w-36 snap-start">
@@ -576,35 +876,76 @@ const MapPage = () => {
                   </div>
                 )}
                 
-                {(activeView === 'friends' ? friendsMapped : events).map((item: any) => (
+                {(activeView === 'friends' ? friendsMapped : activeView === 'marketplace' ? nearbyBusinesses : events).map((item: any) => (
                   <div
                     key={item.id}
                     className="flex-shrink-0 w-36 h-40 p-3 rounded-3xl bg-background/90 backdrop-blur-xl border border-white/10 shadow-lg cursor-pointer hover:scale-105 transition-transform snap-start flex flex-col items-center justify-center gap-2 text-center"
-                    onClick={() => activeView === 'friends' ? setSelectedFriend(item) : setSelectedEvent(item)}
+                    onClick={() => {
+                      if (activeView === 'friends') setSelectedFriend(item);
+                      else if (activeView === 'marketplace') setSelectedBusiness(item);
+                      else setSelectedEvent(item);
+                    }}
                   >
-                    <div className="relative">
-                    {/* --- ADDED: Orange Pulse Ring if is_vibe is true --- */}
-                      <Avatar className={`w-14 h-14 shadow-md ${item.is_vibe ? 'ring-2 ring-orange-500 ring-offset-2 animate-pulse' : ''}`}>
-                        <AvatarImage src={item.avatar || item.image_url} className="object-cover" />
-                        <AvatarFallback>{item.name?.[0] || item.title?.[0]}</AvatarFallback>
+                    <div className="relative"> 
+                      {activeView === 'events' ? ( 
+                          <Avatar className={`w-14 h-14 shadow-md ${item.is_vibe ? 'ring-2 ring-orange-500 ring-offset-2 animate-pulse' : ''}`}>
+                          <AvatarImage src={item.image_url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }} />
+                          <AvatarFallback>{item.name?.[0] || item.title?.[0]}</AvatarFallback>
+                        </Avatar> 
+                      ) : ( 
+                        <Avatar className={`w-14 h-14 shadow-md ${item.is_vibe ? 'ring-2 ring-orange-500 ring-offset-2 animate-pulse' : ''}`}>
+                          <AvatarImage src={item.avatar || item.image_url} className="object-cover" />
+                          <AvatarFallback>{item.name?.[0] || item.title?.[0]}</AvatarFallback>
                       </Avatar>
+                      )}
                       {activeView === 'friends' && item.status === 'online' && (
                         <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background" />
                       )}
+                      {activeView === 'marketplace' && (
+                        <div className="absolute -bottom-1 -right-1 bg-primary rounded-full p-0.5 border-2 border-background">
+                          <ShieldCheck className="w-2.5 h-2.5 text-white" />
+                        </div>
+                      )}
                     </div>
                     <div className="w-full px-1">
-                      <h4 className="font-bold text-sm truncate">{item.name || item.title} {item.is_verified && <ShieldCheck className="w-3 h-3 text-primary" />}</h4>
-                      <p className="text-[10px] text-muted-foreground font-medium flex items-center justify-center gap-1">
-                        <MapPin className="w-3 h-3" /> {item.distanceKm}km
+                      <h4 className="font-bold text-sm truncate">{item.name || item.title}</h4>
+                      <p className="text-[10px] text-muted-foreground font-medium flex items-center justify-center gap-1 truncate">
+                        <MapPin className="w-3 h-3" /> {activeView === 'events' ? item.location : `${item.distanceKm}km`}
                       </p>
+                      {activeView === 'events' && (
+                        <p className="text-[10px] font-bold text-primary">{item.distanceKm}km • {formatTicketPrice(item.ticket_price)}</p>
+                      )}
+                      {activeView === 'marketplace' && item.skills?.length > 0 && (
+                        <p className="text-[10px] text-primary font-medium truncate">{item.skills[0]}</p>
+                      )}
                     </div>
                   </div>
                 ))}
+                {activeView === 'events' && hasNextPage && (
+                  <div ref={sentinelRef} className="flex-shrink-0 w-20 h-40 flex items-center justify-center text-xs text-muted-foreground">
+                    {isFetchingNextPage ? <Loader2 className="w-4 h-4 animate-spin" /> : '…'}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
-      </div>
+
+        <TicketTierSelector
+          eventId={selectedEvent?.id}
+          open={tierSheetOpen}
+          onOpenChange={setTierSheetOpen}
+          fallbackPrice={selectedEvent?.ticket_price}
+          selectedTierId={selectedTierId}
+          onSelectTier={setSelectedTierId}
+          onConfirm={(tier) => {
+            setTierSheetOpen(false);
+            if (!selectedEvent) return;
+            const tierParam = tier && tier.id !== '__default__' ? `&tier=${tier.id}` : '';
+            navigate(`/app/events/${selectedEvent.id}?action=buy${tierParam}`);
+          }}
+        />
+      </div> 
     </LaunchZoneGuard>
   );
 };
