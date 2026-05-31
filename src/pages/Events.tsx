@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -45,10 +45,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useGeolocation } from '@/contexts/LocationContext';
 import { useLaunchZone } from '@/hooks/useLaunchZone';
-import { Rocket, UserPlus, Globe } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; 
 import { z } from 'zod';
 import { LaunchZoneGuard } from '@/components/LaunchZoneGuard';
+import { EventFilterBar, applyEventFilters } from '@/components/events/EventFilterBar';
+import { useEventFilters } from '@/hooks/useEventFilters';
+import { distanceKm as calcDistanceKm } from '@/hooks/useNearbyEvents';
+import { formatTicketPrice } from '@/lib/eventFormat';
 
 // --- TYPES ---
 type PremiumFeature = {
@@ -167,7 +170,8 @@ export default function Events() {
   const userId = user?.id;
   const queryClient = useQueryClient();
   const { location, isLoading: locationLoading } = useGeolocation();
-  const { isInLaunchZone, cityName: launchCityName, isLoading: launchZoneLoading, currentCount, targetCount } = useLaunchZone(location?.latitude, location?.longitude); 
+  const { isInLaunchZone, isWithinCity, isLoading: launchZoneLoading, currentCount, targetCount, cityName }
+  = useLaunchZone(location?.latitude, location?.longitude); 
   
   const [milestone, setMilestone] = useState<{ current: number; target: number; is_unlocked: boolean; zone_name?: string } | null>(null);
   const [locationName, setLocationName] = useState("Detecting..."); 
@@ -175,6 +179,7 @@ export default function Events() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("my");
   const [hostedFilter, setHostedFilter] = useState<'active' | 'past'>('active');
+  const [filters, setFilters] = useEventFilters();
   
   // Payout & Modal States
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
@@ -196,17 +201,19 @@ export default function Events() {
 
     const getMilestoneData = async () => {
       try {
-        const { data: response } = await supabase.functions.invoke('generate-smart-feed', {
-          body: { 
-            user_id: user.id, 
-            user_lat: location.latitude, 
-            user_long: location.longitude 
-          }
+        const { data, error } = await supabase.rpc('generate_smart_feed', {
+          p_user_id: user.id,
+          p_user_lat: location.latitude,
+          p_user_long: location.longitude,
         });
-        if (response?.milestone) {
-          setMilestone(response.milestone);
-          // Ensure locationName matches the zone returned by the engine
-          setLocationName(response.milestone.zone_name || "Nearby"); 
+        if (error) {
+          console.error("RPC Error:", error);
+          return;
+        }
+        const payload = data as { milestone?: { zone_name?: string; current?: number; target?: number; is_unlocked?: boolean } } | null;
+        if (payload?.milestone) {
+          setMilestone(payload.milestone as any);
+          setLocationName(payload.milestone.zone_name || "Nearby");
         }
       } catch (e) {
         console.error("Failed to fetch zone milestone", e);
@@ -214,7 +221,19 @@ export default function Events() {
     };
 
     getMilestoneData();
-  }, [user, location]); 
+  }, [user, location]);
+
+  // Realtime: refresh on RSVP changes
+  useEffect(() => {
+    if (!userId) return;
+    const ch = supabase
+      .channel('events-page-attendees')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_attendees' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['events'] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [userId, queryClient]);
 
   // --- HELPER: Logic to check if an event is still "Active" ---
   const isEventActive = (dateString: string) => {
@@ -243,6 +262,27 @@ export default function Events() {
     );
 
     return hasActiveFeature || hasActiveSub;
+  };
+
+  const applyEventLocations = async <T extends { id: string }>(eventList: T[]): Promise<Array<T & { location: string; distanceKm: number | null }>> => {
+    if (eventList.length === 0) return [];
+    const { data: locations } = await supabase
+      .from('event_locations')
+      .select('event_id, location_name, latitude, longitude')
+      .in('event_id', eventList.map((event) => event.id));
+    const locationMap = new Map((locations || []).map((loc) => [loc.event_id, loc]));
+    return eventList.map((event) => {
+      const loc = locationMap.get(event.id);
+      let distanceKm: number | null = null;
+      if (loc?.latitude != null && loc?.longitude != null && location?.latitude && location?.longitude) {
+        distanceKm = Number(calcDistanceKm(location.latitude, location.longitude, Number(loc.latitude), Number(loc.longitude)).toFixed(1));
+      }
+      return {
+        ...event,
+        location: loc?.location_name || 'Location TBA',
+        distanceKm,
+      };
+    });
   };
 
   // 1. Fetch My Events
@@ -276,12 +316,13 @@ export default function Events() {
       const countMap: Record<string, number> = {};
       attendees.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
 
-      return events.map((event: any) => ({
+      const processedEvents = events.map((event: any) => ({
         ...event,
         event_type: (event.event_type as 'physical' | 'virtual') || 'physical',
         attendee_count: countMap[event.id] || 0,
         is_boosted: checkBoostPermission(event.creator_id, premiums, subs)
       }));
+      return applyEventLocations(processedEvents) as Promise<EventWithStats[]>;
     },
     enabled: !!userId,
     staleTime: 30000,
@@ -328,7 +369,9 @@ export default function Events() {
       const countMap: Record<string, number> = {};
       attendees.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
 
-      const processedEvents = events.map((event: any) => ({
+      const eventsWithLocations = await applyEventLocations(events);
+
+      const processedEvents = eventsWithLocations.map((event: any) => ({
         ...event,
         attendee_count: countMap[event.id] || 0,
         is_boosted: checkBoostPermission(event.creator_id, premiums, subs)
@@ -356,44 +399,92 @@ export default function Events() {
     queryKey: ["events", "stats", userId],
     queryFn: async () => {
       if (!userId) return { 
-        totalHosted: 0, totalAttendees: 0, upcomingEvents: 0, pastEvents: 0, netRevenue: 0, walletBalance: 0
+        totalHosted: 0, totalAttendees: 0, upcomingEvents: 0, pastEvents: 0,
+        netRevenue: 0, walletBalance: 0,
+        jobsCompleted: 0, serviceRevenue: 0, repeatClients: 0, avgRating: null as number | null
       };
       
-      const { data: myEventsList } = await supabase.from('events').select('id, start_date, ticket_price').eq('creator_id', userId);
-      
+      const { data: myEventsList } = await supabase
+        .from('events').select('id, start_date, ticket_price').eq('creator_id', userId);
+
       let walletBalance = 0;
-      const { data: wallet } = await supabase.from('wallets').select('balance').eq('user_id', userId).maybeSingle();
+      const { data: wallet } = await supabase
+        .from('wallets').select('balance').eq('user_id', userId).maybeSingle();
       if (wallet) walletBalance = wallet.balance;
 
-      if (!myEventsList?.length) return { totalHosted: 0, totalAttendees: 0, upcomingEvents: 0, pastEvents: 0, netRevenue: 0, walletBalance };
-      
-      const ids = myEventsList.map(e => e.id);
-      const { data: allAttendees } = await supabase.from('event_attendees').select('event_id').in('event_id', ids).eq('status', 'confirmed');
-
-      const totalAttendees = allAttendees?.length || 0;
-      const countMap: Record<string, number> = {};
-      allAttendees?.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
-
+      // ── Ticket revenue ─────────────────────────────────────────────────────
       let grossRevenue = 0;
-      for (const event of myEventsList) {
-        if (event.ticket_price > 0) grossRevenue += (countMap[event.id] || 0) * event.ticket_price;
+      let totalAttendees = 0;
+      let upcomingEvents = 0;
+      let pastEvents = 0;
+
+      if (myEventsList?.length) {
+        const ids = myEventsList.map(e => e.id);
+        const { data: allAttendees } = await supabase
+          .from('event_attendees').select('event_id').in('event_id', ids).eq('status', 'confirmed');
+
+        totalAttendees = allAttendees?.length || 0;
+        const countMap: Record<string, number> = {};
+        allAttendees?.forEach(a => countMap[a.event_id] = (countMap[a.event_id] || 0) + 1);
+
+        for (const event of myEventsList) {
+          if (event.ticket_price > 0) grossRevenue += (countMap[event.id] || 0) * event.ticket_price;
+        }
+        upcomingEvents = myEventsList.filter(e => isFuture(new Date(e.start_date))).length;
+        pastEvents = myEventsList.filter(e => isPast(new Date(e.start_date))).length;
       }
 
-      const upcomingEvents = myEventsList.filter(e => isFuture(new Date(e.start_date))).length;
-      const pastEvents = myEventsList.filter(e => isPast(new Date(e.start_date))).length;
-      
-      return { 
-        totalHosted: myEventsList.length,
+      // ── Service request stats (business users) ────────────────────────────
+      // These mirror the wallet credit trigger: status = 'completed' fires a
+      // credit to the seller's wallet via the release-escrow edge function.
+      let jobsCompleted = 0;
+      let serviceRevenue = 0;
+      let repeatClients = 0;
+      let avgRating: number | null = null;
+
+      const { data: serviceReqs } = await (supabase.from('service_requests') as any)
+        .select('id, status, amount, buyer_id, escrow_status')
+        .eq('seller_id', userId)
+        .eq('status', 'completed');
+
+      if (serviceReqs?.length) {
+        jobsCompleted = serviceReqs.length;
+        serviceRevenue = serviceReqs.reduce((sum: number, r: any) => sum + (r.amount || 0), 0) * 0.98; // 2% platform fee
+
+        // Repeat clients = buyer_ids that appear more than once
+        const buyerCounts: Record<string, number> = {};
+        serviceReqs.forEach((r: any) => {
+          buyerCounts[r.buyer_id] = (buyerCounts[r.buyer_id] || 0) + 1;
+        });
+        repeatClients = Object.values(buyerCounts).filter(c => c > 1).length;
+      }
+
+      // Avg rating — reads from service_ratings if it exists, gracefully skips if not
+      const { data: ratings } = await (supabase.from('service_ratings') as any)
+        .select('rating').eq('seller_id', userId);
+      if (ratings?.length) {
+        avgRating = parseFloat(
+          (ratings.reduce((s: number, r: any) => s + r.rating, 0) / ratings.length).toFixed(1)
+        );
+      }
+
+      return {
+        totalHosted: myEventsList?.length || 0,
         totalAttendees,
         upcomingEvents,
         pastEvents,
-        netRevenue: grossRevenue * 0.98, 
-        walletBalance 
+        netRevenue: grossRevenue * 0.98,
+        walletBalance,
+        // service-specific
+        jobsCompleted,
+        serviceRevenue,
+        repeatClients,
+        avgRating,
       };
     },
     enabled: !!userId && activeTab === "analytics",
     staleTime: 60000,
-  }); 
+  });
 
     // 4. Fetch Saved Bank Details
   const { data: savedBankDetails, refetch: refetchBank } = useQuery({
@@ -546,18 +637,15 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                )}
             </div>
             
-            <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-              <MapPin className="w-3 h-3" /> <span className="truncate">{event.location}</span>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+              <span className="flex items-center gap-1 truncate"><MapPin className="w-3 h-3" /> {event.location}</span>
+              {(event as any).distanceKm != null && (
+                <span className="text-[11px] font-bold text-primary shrink-0">{(event as any).distanceKm}km away</span>
+              )}
             </div>
             
             {/* --- MODIFIED: Performance-First View for Builders --- */}
-            {type === 'mine' && userProfile?.user_type === 'vendor' ? (
-              <div className="grid grid-cols-3 gap-2 mt-2 text-[10px] font-bold text-primary bg-primary/5 p-2 rounded-lg border border-primary/10">
-                <div className="flex flex-col"><span className="text-muted-foreground uppercase text-[8px]">Sales</span><span>{event.attendee_count || 0}</span></div>
-                <div className="flex flex-col"><span className="text-muted-foreground uppercase text-[8px]">Views</span><span>{Math.floor((event.attendee_count || 0) * 3.5)}</span></div>
-                <div className="flex flex-col"><span className="text-muted-foreground uppercase text-[8px]">Net Rev</span><span>₦{((event.attendee_count || 0) * event.ticket_price).toLocaleString()}</span></div>
-              </div>
-            ) : (
+            {type === 'mine' && (userProfile?.user_type === 'business' || userProfile?.user_type === 'personal') ? (
               <div className="flex items-center gap-3 mt-1">
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Users className="w-3 h-3" /> {event.attendee_count || 0} {isEventPast ? 'attended' : 'attending'}
@@ -568,7 +656,7 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Right: Actions */}
@@ -607,12 +695,15 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
   };
 
   const filterEvents = (events: EventWithStats[]) => {
-    if (!searchQuery) return events;
-    return events.filter(event => 
-      event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.category.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    let list = events as any[];
+    if (searchQuery) {
+      list = list.filter((event) =>
+        event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (event.location || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        event.category.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    return applyEventFilters(list as any, filters) as EventWithStats[];
   };
 
   const filteredMyEvents = filterEvents(myEvents);
@@ -621,21 +712,21 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
   const myActiveEvents = filteredMyEvents.filter(e => isEventActive(e.start_date));
   const myPastEvents = filteredMyEvents.filter(e => !isEventActive(e.start_date));
   
-  const filteredAttendingEvents = filterEvents(attendingEvents);
+  const filteredAttendingEvents = filterEvents(attendingEvents); 
 
   return (
     <LaunchZoneGuard
       isLoading={locationLoading || launchZoneLoading}
       locationDetected={!!location}
-      isWithinCity={!!launchCityName}
+      isWithinCity={isWithinCity}
       isInLaunchZone={isInLaunchZone}
-      cityName={launchCityName}
+      cityName={cityName}
       currentCount={currentCount || 0}
       targetCount={targetCount || 0}
     >
       <div className="container-mobile py-4 space-y-6 pb-24">
         <div className="flex items-center justify-between px-1">
-          <h1 className="text-2xl font-bold tracking-tight">Events in {launchCityName}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Events in <span className="text-primary">{launchZoneLoading ? "Detecting..." : (cityName || "Nearby")}</span></h1>
         </div>
 
         <div className="relative">
@@ -647,13 +738,14 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
             className="pl-10 bg-background/50 backdrop-blur-sm"
           />
         </div>
+        <EventFilterBar value={filters} onChange={setFilters} className="-mt-2" />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1 rounded-xl">
             {/* --- MODIFIED: Dynamic Dashboard Tab --- */}
             <TabsTrigger value="my" className="rounded-lg text-xs">
-              {userProfile?.user_type === 'vendor' ? 'Dashboard' : 'Hosted'}
-            </TabsTrigger> 
+              {userProfile?.user_type === 'business' || userProfile?.user_type === 'personal' ? 'Dashboard' : 'Hosted'}
+            </TabsTrigger>
             <TabsTrigger value="attending" className="rounded-lg text-xs">Attending</TabsTrigger>
             <TabsTrigger value="analytics" className="rounded-lg text-xs">Stats</TabsTrigger>
           </TabsList>
@@ -732,65 +824,115 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
 
           <TabsContent value="analytics" className="space-y-5 mt-6 animate-in fade-in-50">
             
-            {/* Hero Stats Row */}
-            <div className="grid grid-cols-2 gap-3">
-              <Card className="border-0 shadow-md bg-gradient-to-br from-primary/10 via-primary/5 to-transparent overflow-hidden relative">
-                <div className="absolute -right-6 -top-6 w-20 h-20 bg-primary/10 rounded-full blur-2xl" />
-                <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
-                  <div className="bg-primary/15 p-2.5 rounded-xl mb-2">
-                    <Calendar className="w-5 h-5 text-primary" />
-                  </div>
-                  <span className="text-3xl font-extrabold tracking-tight">{stats?.totalHosted || 0}</span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">
-                    Events Hosted
-                  </span>
-                </CardContent>
-              </Card>
+            {/* Hero Stats Row — business sees service KPIs, personal sees event KPIs */}
+            {userProfile?.user_type === 'business' ? (
+              <div className="grid grid-cols-2 gap-3">
+                {/* Jobs Completed */}
+                <Card className="border-0 shadow-md bg-gradient-to-br from-cyan-500/10 via-cyan-500/5 to-transparent overflow-hidden relative">
+                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-cyan-500/10 rounded-full blur-2xl" />
+                  <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
+                    <div className="bg-cyan-100 dark:bg-cyan-900/30 p-2.5 rounded-xl mb-2">
+                      <Check className="w-5 h-5 text-cyan-600" />
+                    </div>
+                    <span className="text-3xl font-extrabold tracking-tight">{stats?.jobsCompleted || 0}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Services Done</span>
+                  </CardContent>
+                </Card>
 
-              <Card className="border-0 shadow-md bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent overflow-hidden relative">
-                <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/10 rounded-full blur-2xl" />
-                <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
-                  <div className="bg-blue-100 dark:bg-blue-900/30 p-2.5 rounded-xl mb-2">
-                    <Users className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <span className="text-3xl font-extrabold tracking-tight">{stats?.totalAttendees || 0}</span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">
-                    Total Attendees
-                  </span>
-                </CardContent>
-              </Card>
+                {/* Service Revenue */}
+                <Card className="border-0 shadow-md bg-gradient-to-br from-green-500/10 via-green-500/5 to-transparent overflow-hidden relative">
+                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-green-500/10 rounded-full blur-2xl" />
+                  <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
+                    <div className="bg-green-100 dark:bg-green-900/30 p-2.5 rounded-xl mb-2">
+                      <TrendingUp className="w-5 h-5 text-green-600" />
+                    </div>
+                    <span className="text-3xl font-extrabold tracking-tight">
+                      ₦{((stats?.serviceRevenue || 0) / 1000 >= 1
+                        ? ((stats?.serviceRevenue || 0) / 1000).toFixed(1) + 'k'
+                        : (stats?.serviceRevenue || 0).toLocaleString())}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Service Rev.</span>
+                  </CardContent>
+                </Card>
 
-              <Card className="border-0 shadow-md bg-gradient-to-br from-green-500/10 via-green-500/5 to-transparent overflow-hidden relative">
-                <div className="absolute -right-6 -top-6 w-20 h-20 bg-green-500/10 rounded-full blur-2xl" />
-                <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
-                  <div className="bg-green-100 dark:bg-green-900/30 p-2.5 rounded-xl mb-2">
-                    <TrendingUp className="w-5 h-5 text-green-600" />
-                  </div>
-                  <span className="text-3xl font-extrabold tracking-tight">{stats?.upcomingEvents || 0}</span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">
-                    Upcoming
-                  </span>
-                </CardContent>
-              </Card>
+                {/* Repeat Clients */}
+                <Card className="border-0 shadow-md bg-gradient-to-br from-primary/10 via-primary/5 to-transparent overflow-hidden relative">
+                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-primary/10 rounded-full blur-2xl" />
+                  <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
+                    <div className="bg-primary/15 p-2.5 rounded-xl mb-2">
+                      <Users className="w-5 h-5 text-primary" />
+                    </div>
+                    <span className="text-3xl font-extrabold tracking-tight">{stats?.repeatClients || 0}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Repeat Clients</span>
+                  </CardContent>
+                </Card>
 
-              <Card className="border-0 shadow-md bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent overflow-hidden relative">
-                <div className="absolute -right-6 -top-6 w-20 h-20 bg-amber-500/10 rounded-full blur-2xl" />
-                <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
-                  <div className="bg-amber-100 dark:bg-amber-900/30 p-2.5 rounded-xl mb-2">
-                    <Ticket className="w-5 h-5 text-amber-600" />
-                  </div>
-                  <span className="text-3xl font-extrabold tracking-tight">
-                    ₦{(stats?.netRevenue || 0).toLocaleString()}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">
-                    Net Earnings
-                  </span>
-                </CardContent>
-              </Card>
-            </div>
+                {/* Avg Rating */}
+                <Card className="border-0 shadow-md bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent overflow-hidden relative">
+                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-amber-500/10 rounded-full blur-2xl" />
+                  <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
+                    <div className="bg-amber-100 dark:bg-amber-900/30 p-2.5 rounded-xl mb-2">
+                      <Zap className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <span className="text-3xl font-extrabold tracking-tight">
+                      {stats?.avgRating != null ? stats.avgRating : '—'}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Avg Rating</span>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <Card className="border-0 shadow-md bg-gradient-to-br from-primary/10 via-primary/5 to-transparent overflow-hidden relative">
+                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-primary/10 rounded-full blur-2xl" />
+                  <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
+                    <div className="bg-primary/15 p-2.5 rounded-xl mb-2">
+                      <Calendar className="w-5 h-5 text-primary" />
+                    </div>
+                    <span className="text-3xl font-extrabold tracking-tight">{stats?.totalHosted || 0}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Events Hosted</span>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 shadow-md bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent overflow-hidden relative">
+                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/10 rounded-full blur-2xl" />
+                  <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
+                    <div className="bg-blue-100 dark:bg-blue-900/30 p-2.5 rounded-xl mb-2">
+                      <Users className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <span className="text-3xl font-extrabold tracking-tight">{stats?.totalAttendees || 0}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Total Attendees</span>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 shadow-md bg-gradient-to-br from-green-500/10 via-green-500/5 to-transparent overflow-hidden relative">
+                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-green-500/10 rounded-full blur-2xl" />
+                  <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
+                    <div className="bg-green-100 dark:bg-green-900/30 p-2.5 rounded-xl mb-2">
+                      <TrendingUp className="w-5 h-5 text-green-600" />
+                    </div>
+                    <span className="text-3xl font-extrabold tracking-tight">{stats?.upcomingEvents || 0}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Upcoming</span>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 shadow-md bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent overflow-hidden relative">
+                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-amber-500/10 rounded-full blur-2xl" />
+                  <CardContent className="p-5 flex flex-col items-center justify-center text-center h-32 relative z-10">
+                    <div className="bg-amber-100 dark:bg-amber-900/30 p-2.5 rounded-xl mb-2">
+                      <Ticket className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <span className="text-3xl font-extrabold tracking-tight">
+                      ₦{(stats?.netRevenue || 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Net Earnings</span>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
             
-            {/* PAYOUT WALLET CARD */}
-            {userProfile?.user_type === 'vendor' && (
+            {/* PAYOUT WALLET CARD — ticket sellers AND business service providers */}
+            {(userProfile?.user_type === 'business' || userProfile?.user_type === 'personal') && (
               <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-purple-500/5 shadow-lg overflow-hidden relative mt-3">
                 <div className="absolute -right-10 -top-10 w-32 h-32 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute -left-10 -bottom-10 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -801,7 +943,11 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                     <div className="bg-primary/20 p-2.5 rounded-xl"><Wallet className="w-5 h-5 text-primary" /></div>
                     <div>
                       <h3 className="font-bold text-foreground">Earnings Wallet</h3>
-                      <p className="text-xs text-muted-foreground">Available for withdrawal</p>
+                      <p className="text-xs text-muted-foreground">
+                        {userProfile?.user_type === 'business'
+                          ? 'Ticket sales + completed services'
+                          : 'Available for withdrawal'}
+                      </p>
                     </div>
                   </div>
                   <Badge variant="outline" className="bg-background/50 backdrop-blur-sm text-[10px]">Daily Payouts</Badge>
@@ -810,6 +956,12 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                 <div className="bg-background/60 backdrop-blur-sm rounded-xl p-4 mb-4 border border-border/50">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Withdrawable Balance</p>
                   <span className="text-4xl font-black text-foreground tracking-tight">₦{(stats?.walletBalance || 0).toLocaleString()}<span className="text-xl">.00</span></span>
+                  {userProfile?.user_type === 'business' && (stats?.serviceRevenue || 0) > 0 && (
+                    <p className="text-[10px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                      <Check className="w-3 h-3 text-green-500" />
+                      Includes ₦{(stats?.serviceRevenue || 0).toLocaleString()} from {stats?.jobsCompleted} completed {stats?.jobsCompleted === 1 ? 'service' : 'services'}
+                    </p>
+                  )}
                 </div>
 
                 <Button 
@@ -841,39 +993,72 @@ const renderEventCard = (event: EventWithStats, type: 'mine' | 'attending') => {
                 )}
               </CardContent>
             </Card>
+            )}
 
             {/* Growth Insights Card */}
             <Card className="border-muted/50 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-blue-600" />
-                  Growth Insights
+                  {userProfile?.user_type === 'business' ? 'Business Insights' : 'Growth Insights'}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Past Events</span>
-                  <span className="font-bold">{stats?.pastEvents || 0}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Avg Attendees/Event</span>
-                  <span className="font-bold">
-                    {stats?.totalHosted && stats.totalHosted > 0
-                      ? Math.round((stats.totalAttendees || 0) / stats.totalHosted)
-                      : 0}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Platform Fee</span>
-                  <span className="font-bold text-muted-foreground">2%</span>
-                </div>
-                <div className="flex justify-between text-sm pt-2 border-t border-border">
-                  <span className="text-muted-foreground">Lifetime Revenue</span>
-                  <span className="font-bold text-green-600">₦{(stats?.netRevenue || 0).toLocaleString()}</span>
-                </div>
-                <p className="text-xs text-muted-foreground pt-3 border-t border-border">
-                  💡 Hosting events consistently helps grow your community 3x faster!
-                </p>
+                {userProfile?.user_type === 'business' ? (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Services Completed</span>
+                      <span className="font-bold">{stats?.jobsCompleted || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Repeat Clients</span>
+                      <span className="font-bold">{stats?.repeatClients || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Avg Rating</span>
+                      <span className="font-bold">
+                        {stats?.avgRating != null ? `${stats.avgRating} / 5` : 'No ratings yet'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Platform Fee</span>
+                      <span className="font-bold text-muted-foreground">2%</span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t border-border">
+                      <span className="text-muted-foreground">Total Service Revenue</span>
+                      <span className="font-bold text-green-600">₦{(stats?.serviceRevenue || 0).toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-3 border-t border-border">
+                      💡 Verified businesses with repeat clients earn 2.4× more per month.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Past Events</span>
+                      <span className="font-bold">{stats?.pastEvents || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Avg Attendees/Event</span>
+                      <span className="font-bold">
+                        {stats?.totalHosted && stats.totalHosted > 0
+                          ? Math.round((stats.totalAttendees || 0) / stats.totalHosted)
+                          : 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Platform Fee</span>
+                      <span className="font-bold text-muted-foreground">2%</span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t border-border">
+                      <span className="text-muted-foreground">Lifetime Revenue</span>
+                      <span className="font-bold text-green-600">₦{(stats?.netRevenue || 0).toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-3 border-t border-border">
+                      💡 Hosting events consistently helps grow your community 3x faster!
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
